@@ -21,6 +21,8 @@ import com.talkto.app.pet.PetEngine
 import com.talkto.app.security.KeyCipher
 import com.talkto.core.agent.AgentConfig
 import com.talkto.core.agent.ClaudeAgent
+import com.talkto.core.agent.OfflineAgent
+import com.talkto.core.agent.PetActions
 import com.talkto.core.agent.ToolDispatcher
 import com.talkto.core.avatar.AvatarGenerator
 import com.talkto.core.avatar.FileAvatarCache
@@ -104,7 +106,20 @@ class AppContainer(private val context: Context) {
         config = AgentConfig(),
     )
 
-    val agentSession = AgentSession(agent, avatar, pet, settings, errors)
+    /** No-key mode: simple commands on the same dispatcher, so every safety rule still applies. */
+    private val offlineAgent = OfflineAgent(
+        dispatcher = dispatcher,
+        memory = memory,
+        pet = object : PetActions {
+            override fun feed() = pet.feed()
+            override fun play() = pet.play()
+            override fun sleep() = pet.setSleeping(true)
+            override fun wake() = pet.setSleeping(false)
+            override fun status() = pet.state.value.feeling()
+        },
+    )
+
+    val agentSession = AgentSession(agent, offlineAgent, avatar, pet, settings, errors)
 
     fun start() {
         pet.start()

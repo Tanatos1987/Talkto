@@ -21,6 +21,9 @@
     <string name="thinking">Мисля…</string>
     <string name="tool_running">Работя: %1$s</string>
     <string name="greeting">Здрасти! Аз съм Talkto. Какво да направим днес?</string>
+    <string name="greeting_offline">Здрасти! Работя и без API ключ: кажи „помощ“ за командите. С Claude ключ мога много повече.</string>
+    <string name="mode_offline">Офлайн режим</string>
+    <string name="mode_online">Claude</string>
     <string name="crashed_last_time">Ох, миналия път се спънах и затворих. Вече съм добре!</string>
 
     <!-- Avatar creator -->
@@ -52,6 +55,7 @@
     <string name="settings_anthropic_key">Claude API ключ</string>
     <string name="settings_stability_key">Stability AI ключ (за аватара)</string>
     <string name="settings_voice">Гласови отговори</string>
+    <string name="settings_offline_note">Без Claude ключ Talkto работи в офлайн режим: прости команди за приложения, файлове и любимеца (кажи „помощ“). Ключът отключва свободния разговор, задачите от няколко стъпки и предложенията по навиците. Stability ключът е нужен само за аватар от снимка.</string>
     <string name="settings_keys_note">Ключовете се пазят криптирани с Android Keystore и никога не напускат устройството, освен към съответния API.</string>
     <string name="settings_habits">Научени навици</string>
     <string name="settings_habits_empty">Все още не съм забелязал навици.</string>

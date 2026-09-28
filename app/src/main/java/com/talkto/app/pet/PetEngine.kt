@@ -33,6 +33,16 @@ data class PetState(
             else -> Expression.NEUTRAL
         }
 
+    /** Short first-person line for the offline assistant. */
+    fun feeling(): String = when {
+        sleeping -> "Малко съм сънлив, но слушам."
+        satiety < 20f -> "Гладен съм! Ще ме нахраниш ли?"
+        energy < 20f -> "Изморен съм, ще ми дадеш ли да поспя?"
+        happiness < 25f -> "Малко ми е тъжно. Да поиграем?"
+        happiness > 80f -> "Чувствам се чудесно!"
+        else -> "Добре съм."
+    }
+
     fun describe(): String =
         "satiety=${satiety.roundToInt()} energy=${energy.roundToInt()} happiness=${happiness.roundToInt()} bond=${bond.roundToInt()} " +
             "sleeping=$sleeping mood=${mood.name.lowercase()}"
@@ -71,6 +81,8 @@ class PetEngine(
     }
 
     fun toggleSleep() = mutate { it.copy(sleeping = !it.sleeping) }
+
+    fun setSleeping(asleep: Boolean) = mutate { it.copy(sleeping = asleep) }
 
     fun pet() = mutate { it.copy(happiness = (it.happiness + 3f).cap(), bond = (it.bond + 0.5f).cap()) }
 

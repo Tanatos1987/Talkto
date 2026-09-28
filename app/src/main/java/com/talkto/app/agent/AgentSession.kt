@@ -7,10 +7,12 @@ import com.talkto.app.data.prefs.SettingsRepository
 import com.talkto.app.error.GlobalErrorHandler
 import com.talkto.app.pet.PetEngine
 import com.talkto.core.agent.AgentEvent
-import com.talkto.core.agent.ClaudeAgent
+import com.talkto.core.agent.Assistant
+import com.talkto.core.agent.OfflineAgent
 import com.talkto.core.avatar.AnimationCommand
 import com.talkto.core.avatar.Expression
 import com.talkto.core.avatar.Gesture
+import com.talkto.core.error.ErrorMapper
 import com.talkto.core.error.TalktoError
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -50,9 +52,13 @@ class AnthropicClientHolder(private val settings: SettingsRepository) {
 /**
  * One conversation with Talkto. Owned by the application container and driven by [AgentService],
  * so a turn survives the user switching away (for example while Recents is being swiped).
+ *
+ * Routing: with a Claude key every message goes to Claude. Without one, [offline] handles simple commands.
+ * With a key but no network, a message the offline parser recognises is still carried out locally.
  */
 class AgentSession(
-    private val agent: ClaudeAgent,
+    private val claude: Assistant,
+    private val offline: OfflineAgent,
     private val avatar: AvatarEngine,
     private val pet: PetEngine,
     private val settings: SettingsRepository,
@@ -71,11 +77,22 @@ class AgentSession(
         avatar.play(AnimationCommand(Expression.THINKING, Gesture.NONE, holdMs = 30_000))
         var toolErrors = 0
         try {
-            val reply = agent.send(trimmed) { event ->
+            val onEvent: suspend (AgentEvent) -> Unit = { event ->
                 when (event) {
                     AgentEvent.Thinking -> _state.update { it.copy(activeTool = null) }
                     is AgentEvent.ToolStarted -> _state.update { it.copy(activeTool = event.name) }
                     is AgentEvent.ToolFinished -> if (event.isError) toolErrors++
+                }
+            }
+            val reply = if (!settings.settings.value.hasClaudeKey) {
+                offline.send(trimmed, onEvent)
+            } else {
+                try {
+                    claude.send(trimmed, onEvent)
+                } catch (t: Throwable) {
+                    val err = ErrorMapper.map(t)
+                    if (err.kind != TalktoError.Kind.NETWORK || !offline.recognizes(trimmed)) throw err
+                    offline.send(trimmed, onEvent).let { it.copy(text = OFFLINE_FALLBACK_PREFIX + it.text) }
                 }
             }
             _state.update { it.copy(messages = it.messages + ChatMessage(false, reply.text, clock())) }
@@ -96,7 +113,12 @@ class AgentSession(
     }
 
     suspend fun newConversation() {
-        agent.reset()
+        claude.reset()
+        offline.reset()
         _state.value = AgentUiState()
+    }
+
+    private companion object {
+        const val OFFLINE_FALLBACK_PREFIX = "Нямам връзка с Claude, затова го направих сам. "
     }
 }

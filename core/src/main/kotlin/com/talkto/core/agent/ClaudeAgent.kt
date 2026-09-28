@@ -41,7 +41,19 @@ sealed interface AgentEvent {
     data class ToolFinished(val name: String, val isError: Boolean) : AgentEvent
 }
 
-data class AgentReply(val text: String, val refused: Boolean = false, val truncated: Boolean = false)
+data class AgentReply(
+    val text: String,
+    val refused: Boolean = false,
+    val truncated: Boolean = false,
+    /** The request needs something the offline assistant cannot do (free-form chat, multi-step plans). */
+    val needsApiKey: Boolean = false,
+)
+
+/** Anything that turns a user message into actions and a reply: Claude online, [OfflineAgent] without a key. */
+interface Assistant {
+    suspend fun send(userText: String, onEvent: suspend (AgentEvent) -> Unit = {}): AgentReply
+    suspend fun reset()
+}
 
 /**
  * Manual tool-use loop over the Anthropic Java SDK (runs fine on Android; network on [io]).
@@ -61,14 +73,14 @@ class ClaudeAgent(
     private val liveContext: suspend () -> String,
     private val config: AgentConfig = AgentConfig(),
     private val io: CoroutineDispatcher = Dispatchers.IO,
-) {
+) : Assistant {
     private val history = ArrayList<MessageParam>()
     private val lock = Mutex()
     private val json = Json { ignoreUnknownKeys = true }
 
-    suspend fun reset() = lock.withLock { history.clear() }
+    override suspend fun reset() = lock.withLock { history.clear() }
 
-    suspend fun send(userText: String, onEvent: suspend (AgentEvent) -> Unit = {}): AgentReply = lock.withLock {
+    override suspend fun send(userText: String, onEvent: suspend (AgentEvent) -> Unit): AgentReply = lock.withLock {
         require(userText.isNotBlank()) { "Empty message" }
         trimHistory()
         val checkpoint = history.size

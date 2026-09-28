@@ -57,8 +57,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val systemLine: StateFlow<SystemLine?> = _systemLine.asStateFlow()
 
     init {
-        val first = if (c.errors.consumeCrashMarker()) R.string.crashed_last_time else R.string.greeting
-        _systemLine.value = SystemLine(first, System.currentTimeMillis())
+        val crashed = c.errors.consumeCrashMarker()
+        viewModelScope.launch {
+            val hasKey = c.settings.awaitLoaded().hasClaudeKey
+            val first = when {
+                crashed -> R.string.crashed_last_time
+                hasKey -> R.string.greeting
+                else -> R.string.greeting_offline
+            }
+            _systemLine.value = SystemLine(first, System.currentTimeMillis())
+        }
         viewModelScope.launch {
             c.errors.notices.collect { n -> say(n.message, n.expression) }
         }

@@ -130,6 +130,7 @@ fun TamagotchiScreen(vm: MainViewModel) {
     val systemLine by vm.systemLine.collectAsStateWithLifecycle()
     val permissions by vm.permissions.collectAsStateWithLifecycle()
     val confirmation by vm.confirmation.collectAsStateWithLifecycle()
+    val settings by vm.settings.collectAsStateWithLifecycle()
     var sheet by rememberSaveable { mutableStateOf(Sheet.NONE) }
 
     val lastReply = agent.messages.lastOrNull { !it.fromUser }
@@ -147,7 +148,10 @@ fun TamagotchiScreen(vm: MainViewModel) {
             .imePadding()
             .padding(horizontal = 16.dp),
     ) {
-        Header(onSettings = { vm.loadHabits(); sheet = Sheet.SETTINGS })
+        Header(
+            online = settings.hasClaudeKey || !settings.loaded,
+            onSettings = { vm.loadHabits(); sheet = Sheet.SETTINGS },
+        )
         StatsRow(pet)
         if (!permissions.allFiles) PermissionBanner()
         Spacer(Modifier.height(8.dp))
@@ -208,14 +212,27 @@ fun TamagotchiScreen(vm: MainViewModel) {
 // ----------------------------------------------------------------------- header & stats
 
 @Composable
-private fun Header(onSettings: () -> Unit) {
+private fun Header(online: Boolean, onSettings: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(
             "TALKTO",
             style = MaterialTheme.typography.headlineSmall,
             color = MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier.weight(1f),
         )
+        Spacer(Modifier.width(10.dp))
+        // Mode badge: tapping it opens Settings, where the key can be added.
+        Surface(
+            shape = RoundedCornerShape(50),
+            color = if (online) TalktoColors.Mint.copy(alpha = 0.35f) else TalktoColors.Sunflower.copy(alpha = 0.45f),
+            modifier = Modifier.clip(RoundedCornerShape(50)).clickable(onClick = onSettings),
+        ) {
+            Text(
+                stringResource(if (online) R.string.mode_online else R.string.mode_offline),
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            )
+        }
+        Spacer(Modifier.weight(1f))
         IconButton(onClick = onSettings) {
             Icon(Icons.Rounded.Settings, contentDescription = stringResource(R.string.action_settings))
         }
@@ -551,6 +568,9 @@ private fun SettingsSheet(vm: MainViewModel, permissions: PermissionState, onDis
             Spacer(Modifier.height(12.dp))
             KeyField(stringResource(R.string.settings_anthropic_key), claudeKey, settings.hasClaudeKey) { claudeKey = it }
             KeyField(stringResource(R.string.settings_stability_key), stabilityKey, !settings.stabilityKey.isNullOrBlank()) { stabilityKey = it }
+            if (!settings.hasClaudeKey) {
+                Text(stringResource(R.string.settings_offline_note), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 6.dp))
+            }
             Text(stringResource(R.string.settings_keys_note), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 6.dp))
             Button(
                 onClick = {
