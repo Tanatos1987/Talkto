@@ -65,6 +65,8 @@ class AgentSession(
     suspend fun run(text: String) {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return
+        // A turn started right after a cold start (e.g. from a notification) must see the saved API key.
+        settings.awaitLoaded()
         _state.update { it.copy(messages = it.messages + ChatMessage(true, trimmed, clock()), busy = true) }
         avatar.play(AnimationCommand(Expression.THINKING, Gesture.NONE, holdMs = 30_000))
         var toolErrors = 0

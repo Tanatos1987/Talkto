@@ -282,7 +282,7 @@ private fun DrawScope.drawMouth(
     val w = base * (0.55f + 0.6f * width) * (1f - 0.45f * round)
     val h = (base * 0.62f * open).coerceAtLeast(base * 0.05f)
 
-    if (coverOriginal) {
+    if (coverOriginal && base > 0f) {
         // Soft skin patch hides the painted mouth, so the animated one does not double up.
         drawCircle(
             Brush.radialGradient(listOf(p.skin, p.skin, p.skin.copy(alpha = 0f)), center = Offset(cx, cy), radius = base * 0.62f),
@@ -341,7 +341,7 @@ private fun DrawScope.drawExpression(
             drawTear(Offset(x, y), d * 0.09f, Color(0xFF5BC0EB).copy(alpha = 1f - t * 0.7f))
         }
         Expression.SURPRISED -> {
-            drawText(measurer, "!", Offset(f.x(a.faceRight), f.y(a.faceTop) - d * 0.2f), TextStyle(fontSize = 34.sp, fontWeight = FontWeight.Black, color = Color(0xFFE4572E)))
+            drawLabel(measurer, "!", Offset(f.x(a.faceRight), f.y(a.faceTop) - d * 0.2f), TextStyle(fontSize = 34.sp, fontWeight = FontWeight.Black, color = Color(0xFFE4572E)))
         }
         Expression.THINKING -> {
             repeat(3) { i ->
@@ -358,7 +358,7 @@ private fun DrawScope.drawExpression(
         }
         Expression.CONFUSED -> {
             val bob = sin(phase * 2f * PI.toFloat()) * d * 0.05f
-            drawText(measurer, "?", Offset(f.x(a.faceRight) - d * 0.05f, f.y(a.faceTop) - d * 0.35f + bob), TextStyle(fontSize = 38.sp, fontWeight = FontWeight.Black, color = Color(0xFF9B5DE5)))
+            drawLabel(measurer, "?", Offset(f.x(a.faceRight) - d * 0.05f, f.y(a.faceTop) - d * 0.35f + bob), TextStyle(fontSize = 38.sp, fontWeight = FontWeight.Black, color = Color(0xFF9B5DE5)))
         }
         Expression.NEUTRAL -> Unit
     }
@@ -368,12 +368,20 @@ private fun DrawScope.drawExpression(
 private fun DrawScope.drawZz(f: Frame, a: FaceAnchors, d: Float, phase: Float, measurer: TextMeasurer) {
     listOf("z", "Z").forEachIndexed { i, s ->
         val t = (phase + i * 0.5f) % 1f
-        drawText(
+        drawLabel(
             measurer, s,
             Offset(f.x(a.faceRight) + d * 0.1f * i + t * d * 0.2f, f.y(a.faceTop) - t * d * 0.5f),
             TextStyle(fontSize = (18 + 8 * i).sp, fontWeight = FontWeight.Black, color = Color(0xFF3F88C5).copy(alpha = 1f - t)),
         )
     }
+}
+
+/**
+ * Measures without constraints, then draws. `drawText(measurer, text, topLeft)` derives maxWidth from
+ * the space right of topLeft, which is negative (and throws) when a face touches the right edge.
+ */
+private fun DrawScope.drawLabel(measurer: TextMeasurer, text: String, topLeft: Offset, style: TextStyle) {
+    drawText(measurer.measure(text, style), topLeft = topLeft)
 }
 
 private fun DrawScope.drawHeart(c: Offset, s: Float, color: Color) {

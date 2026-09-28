@@ -115,6 +115,7 @@ class AppContainer(private val context: Context) {
 
     /** The per-request context block. It changes every call, so it sits after the prompt-cache breakpoint. */
     private suspend fun liveContext(): String {
+        settings.awaitLoaded()
         val now = ZonedDateTime.now()
         val visual = avatar.visual.value
         return buildString {
