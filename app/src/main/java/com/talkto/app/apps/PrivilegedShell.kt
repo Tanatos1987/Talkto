@@ -29,7 +29,8 @@ object ShizukuBridge {
         runCatching { Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED }.getOrDefault(false)
 
     fun requestPermission() {
-        if (isInstalledAndRunning() && !hasPermission()) Shizuku.requestPermission(REQUEST_CODE)
+        // The binder can die between the ping and the request; never crash a settings click over it.
+        if (isInstalledAndRunning() && !hasPermission()) runCatching { Shizuku.requestPermission(REQUEST_CODE) }
     }
 
     suspend fun forceStop(packageName: String): Boolean = withContext(Dispatchers.IO) {

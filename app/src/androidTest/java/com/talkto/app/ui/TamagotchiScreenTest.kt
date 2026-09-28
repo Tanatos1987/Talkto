@@ -1,11 +1,13 @@
 package com.talkto.app.ui
 
+import android.Manifest
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.rule.GrantPermissionRule
 import com.talkto.app.MainActivity
 import com.talkto.app.R
 import org.junit.Rule
@@ -16,7 +18,10 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class TamagotchiScreenTest {
 
-    @get:Rule val rule = createAndroidComposeRule<MainActivity>()
+    // Pre-grant, so the API 33+ notification dialog never covers the screen under test.
+    @get:Rule(order = 0) val notifications: GrantPermissionRule = GrantPermissionRule.grant(Manifest.permission.POST_NOTIFICATIONS)
+
+    @get:Rule(order = 1) val rule = createAndroidComposeRule<MainActivity>()
 
     @Test fun screenShowsPetAndControls() {
         rule.onNodeWithText("TALKTO").assertIsDisplayed()

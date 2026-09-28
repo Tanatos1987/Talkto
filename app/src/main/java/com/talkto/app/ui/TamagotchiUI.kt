@@ -463,7 +463,8 @@ private fun AvatarCreatorSheet(vm: MainViewModel, onDismiss: () -> Unit) {
     val visual by vm.visual.collectAsStateWithLifecycle()
     var style by rememberSaveable { mutableStateOf(AvatarStyle.ANIME_2D) }
     var extra by rememberSaveable { mutableStateOf("") }
-    var cameraUri by remember { mutableStateOf<Uri?>(null) }
+    // Saveable: the camera app often causes activity recreation, and the target URI must survive it.
+    var cameraUri by rememberSaveable { mutableStateOf<Uri?>(null) }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> if (uri != null) vm.onPhotoPicked(uri) }
     val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok -> if (ok) vm.onPhotoPicked(cameraUri) }
