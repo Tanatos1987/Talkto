@@ -1,6 +1,7 @@
 package com.talkto.app.ui
 
 import android.Manifest
+import android.graphics.ImageDecoder
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -14,6 +15,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -75,6 +77,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -83,7 +86,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -93,7 +99,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil3.compose.AsyncImage
 import com.talkto.app.R
 import com.talkto.app.agent.PendingConfirmation
 import com.talkto.app.avatar.Clothes
@@ -109,6 +114,8 @@ import com.talkto.core.agent.ConfirmationRequest
 import com.talkto.core.avatar.AvatarStyle
 import com.talkto.core.agent.ToolProtocol
 import com.talkto.core.memory.Habit
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.util.Locale
 
 private enum class Sheet { NONE, WARDROBE, AVATAR, SETTINGS }
@@ -481,8 +488,9 @@ private fun AvatarCreatorSheet(vm: MainViewModel, onDismiss: () -> Unit) {
                 Modifier.fillMaxWidth().aspectRatio(1.6f).clip(MaterialTheme.shapes.medium).background(MaterialTheme.colorScheme.surfaceVariant),
                 contentAlignment = Alignment.Center,
             ) {
-                if (pending != null) {
-                    AsyncImage(model = pending, contentDescription = null, modifier = Modifier.fillMaxSize())
+                val thumb = rememberThumbnail(pending)
+                if (thumb != null) {
+                    Image(thumb, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                 } else {
                     Icon(Icons.Rounded.Face, contentDescription = null, modifier = Modifier.size(64.dp))
                 }
@@ -618,6 +626,26 @@ private fun HabitRow(habit: Habit, onForget: () -> Unit) {
 @Composable
 private fun SectionLabel(text: String) {
     Text(text.uppercase(Locale.getDefault()), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 14.dp, bottom = 6.dp))
+}
+
+/** Small preview of the picked photo, decoded off the main thread. */
+@Composable
+private fun rememberThumbnail(uri: Uri?): ImageBitmap? {
+    val ctx = LocalContext.current
+    val thumb by produceState<ImageBitmap?>(null, uri) {
+        value = uri?.let { u ->
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    ImageDecoder.decodeBitmap(ImageDecoder.createSource(ctx.contentResolver, u)) { decoder, info, _ ->
+                        val scale = 512f / maxOf(info.size.width, info.size.height)
+                        if (scale < 1f) decoder.setTargetSize((info.size.width * scale).toInt(), (info.size.height * scale).toInt())
+                        decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+                    }.asImageBitmap()
+                }.getOrNull()
+            }
+        }
+    }
+    return thumb
 }
 
 // ----------------------------------------------------------------------- confirmation

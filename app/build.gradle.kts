@@ -130,8 +130,7 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
 
-    // Images, face landmarks for live portrait
-    implementation(libs.coil.compose)
+    // Face landmarks for live portrait
     implementation(libs.mlkit.face.detection)
 
     // Privileged app control (optional at runtime)
