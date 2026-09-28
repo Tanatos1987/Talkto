@@ -1,6 +1,8 @@
 package com.talkto.app.ui
 
 import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.graphics.ImageDecoder
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -48,10 +50,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Checkroom
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Face
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Restaurant
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SportsEsports
+import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -89,6 +94,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -99,6 +105,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.talkto.app.R
 import com.talkto.app.agent.PendingConfirmation
@@ -110,21 +117,26 @@ import com.talkto.app.avatar.OutfitConfig
 import com.talkto.app.files.StorageAccess
 import com.talkto.app.pet.PetState
 import com.talkto.app.avatar3d.Avatar3DView
+import com.talkto.app.background.BackgroundLibrary
+import com.talkto.app.background.MoodBackdrop
 import com.talkto.app.ui.components.AvatarStage
 import com.talkto.app.ui.components.petTouches
 import com.talkto.app.ui.theme.TalktoColors
+import com.talkto.app.voice.VoiceLanguage
+import com.talkto.app.voice.VoiceState
 import com.talkto.core.agent.ConfirmationRequest
 import com.talkto.core.avatar.AvatarStyle
 import com.talkto.core.agent.ToolProtocol
 import com.talkto.core.history.Speaker
 import com.talkto.core.memory.Habit
 import com.talkto.core.profile.ProfileRepository
+import com.talkto.core.scene.MoodScene
 import com.talkto.core.pet.LifeStage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
-private enum class Sheet { NONE, WARDROBE, AVATAR, SETTINGS, HISTORY }
+private enum class Sheet { NONE, WARDROBE, AVATAR, SETTINGS, HISTORY, BACKGROUNDS }
 
 @Composable
 fun TamagotchiScreen(vm: MainViewModel) {
@@ -165,6 +177,11 @@ fun TamagotchiScreen(vm: MainViewModel) {
         Spacer(Modifier.height(8.dp))
 
         DeviceScreen(Modifier.weight(1f)) {
+            val background by vm.backgroundConfig.collectAsStateWithLifecycle()
+            if (background.enabled) {
+                val scene = MoodScene.forMood(pose.expression, pet.sleeping)
+                MoodBackdrop(scene, background.photos[scene].orEmpty(), Modifier.fillMaxSize())
+            }
             val stageModifier = Modifier.fillMaxSize().padding(top = 72.dp, bottom = 12.dp, start = 24.dp, end = 24.dp)
             // A photo avatar is a 2D portrait; the built-in creature is 3D unless switched off in Settings.
             if (visual.bitmap == null && settings.avatar3d) {
@@ -173,7 +190,6 @@ fun TamagotchiScreen(vm: MainViewModel) {
                     outfit = outfit,
                     stage = pet.stage,
                     sleeping = pet.sleeping,
-                    background = MaterialTheme.colorScheme.surfaceVariant,
                     reactions = vm.reactions,
                     lookAt = lookAt,
                     modifier = stageModifier,
@@ -213,14 +229,34 @@ fun TamagotchiScreen(vm: MainViewModel) {
             onAvatar = { sheet = Sheet.AVATAR },
         )
         Spacer(Modifier.height(12.dp))
-        ChatInput(busy = agent.busy, onSend = vm::send)
+        val voice by vm.voice.collectAsStateWithLifecycle()
+        val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> if (granted) vm.startListening() }
+        val ctx = LocalContext.current
+        ChatInput(
+            busy = agent.busy,
+            voice = voice,
+            language = runCatching { VoiceLanguage.valueOf(settings.voiceLanguage) }.getOrDefault(VoiceLanguage.AUTO),
+            onSend = vm::send,
+            onMic = {
+                when {
+                    voice.listening -> vm.stopListening()
+                    ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED -> vm.startListening()
+                    else -> micPermission.launch(Manifest.permission.RECORD_AUDIO)
+                }
+            },
+            onLanguage = vm::setVoiceLanguage,
+        )
         Spacer(Modifier.height(12.dp))
     }
 
     when (sheet) {
         Sheet.WARDROBE -> WardrobeSheet(outfit, onChange = vm::saveOutfit, onDismiss = { sheet = Sheet.NONE })
         Sheet.AVATAR -> AvatarCreatorSheet(vm, onDismiss = { sheet = Sheet.NONE })
-        Sheet.SETTINGS -> SettingsSheet(vm, permissions, onDismiss = { sheet = Sheet.NONE }, onHistory = { sheet = Sheet.HISTORY })
+        Sheet.SETTINGS -> SettingsSheet(
+            vm, permissions, onDismiss = { sheet = Sheet.NONE },
+            onHistory = { sheet = Sheet.HISTORY }, onBackgrounds = { sheet = Sheet.BACKGROUNDS },
+        )
+        Sheet.BACKGROUNDS -> BackgroundsSheet(vm, onDismiss = { sheet = Sheet.NONE })
         Sheet.HISTORY -> HistorySheet(vm, onDismiss = { sheet = Sheet.NONE })
         Sheet.NONE -> Unit
     }
@@ -445,7 +481,14 @@ private fun ToyButton(icon: ImageVector, label: String, color: Color, onClick: (
 }
 
 @Composable
-private fun ChatInput(busy: Boolean, onSend: (String) -> Unit) {
+private fun ChatInput(
+    busy: Boolean,
+    voice: VoiceState,
+    language: VoiceLanguage,
+    onSend: (String) -> Unit,
+    onMic: () -> Unit,
+    onLanguage: (VoiceLanguage) -> Unit,
+) {
     var text by rememberSaveable { mutableStateOf("") }
     val submit = {
         if (text.isNotBlank() && !busy) {
@@ -453,10 +496,18 @@ private fun ChatInput(busy: Boolean, onSend: (String) -> Unit) {
         }
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
+        // Language chip: tap cycles AUTO -> BG -> EN for speech recognition.
+        TextButton(onClick = { onLanguage(VoiceLanguage.entries[(language.ordinal + 1) % VoiceLanguage.entries.size]) }, modifier = Modifier.width(52.dp)) {
+            Text(
+                when (language) { VoiceLanguage.AUTO -> "BG/EN"; VoiceLanguage.BG -> "BG"; VoiceLanguage.EN -> "EN" },
+                style = MaterialTheme.typography.labelSmall,
+            )
+        }
         TextField(
-            value = text,
+            value = if (voice.listening) voice.partial else text,
             onValueChange = { text = it },
-            placeholder = { Text(stringResource(R.string.input_hint)) },
+            readOnly = voice.listening,
+            placeholder = { Text(stringResource(if (voice.listening) R.string.voice_listening else R.string.input_hint)) },
             modifier = Modifier.weight(1f),
             shape = RoundedCornerShape(24.dp),
             maxLines = 4,
@@ -468,7 +519,9 @@ private fun ChatInput(busy: Boolean, onSend: (String) -> Unit) {
                 disabledIndicatorColor = Color.Transparent,
             ),
         )
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(6.dp))
+        MicButton(listening = voice.listening, level = voice.level, onClick = onMic)
+        Spacer(Modifier.width(6.dp))
         IconButton(
             onClick = submit,
             enabled = text.isNotBlank() && !busy,
@@ -479,6 +532,27 @@ private fun ChatInput(busy: Boolean, onSend: (String) -> Unit) {
             } else {
                 Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = stringResource(R.string.send), tint = TalktoColors.Sunflower)
             }
+        }
+    }
+}
+
+/** Microphone with a ring that pulses with the voice level while listening. */
+@Composable
+private fun MicButton(listening: Boolean, level: Float, onClick: () -> Unit) {
+    val ring by animateFloatAsState(if (listening) 1f + level * 0.5f else 1f, label = "mic")
+    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(52.dp)) {
+        if (listening) {
+            Box(Modifier.size(52.dp).graphicsLayer { scaleX = ring; scaleY = ring }.clip(CircleShape).background(TalktoColors.Tomato.copy(alpha = 0.3f)))
+        }
+        IconButton(
+            onClick = onClick,
+            modifier = Modifier.size(46.dp).clip(CircleShape).background(if (listening) TalktoColors.Tomato else TalktoColors.Mint),
+        ) {
+            Icon(
+                if (listening) Icons.Rounded.Stop else Icons.Rounded.Mic,
+                contentDescription = stringResource(if (listening) R.string.voice_stop else R.string.voice_start),
+                tint = TalktoColors.Ink,
+            )
         }
     }
 }
@@ -609,7 +683,13 @@ private fun AvatarCreatorSheet(vm: MainViewModel, onDismiss: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SettingsSheet(vm: MainViewModel, permissions: PermissionState, onDismiss: () -> Unit, onHistory: () -> Unit) {
+private fun SettingsSheet(
+    vm: MainViewModel,
+    permissions: PermissionState,
+    onDismiss: () -> Unit,
+    onHistory: () -> Unit,
+    onBackgrounds: () -> Unit,
+) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val habits by vm.habits.collectAsStateWithLifecycle()
     val ctx = LocalContext.current
@@ -639,6 +719,14 @@ private fun SettingsSheet(vm: MainViewModel, permissions: PermissionState, onDis
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.settings_voice), modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
                 Switch(checked = settings.voiceEnabled, onCheckedChange = vm::setVoice)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.settings_hands_free), modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                Switch(checked = settings.handsFree, onCheckedChange = vm::setHandsFree)
+            }
+            Text(stringResource(R.string.settings_hands_free_note), style = MaterialTheme.typography.bodyMedium)
+            OutlinedButton(onClick = onBackgrounds, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                Text(stringResource(R.string.backgrounds_title))
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.settings_avatar_3d), modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
@@ -686,6 +774,101 @@ private fun SettingsSheet(vm: MainViewModel, permissions: PermissionState, onDis
             }
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BackgroundsSheet(vm: MainViewModel, onDismiss: () -> Unit) {
+    val config by vm.backgroundConfig.collectAsStateWithLifecycle()
+    val curating by vm.curating.collectAsStateWithLifecycle()
+    val ctx = LocalContext.current
+    var pickingFor by remember { mutableStateOf<MoodScene?>(null) }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(BackgroundLibrary.MAX_PER_SCENE)) { uris ->
+        pickingFor?.let { scene -> if (uris.isNotEmpty()) vm.addBackgroundPhotos(scene, uris) }
+        pickingFor = null
+    }
+    val mediaPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> if (granted) vm.autoFillBackgrounds() }
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp).verticalScroll(rememberScrollState())) {
+            Text(stringResource(R.string.backgrounds_title), style = MaterialTheme.typography.headlineSmall)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.backgrounds_enabled), modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                Switch(checked = config.enabled, onCheckedChange = vm::setBackgroundsEnabled)
+            }
+            Text(stringResource(R.string.backgrounds_note), style = MaterialTheme.typography.bodyMedium)
+            Button(
+                onClick = {
+                    val perm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) Manifest.permission.READ_MEDIA_IMAGES else Manifest.permission.READ_EXTERNAL_STORAGE
+                    if (StorageAccess.hasAllFilesAccess() || ContextCompat.checkSelfPermission(ctx, perm) == PackageManager.PERMISSION_GRANTED) vm.autoFillBackgrounds()
+                    else mediaPermission.launch(perm)
+                },
+                enabled = curating == null,
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+            ) {
+                val c = curating
+                Text(if (c == null) stringResource(R.string.backgrounds_auto) else stringResource(R.string.backgrounds_scanning, c.first, c.second))
+            }
+            MoodScene.entries.forEach { scene ->
+                val photos = config.photos[scene].orEmpty()
+                Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(scene.bg, style = MaterialTheme.typography.titleMedium)
+                        Text(stringResource(R.string.backgrounds_mood_hint, moodHint(scene)), style = MaterialTheme.typography.labelSmall)
+                    }
+                    TextButton(onClick = {
+                        pickingFor = scene
+                        picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    }) { Text(stringResource(R.string.backgrounds_add)) }
+                }
+                Box(Modifier.fillMaxWidth().height(90.dp).clip(MaterialTheme.shapes.small)) {
+                    if (photos.isEmpty()) {
+                        MoodBackdrop(scene, emptyList(), Modifier.fillMaxSize())
+                    } else {
+                        Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            photos.take(4).forEach { path ->
+                                val thumb = rememberFileThumbnail(path)
+                                Box(Modifier.weight(1f).fillMaxSize().clickable { vm.removeBackgroundPhoto(scene, path) }) {
+                                    thumb?.let { Image(it, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()) }
+                                    Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.backgrounds_remove), tint = Color.White,
+                                        modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(18.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun moodHint(scene: MoodScene): String = stringResource(
+    when (scene) {
+        MoodScene.BEACH -> R.string.mood_happy
+        MoodScene.MEADOW -> R.string.mood_calm
+        MoodScene.SUNSET -> R.string.mood_love
+        MoodScene.RAIN -> R.string.mood_sad
+        MoodScene.STORM -> R.string.mood_angry
+        MoodScene.NIGHT -> R.string.mood_sleepy
+        MoodScene.SPACE -> R.string.mood_thinking
+        MoodScene.FOG -> R.string.mood_confused
+        MoodScene.FIREWORKS -> R.string.mood_surprised
+    },
+)
+
+/** Small preview of an imported background file, decoded off the main thread. */
+@Composable
+private fun rememberFileThumbnail(path: String): ImageBitmap? {
+    val thumb by produceState<ImageBitmap?>(null, path) {
+        value = withContext(Dispatchers.IO) {
+            runCatching {
+                val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = 8 }
+                android.graphics.BitmapFactory.decodeFile(path, opts)?.asImageBitmap()
+            }.getOrNull()
+        }
+    }
+    return thumb
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

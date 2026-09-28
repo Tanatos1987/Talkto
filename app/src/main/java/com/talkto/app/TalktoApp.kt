@@ -10,6 +10,7 @@ import com.talkto.app.apps.AndroidAppController
 import com.talkto.app.avatar.AvatarEngine
 import com.talkto.app.avatar.FaceAnchorDetector
 import com.talkto.app.avatar.SpeechEngine
+import com.talkto.app.background.BackgroundLibrary
 import com.talkto.app.data.db.RoomActionLogStore
 import com.talkto.app.data.db.RoomHistoryStore
 import com.talkto.app.data.db.RoomProfileStore
@@ -25,6 +26,7 @@ import com.talkto.app.files.StorageAccess
 import com.talkto.app.pet.PetEngine
 import com.talkto.app.reminders.AndroidReminderScheduler
 import com.talkto.app.security.KeyCipher
+import com.talkto.app.voice.VoiceInput
 import com.talkto.core.agent.AgentConfig
 import com.talkto.core.agent.ClaudeAgent
 import com.talkto.core.agent.OfflineAgent
@@ -102,6 +104,10 @@ class AppContainer(private val context: Context) {
     val profile = ProfileRepository(RoomProfileStore(database.profile()))
     val history = HistoryRepository(RoomHistoryStore(database.history()))
     val temperament = Temperament()
+
+    // ---- voice in, mood backgrounds
+    val voice = VoiceInput(context)
+    val backgrounds = BackgroundLibrary(context, petStore)
 
     // ---- agent
     val confirmations = ConfirmationBroker(onWaitingInBackground = { AgentService.notifyConfirmationPending(context) })

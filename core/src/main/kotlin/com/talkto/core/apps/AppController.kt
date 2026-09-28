@@ -50,6 +50,8 @@ object AppMatcher {
                 latin == qLatin -> 95
                 label.startsWith(q) -> 80
                 latin.startsWith(qLatin) -> 75
+                // Spoken Bulgarian adds the definite article: "камерата", "калкулатора", "часовника".
+                label.length >= 4 && q.startsWith(label) && q.length - label.length <= 3 -> 72
                 label.contains(q) -> 60
                 latin.contains(qLatin) -> 55
                 app.packageName.lowercase().contains(qLatin.replace(" ", "")) -> 40

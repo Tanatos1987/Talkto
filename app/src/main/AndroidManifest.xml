@@ -18,6 +18,12 @@
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
 
+    <!-- Voice commands (speech recognition) -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-feature
+        android:name="android.hardware.microphone"
+        android:required="false" />
+
     <!-- Take a new photo for the avatar -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature
@@ -53,6 +59,9 @@
             <action android:name="android.speech.tts.TTS_SERVICE" />
         </intent>
         <package android:name="moe.shizuku.privileged.api" />
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
         <intent>
             <action android:name="android.intent.action.SET_TIMER" />
         </intent>

@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.talkto.app.avatar.OutfitConfig
+import com.talkto.app.background.BackgroundConfig
 import com.talkto.app.pet.PetState
 import com.talkto.app.security.KeyCipher
 import com.talkto.core.avatar.AvatarStyle
@@ -38,6 +39,10 @@ data class Settings(
     val recordConversations: Boolean = true,
     /** Render the built-in pet in 3D (OpenGL) instead of the flat 2D drawing. */
     val avatar3d: Boolean = true,
+    /** Speech recognition language: AUTO (detect bg/en where supported), BG or EN. */
+    val voiceLanguage: String = "AUTO",
+    /** Hands-free: after Talkto answers a spoken question, it listens again. */
+    val handsFree: Boolean = false,
     /** False only for the placeholder before DataStore delivered its first value. */
     val loaded: Boolean = false,
 ) {
@@ -60,6 +65,8 @@ class SettingsRepository(private val store: DataStore<Preferences>, private val 
             voiceEnabled = p[VOICE] ?: true,
             recordConversations = p[RECORD] ?: true,
             avatar3d = p[AVATAR_3D] ?: true,
+            voiceLanguage = p[VOICE_LANG] ?: "AUTO",
+            handsFree = p[HANDS_FREE] ?: false,
             loaded = true,
         )
     }.stateIn(scope, SharingStarted.Eagerly, Settings())
@@ -76,6 +83,10 @@ class SettingsRepository(private val store: DataStore<Preferences>, private val 
 
     suspend fun setAvatar3d(enabled: Boolean) = store.edit { it[AVATAR_3D] = enabled }
 
+    suspend fun setVoiceLanguage(tag: String) = store.edit { it[VOICE_LANG] = tag }
+
+    suspend fun setHandsFree(enabled: Boolean) = store.edit { it[HANDS_FREE] = enabled }
+
     suspend fun awaitLoaded(): Settings = settings.first { it.loaded }
 
     private companion object {
@@ -84,6 +95,8 @@ class SettingsRepository(private val store: DataStore<Preferences>, private val 
         val VOICE = booleanPreferencesKey("voice_enabled")
         val RECORD = booleanPreferencesKey("record_conversations")
         val AVATAR_3D = booleanPreferencesKey("avatar_3d")
+        val VOICE_LANG = stringPreferencesKey("voice_language")
+        val HANDS_FREE = booleanPreferencesKey("hands_free")
     }
 }
 
@@ -94,6 +107,10 @@ class PetStore(private val store: DataStore<Preferences>) {
     val avatar: Flow<CurrentAvatar?> = store.data.map { p ->
         p[AVATAR]?.let { runCatching { json.decodeFromString(CurrentAvatar.serializer(), it) }.getOrNull() }
     }
+    val background: Flow<BackgroundConfig> = store.data.map { it.decode(BACKGROUND, BackgroundConfig.serializer(), BackgroundConfig()) }
+
+    suspend fun saveBackground(c: BackgroundConfig) = store.edit { it[BACKGROUND] = json.encodeToString(BackgroundConfig.serializer(), c) }
+
     val pet: Flow<PetState?> = store.data.map { p ->
         p[PET]?.let { runCatching { json.decodeFromString(PetState.serializer(), it) }.getOrNull() }
     }
@@ -108,5 +125,6 @@ class PetStore(private val store: DataStore<Preferences>) {
         val OUTFIT = stringPreferencesKey("outfit_json")
         val AVATAR = stringPreferencesKey("avatar_json")
         val PET = stringPreferencesKey("pet_json")
+        val BACKGROUND = stringPreferencesKey("background_json")
     }
 }

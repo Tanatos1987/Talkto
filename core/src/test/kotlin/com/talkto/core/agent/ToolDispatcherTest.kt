@@ -134,6 +134,11 @@ class ToolDispatcherTest {
         assertThat(dispatcher.dispatch("rm_rf", args("{}")).isError).isTrue()
     }
 
+    @Test fun `spoken definite article still finds the app`() {
+        assertThat(AppMatcher.bestMatch("камерата", apps.installed)?.packageName).isEqualTo("com.android.camera")
+        assertThat(AppMatcher.bestMatch("камерите", apps.installed)).isNull() // plural is a different word; no guess
+    }
+
     @Test fun `launch matches cyrillic labels`() = runTest {
         val out = dispatcher.dispatch("launch_app", args("""{"app":"камера"}"""))
         assertThat(out.content).contains("com.android.camera")

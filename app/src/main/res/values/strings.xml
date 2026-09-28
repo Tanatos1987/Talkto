@@ -119,6 +119,32 @@
     <string name="history_you">Ти</string>
     <string name="history_count">%1$d реплики</string>
 
+    <!-- Voice -->
+    <string name="voice_listening">Слушам…</string>
+    <string name="voice_start">Говори</string>
+    <string name="voice_stop">Спри слушането</string>
+    <string name="settings_hands_free">Разговор без ръце</string>
+    <string name="settings_hands_free_note">След като ти отговоря на глас, пак слушам. Кажи нещо или замълчи, за да спра. Бутонът BG/EN сменя езика на разпознаване.</string>
+
+    <!-- Mood backgrounds -->
+    <string name="backgrounds_title">Фонове по настроение</string>
+    <string name="backgrounds_enabled">Фонът следва настроението</string>
+    <string name="backgrounds_note">Плаж, когато съм щастлив, дъжд, когато съм тъжен, буря, когато съм ядосан… Добави свои снимки за всяко настроение или ме остави да подбера от галерията ти. Снимките се анализират само на телефона.</string>
+    <string name="backgrounds_auto">Подбери снимки от галерията</string>
+    <string name="backgrounds_scanning">Разглеждам снимките… %1$d/%2$d</string>
+    <string name="backgrounds_mood_hint">когато съм %1$s</string>
+    <string name="backgrounds_add">Добави</string>
+    <string name="backgrounds_remove">Махни снимката</string>
+    <string name="mood_happy">щастлив</string>
+    <string name="mood_calm">спокоен</string>
+    <string name="mood_love">влюбен</string>
+    <string name="mood_sad">тъжен</string>
+    <string name="mood_angry">ядосан</string>
+    <string name="mood_sleepy">сънлив</string>
+    <string name="mood_thinking">замислен</string>
+    <string name="mood_confused">объркан</string>
+    <string name="mood_surprised">изненадан</string>
+
     <!-- Foreground service -->
     <string name="notif_channel_agent">Задачи на Talkto</string>
     <string name="notif_agent_title">Talkto работи по задача</string>

@@ -19,7 +19,11 @@ import com.talkto.core.avatar.AnimationCommand
 import com.talkto.core.avatar.AvatarStyle
 import com.talkto.core.avatar.Expression
 import com.talkto.core.avatar.Gesture
+import com.talkto.app.background.BackgroundConfig
+import com.talkto.app.voice.VoiceLanguage
+import com.talkto.app.voice.VoiceState
 import com.talkto.core.history.Utterance
+import com.talkto.core.scene.MoodScene
 import com.talkto.core.memory.Habit
 import com.talkto.core.profile.Fact
 import com.talkto.core.touch.Touch
@@ -111,6 +115,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun send(text: String) {
         if (text.isBlank()) return
+        lastInputWasVoice = false
         c.avatar.stopSpeaking()
         AgentService.submit(getApplication(), text)
     }
@@ -188,6 +193,81 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun requestShizuku() = ShizukuBridge.requestPermission()
+
+    // ---------------------------------------------------------------------- voice
+
+    val voice: StateFlow<VoiceState> = c.voice.state
+
+    /** True when the last message was spoken; hands-free mode then listens again after Talkto answers. */
+    @Volatile private var lastInputWasVoice = false
+
+    init {
+        viewModelScope.launch {
+            var wasSpeaking = false
+            c.speech.speaking.collect { speaking ->
+                val finished = wasSpeaking && !speaking
+                wasSpeaking = speaking
+                val s = c.settings.settings.value
+                if (finished && s.handsFree && lastInputWasVoice && !agent.value.busy) startListening()
+            }
+        }
+    }
+
+    init {
+        viewModelScope.launch {
+            c.voice.state.collect { v ->
+                v.error?.let { code ->
+                    val line = when (code) {
+                        android.speech.SpeechRecognizer.ERROR_NETWORK, android.speech.SpeechRecognizer.ERROR_NETWORK_TIMEOUT ->
+                            "Нямам интернет за разпознаване на говор. Изтегли офлайн езиковия пакет в настройките на Google."
+                        android.speech.SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Трябва ми разрешение за микрофона."
+                        android.speech.SpeechRecognizer.ERROR_CLIENT -> "Няма услуга за разпознаване на говор на този телефон."
+                        else -> "Не те чух добре. Опитай пак."
+                    }
+                    _systemLine.value = SystemLine(0, System.currentTimeMillis(), text = line)
+                }
+            }
+        }
+    }
+
+    fun startListening() {
+        c.avatar.stopSpeaking() // barge-in: talking over Talkto interrupts it
+        val lang = runCatching { VoiceLanguage.valueOf(c.settings.settings.value.voiceLanguage) }.getOrDefault(VoiceLanguage.AUTO)
+        c.voice.start(lang) { heard ->
+            lastInputWasVoice = true
+            AgentService.submit(getApplication(), heard)
+        }
+    }
+
+    fun stopListening() = c.voice.stop()
+
+    fun setVoiceLanguage(lang: VoiceLanguage) = viewModelScope.launch { c.settings.setVoiceLanguage(lang.name) }
+
+    fun setHandsFree(enabled: Boolean) = viewModelScope.launch { c.settings.setHandsFree(enabled) }
+
+    // -------------------------------------------------------------- backgrounds
+
+    val backgroundConfig: StateFlow<BackgroundConfig> = c.backgrounds.config.stateIn(viewModelScope, SharingStarted.Eagerly, BackgroundConfig())
+
+    private val _curating = MutableStateFlow<Pair<Int, Int>?>(null)
+    /** (done, total) while photos are being auto-selected from the gallery. */
+    val curating: StateFlow<Pair<Int, Int>?> = _curating.asStateFlow()
+
+    fun setBackgroundsEnabled(enabled: Boolean) = viewModelScope.launch { c.backgrounds.setEnabled(enabled) }
+
+    fun addBackgroundPhotos(scene: MoodScene, uris: List<Uri>) = viewModelScope.launch {
+        runCatching { c.backgrounds.addPhotos(scene, uris) }.onFailure { c.errors.report(it, "backgrounds") }
+    }
+
+    fun removeBackgroundPhoto(scene: MoodScene, path: String) = viewModelScope.launch { c.backgrounds.removePhoto(scene, path) }
+
+    fun autoFillBackgrounds() = viewModelScope.launch {
+        _curating.value = 0 to 0
+        runCatching { c.backgrounds.autoFill { done, total -> _curating.value = done to total } }
+            .onSuccess { n -> _systemLine.value = SystemLine(0, System.currentTimeMillis(), text = if (n > 0) "Подбрах $n снимки от галерията за различните настроения." else "Не намерих подходящи снимки в галерията.") }
+            .onFailure { c.errors.report(it, "backgrounds") }
+        _curating.value = null
+    }
 
     // ------------------------------------------------------- 3D, history, profile
 

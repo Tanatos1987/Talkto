@@ -32,7 +32,8 @@ data class SceneState(
     val outfit: OutfitConfig = OutfitConfig(),
     val stage: LifeStage = LifeStage.ADULT,
     val sleeping: Boolean = false,
-    val background: Int = 0xFFE8F3E1.toInt(),
+    /** Clear colour; alpha 0 lets the mood background behind the view show through. */
+    val background: Int = 0x00000000,
 )
 
 /**
@@ -158,7 +159,7 @@ class Creature3DRenderer : GLSurfaceView.Renderer {
         animate(s, dt, now)
 
         val bg = s.background
-        GLES20.glClearColor(((bg shr 16) and 0xFF) / 255f, ((bg shr 8) and 0xFF) / 255f, (bg and 0xFF) / 255f, 1f)
+        GLES20.glClearColor(((bg shr 16) and 0xFF) / 255f, ((bg shr 8) and 0xFF) / 255f, (bg and 0xFF) / 255f, ((bg ushr 24) and 0xFF) / 255f)
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
         GLES20.glUseProgram(program)
         GLES20.glUniform3fv(uEye, 1, eye, 0)
@@ -398,7 +399,8 @@ class Creature3DRenderer : GLSurfaceView.Renderer {
 
     private fun drawShadow() {
         GLES20.glEnable(GLES20.GL_BLEND)
-        GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA)
+        // Separate alpha blend keeps the shadow visible when the view itself is transparent (TextureView).
+        GLES20.glBlendFuncSeparate(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA, GLES20.GL_ONE, GLES20.GL_ONE_MINUS_SRC_ALPHA)
         GLES20.glDepthMask(false)
         val shrink = 1f - hop.value.coerceAtLeast(0f) * 0.05f
         part(sphere, Mat4.identity(), rgb(0x000000), t = floatArrayOf(0f, -1.02f, 0.1f), sc = floatArrayOf(0.95f * shrink, 0.015f, 0.62f * shrink), shine = 0f, rim = 0f, alpha = 0.16f)

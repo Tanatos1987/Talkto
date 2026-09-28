@@ -132,6 +132,7 @@ dependencies {
 
     // Face landmarks for live portrait
     implementation(libs.mlkit.face.detection)
+    implementation(libs.mlkit.image.labeling)
 
     // Privileged app control (optional at runtime)
     implementation(libs.shizuku.api)

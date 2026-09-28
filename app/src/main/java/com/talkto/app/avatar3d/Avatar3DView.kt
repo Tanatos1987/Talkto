@@ -1,14 +1,11 @@
 package com.talkto.app.avatar3d
 
-import android.opengl.GLSurfaceView
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -21,7 +18,7 @@ import com.talkto.core.touch.TouchReaction
 import kotlinx.coroutines.flow.Flow
 
 /**
- * The 3D pet. A GLSurfaceView (OpenGL ES 2.0) hosted in Compose; the renderer runs on its own GL thread
+ * The 3D pet. A transparent [GLTextureView] (OpenGL ES 2.0) hosted in Compose; the renderer runs on its own GL thread
  * and reads the latest [SceneState] every frame, so recomposition never blocks rendering.
  * Paused with the lifecycle to save battery when Talkto is not on screen.
  */
@@ -31,28 +28,21 @@ fun Avatar3DView(
     outfit: OutfitConfig,
     stage: LifeStage,
     sleeping: Boolean,
-    background: Color,
     reactions: Flow<Pair<TouchReaction, Touch>>,
     lookAt: Pair<Float, Float>?,
     modifier: Modifier = Modifier,
 ) {
     val renderer = remember { Creature3DRenderer() }
-    SideEffect { renderer.scene = SceneState(pose, outfit, stage, sleeping, background.toArgb()) }
+    SideEffect { renderer.scene = SceneState(pose, outfit, stage, sleeping) }
     LaunchedEffect(lookAt) { lookAt?.let { (x, y) -> renderer.lookAt(x, y) } }
     LaunchedEffect(reactions) { reactions.collect { (r, t) -> renderer.react(r, t) } }
 
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    val holder = remember { arrayOfNulls<GLSurfaceView>(1) }
+    val holder = remember { arrayOfNulls<GLTextureView>(1) }
     AndroidView(
         modifier = modifier,
         factory = { ctx ->
-            GLSurfaceView(ctx).apply {
-                setEGLContextClientVersion(2)
-                setEGLConfigChooser(8, 8, 8, 8, 16, 0)
-                preserveEGLContextOnPause = true
-                setRenderer(renderer)
-                renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
-            }.also { holder[0] = it }
+            GLTextureView(ctx, renderer).also { holder[0] = it }
         },
     )
     DisposableEffect(lifecycle) {
