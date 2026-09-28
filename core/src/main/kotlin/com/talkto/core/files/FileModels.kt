@@ -66,3 +66,30 @@ data class DeletionResult(
 
 @Serializable
 enum class OrganizeStrategy { BY_TYPE, BY_MONTH, BY_EXTENSION }
+
+@Serializable
+data class CategoryUsage(val category: String, val files: Int, val bytes: Long)
+
+@Serializable
+data class StorageReport(
+    val root: String,
+    val totalFiles: Int,
+    val totalBytes: Long,
+    val categories: List<CategoryUsage>,
+    val largest: List<FileEntry>,
+    val trashBytes: Long,
+)
+
+@Serializable
+data class DuplicateGroup(val sizeBytes: Long, val paths: List<String>) {
+    /** Space freed by keeping only the first (oldest) copy. */
+    val wastedBytes: Long get() = sizeBytes * (paths.size - 1)
+}
+
+@Serializable
+data class DuplicateReport(
+    val groups: List<DuplicateGroup>,
+    val wastedBytes: Long,
+    val scannedFiles: Int,
+    val truncated: Boolean,
+)

@@ -114,6 +114,7 @@ import com.talkto.core.agent.ConfirmationRequest
 import com.talkto.core.avatar.AvatarStyle
 import com.talkto.core.agent.ToolProtocol
 import com.talkto.core.memory.Habit
+import com.talkto.core.pet.LifeStage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Locale
@@ -135,7 +136,8 @@ fun TamagotchiScreen(vm: MainViewModel) {
 
     val lastReply = agent.messages.lastOrNull { !it.fromUser }
     val bubbleText = when {
-        systemLine != null && (lastReply == null || systemLine!!.atMs > lastReply.atMs) -> stringResource(systemLine!!.res)
+        systemLine != null && (lastReply == null || systemLine!!.atMs > lastReply.atMs) ->
+            stringResource(systemLine!!.res, *systemLine!!.args.toTypedArray())
         else -> lastReply?.text
     }
 
@@ -162,6 +164,7 @@ fun TamagotchiScreen(vm: MainViewModel) {
                 pose = pose,
                 outfit = outfit,
                 sleeping = pet.sleeping,
+                stage = pet.stage,
                 onTap = vm::petTheAvatar,
                 modifier = Modifier.fillMaxSize().padding(top = 72.dp, bottom = 12.dp, start = 24.dp, end = 24.dp),
             )
@@ -247,7 +250,43 @@ private fun StatsRow(pet: PetState) {
         Stat(stringResource(R.string.stat_happiness), pet.happiness, TalktoColors.Mint, Modifier.weight(1f))
         Stat(stringResource(R.string.stat_bond), pet.bond, TalktoColors.Denim, Modifier.weight(1f))
     }
+    LevelRow(pet)
 }
+
+/** Level, life stage and daily streak, with progress to the next level. */
+@Composable
+private fun LevelRow(pet: PetState) {
+    val progress by animateFloatAsState(pet.levelProgress, label = "level")
+    Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            stringResource(R.string.level_short, pet.level, stageLabel(pet.stage)),
+            style = MaterialTheme.typography.labelSmall,
+        )
+        Spacer(Modifier.width(8.dp))
+        LinearProgressIndicator(
+            progress = { progress },
+            modifier = Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(3.dp)),
+            color = Color(0xFF9B5DE5),
+            trackColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.1f),
+            drawStopIndicator = {},
+        )
+        if (pet.streakDays > 1) {
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.streak_short, pet.streakDays), style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+@Composable
+private fun stageLabel(stage: LifeStage) = stringResource(
+    when (stage) {
+        LifeStage.EGG -> R.string.stage_egg
+        LifeStage.BABY -> R.string.stage_baby
+        LifeStage.CHILD -> R.string.stage_child
+        LifeStage.TEEN -> R.string.stage_teen
+        LifeStage.ADULT -> R.string.stage_adult
+    },
+)
 
 @Composable
 private fun Stat(label: String, value: Float, color: Color, modifier: Modifier) {
@@ -727,6 +766,9 @@ private fun toolLabel(tool: String) = when (tool) {
     ToolProtocol.TERMINATE_APP -> stringResource(R.string.tool_terminate_app)
     ToolProtocol.GENERATE_AVATAR -> stringResource(R.string.tool_generate_avatar)
     ToolProtocol.ANIMATE_AVATAR -> stringResource(R.string.tool_animate_avatar)
+    ToolProtocol.DEVICE -> stringResource(R.string.tool_device)
+    ToolProtocol.NOTES -> stringResource(R.string.tool_notes)
+    ToolProtocol.REMINDERS -> stringResource(R.string.tool_reminders)
     else -> tool
 }
 

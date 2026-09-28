@@ -25,7 +25,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-data class SystemLine(@StringRes val res: Int, val atMs: Long)
+data class SystemLine(@StringRes val res: Int, val atMs: Long, val args: List<Any> = emptyList())
 
 data class PermissionState(
     val allFiles: Boolean = false,
@@ -70,13 +70,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             c.errors.notices.collect { n -> say(n.message, n.expression) }
         }
+        viewModelScope.launch {
+            c.pet.levelUps.collect { level -> say(R.string.level_up, Expression.LOVE, level) }
+        }
         refreshPermissions()
     }
 
-    private suspend fun say(@StringRes res: Int, expression: Expression) {
-        _systemLine.value = SystemLine(res, System.currentTimeMillis())
-        c.avatar.play(AnimationCommand(expression, if (expression == Expression.HAPPY) Gesture.BOUNCE else Gesture.SHAKE))
-        c.avatar.speak(getApplication<Application>().getString(res), voice = c.settings.settings.value.voiceEnabled)
+    private suspend fun say(@StringRes res: Int, expression: Expression, vararg args: Any) {
+        _systemLine.value = SystemLine(res, System.currentTimeMillis(), args.toList())
+        val gesture = when (expression) {
+            Expression.HAPPY -> Gesture.BOUNCE
+            Expression.LOVE -> Gesture.SPIN
+            else -> Gesture.SHAKE
+        }
+        c.avatar.play(AnimationCommand(expression, gesture))
+        c.avatar.speak(getApplication<Application>().getString(res, *args), voice = c.settings.settings.value.voiceEnabled)
     }
 
     fun onVisible(visible: Boolean) {

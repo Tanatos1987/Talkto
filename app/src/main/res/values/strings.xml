@@ -87,6 +87,21 @@
     <string name="notif_confirm_title">Talkto чака потвърждение</string>
     <string name="notif_confirm_body">Докосни, за да прегледаш действието.</string>
 
+    <!-- Reminders & progression -->
+    <string name="notif_channel_reminders">Напомняния</string>
+    <string name="notif_reminder_title">Talkto ти напомня</string>
+    <string name="level_short">Ниво %1$d · %2$s</string>
+    <string name="streak_short">%1$d дни подред</string>
+    <string name="level_up">Ура! Вече съм на ниво %1$d!</string>
+    <string name="tool_device">телефона</string>
+    <string name="tool_notes">бележки</string>
+    <string name="tool_reminders">напомняния</string>
+    <string name="stage_egg">Яйце</string>
+    <string name="stage_baby">Бебе</string>
+    <string name="stage_child">Дете</string>
+    <string name="stage_teen">Тийнейджър</string>
+    <string name="stage_adult">Възрастен</string>
+
     <!-- Foreground service -->
     <string name="notif_channel_agent">Задачи на Talkto</string>
     <string name="notif_agent_title">Talkto работи по задача</string>

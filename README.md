@@ -23,6 +23,7 @@ Talkto/
 │       ├── main/kotlin/com/talkto/core/
 │       │   ├── agent/
 │       │   │   ├── ClaudeAgent.kt         # tool-use цикъл, prompt caching, fallback, rollback
+│       │   │   ├── OfflineAgent.kt        # режим без API ключ: таблица от команди
 │       │   │   ├── ToolProtocol.kt        # 5-те инструмента със strict JSON schema
 │       │   │   └── ToolDispatcher.kt      # изпълнение, валидиране, confirmation gate, памет
 │       │   ├── files/
@@ -38,8 +39,12 @@ Talkto/
 │       │   │   ├── LipSync.kt             # текст -> виземи (кирилица и латиница)
 │       │   │   └── AvatarModels.kt        # стилове, FaceAnchors, изражения, жестове
 │       │   ├── apps/AppController.kt      # интерфейс + размито търсене на приложения
+│       │   ├── tools/                     # Calculator, UnitConverter, TimeParser, FunPack
+│       │   ├── notes/, reminders/         # хранилища + логика (Room ги имплементира)
+│       │   ├── device/DeviceActions.kt    # батерия, място, фенерче, звук, настройки, таймер
+│       │   ├── pet/Progression.kt         # опит, нива, етапи, серия от дни
 │       │   └── error/                     # TalktoError, ErrorMapper
-│       └── test/kotlin/...                # 74 unit теста
+│       └── test/kotlin/...                # 112 unit теста
 │
 └── app/
     ├── build.gradle.kts
@@ -63,7 +68,9 @@ Talkto/
         │   │   │   ├── AndroidAppController.kt
         │   │   │   ├── TalktoAccessibilityService.kt  # swipe-out от Recents
         │   │   │   └── PrivilegedShell.kt     # Shizuku + root force-stop
-        │   │   ├── data/db/TalktoDatabase.kt  # Room: action_log, dismissed_habit
+        │   │   ├── data/db/TalktoDatabase.kt  # Room v2: action_log, dismissed_habit, note, reminder
+        │   │   ├── device/AndroidDeviceActions.kt
+        │   │   ├── reminders/ReminderDelivery.kt  # AlarmManager, известия, повторно насрочване след рестарт
         │   │   ├── data/prefs/Stores.kt       # DataStore: настройки, аватар, любимец
         │   │   ├── error/GlobalErrorHandler.kt
         │   │   ├── files/StorageAccess.kt     # All Files Access
@@ -89,8 +96,16 @@ Talkto/
 | Прости команди: „отвори камера“, „затвори spotify“, „намери снимки в изтегляния“, „премести a.pdf в документи“, „изтрий …“, „подреди изтегляния по месец“ | да | да | да |
 | Защита на файловете, dry-run, диалог за потвърждение, кошче | да | да | да |
 | Запис и показване на навиците („какво си научил“) | да | да | да |
+| Бележки, напомняния (и след рестарт на телефона), таймер, аларма | да | да | да |
+| Батерия, свободно място, RAM, фенерче, звук, бързи настройки (Wi-Fi, Bluetooth, екран…) | да | да | да |
+| Почистване: какво заема място, дубликати по съдържание, празни папки, стари APK, последни изтегляния | да | да | да |
+| Калкулатор („15% от 240“), конвертор („5 км в мили“, „100 f в c“) | да | да | да |
+| Игри: „познай числото“, камък-ножица-хартия, зар, ези-тура, вицове, факти | да | да | да |
+| Нива, етапи (яйце, бебе, дете, тийнейджър, възрастен), серия от дни | да | да | да |
 | Свободен разговор, задачи от няколко стъпки, предложения за автоматизация | | да | да |
 | Аватар от снимка | | | да |
+
+Същите възможности Claude получава като инструменти (`device`, `notes`, `reminders` и новите операции на `manage_file`), така че с ключ те работят и в свободен разговор.
 
 Офлайн режимът е `OfflineAgent` в `:core`: детерминиран разпознавач на команди на български и английски, който вика същия `ToolDispatcher` като Claude. Затова правилата за безопасност и паметта работят еднакво и в двата режима. Кажете „помощ“ за пълния списък команди. Когато има ключ, но няма интернет, команда, която офлайн разпознавачът разбира, пак се изпълнява локално. В заглавната лента има значка „Офлайн режим“ / „Claude“, а при докосване се отварят Настройки.
 
@@ -261,7 +276,7 @@ Release build-ът е с R8 (`isMinifyEnabled`, `isShrinkResources`). Прави
 
 ## Какво да знаете
 
-- **Проверено дотук:** `:core` (74 теста), Robolectric тестовете на `:app`, lint и `assembleDebug` минават в CI. Instrumented тестовете и поведението на реално устройство не са проверени.
+- **Проверено дотук:** `:core` (112 теста), Robolectric тестовете на `:app`, lint и `assembleDebug` минават в CI. Instrumented тестовете и поведението на реално устройство не са проверени.
 - **Google Play:** `MANAGE_EXTERNAL_STORAGE`, `QUERY_ALL_PACKAGES` и услуга за достъпност, която затваря други приложения, минават Play review само с добра обосновка. Проектът е направен за sideload и вътрешна дистрибуция.
 - **API ключове:** пазят се криптирани с Android Keystore и отиват само до съответния API. Ако ще разпространявате приложението на други хора, сложете собствен backend proxy пред Claude и Stability, вместо всеки потребител да въвежда свой ключ.
 - **Accessibility swipe** зависи от launcher-а: работи на Pixel Launcher, One UI и MIUI, където картите в Recents носят името на приложението. На launcher, който не ги показва на услугите за достъпност, `auto` минава към следващия метод.

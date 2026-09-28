@@ -13,8 +13,13 @@ object ToolProtocol {
     const val TERMINATE_APP = "terminate_app"
     const val GENERATE_AVATAR = "generate_avatar_from_image"
     const val ANIMATE_AVATAR = "animate_avatar"
+    const val DEVICE = "device"
+    const val NOTES = "notes"
+    const val REMINDERS = "reminders"
 
-    val all: List<Tool> by lazy { listOf(manageFile(), launchApp(), terminateApp(), generateAvatar(), animateAvatar()) }
+    val all: List<Tool> by lazy {
+        listOf(manageFile(), launchApp(), terminateApp(), generateAvatar(), animateAvatar(), device(), notes(), reminders())
+    }
 
     private fun manageFile() = tool(
         name = MANAGE_FILE,
@@ -34,10 +39,18 @@ object ToolProtocol {
               again with the same paths and confirmation_token. The app shows its own confirmation dialog as well.
               Deleted items go to the Talkto trash unless permanent=true.
             - empty_trash: permanently clear the Talkto trash.
+            - storage_report: what takes space under path (per category, largest files, trash size).
+            - find_duplicates: byte-identical files under path; in each group the first path is the oldest copy to keep.
+              To remove the extras, run delete (two-step as always) with the other paths.
+            - find_empty_dirs: empty folders under path.
             System folders and app-private data (Android/data, Android/obb) are protected and will be refused.
         """.trimIndent(),
         properties = mapOf(
-            "operation" to enumProp("Which operation to run.", "list", "search", "copy", "move", "rename", "mkdir", "organize", "delete", "empty_trash"),
+            "operation" to enumProp(
+                "Which operation to run.",
+                "list", "search", "copy", "move", "rename", "mkdir", "organize", "delete", "empty_trash",
+                "storage_report", "find_duplicates", "find_empty_dirs",
+            ),
             "path" to strProp("Source file/folder, or the folder to list/search/organize."),
             "paths" to mapOf("type" to "array", "items" to mapOf("type" to "string"), "description" to "Targets for delete. Use instead of path for several items."),
             "destination" to strProp("Destination folder or full destination path for copy/move."),
@@ -104,6 +117,53 @@ object ToolProtocol {
             "hold_ms" to intProp("How long to hold the expression, 500-10000 ms. Default 2500."),
         ),
         required = listOf("expression"),
+    )
+
+    private fun device() = tool(
+        name = DEVICE,
+        description = "Phone status and quick controls: battery, free storage, RAM, flashlight, media volume, open a settings panel " +
+            "(Wi-Fi, Bluetooth, display...), or hand a timer/alarm to the system clock app. Apps cannot toggle Wi-Fi or Bluetooth " +
+            "directly on modern Android; open_settings shows the panel so the user can.",
+        properties = mapOf(
+            "action" to enumProp(
+                "What to do.",
+                "battery", "storage", "memory", "torch_on", "torch_off", "volume_up", "volume_down", "volume_mute", "volume_set",
+                "open_settings", "set_timer", "set_alarm",
+            ),
+            "percent" to intProp("volume_set: 0-100."),
+            "panel" to enumProp("open_settings: which panel.", "wifi", "internet", "bluetooth", "volume", "display", "battery", "location", "nfc", "sound", "app_info"),
+            "seconds" to intProp("set_timer: duration in seconds."),
+            "hour" to intProp("set_alarm: 0-23."),
+            "minute" to intProp("set_alarm: 0-59."),
+            "label" to strProp("Optional label for a timer or alarm."),
+        ),
+        required = listOf("action"),
+    )
+
+    private fun notes() = tool(
+        name = NOTES,
+        description = "The user's private notes, stored only on this phone. list returns newest first with ids.",
+        properties = mapOf(
+            "action" to enumProp("What to do.", "add", "list", "search", "delete"),
+            "text" to strProp("add: the note text."),
+            "query" to strProp("search: words to look for."),
+            "id" to intProp("delete: note id from list/search."),
+        ),
+        required = listOf("action"),
+    )
+
+    private fun reminders() = tool(
+        name = REMINDERS,
+        description = "Reminders delivered as notifications at a set time, even if Talkto is closed. Give either in_minutes or at " +
+            "(local date-time, ISO format like 2026-09-28T18:30, in the time zone from <live_context>).",
+        properties = mapOf(
+            "action" to enumProp("What to do.", "add", "list", "cancel"),
+            "text" to strProp("add: what to remind about."),
+            "in_minutes" to intProp("add: minutes from now."),
+            "at" to strProp("add: local date-time, e.g. 2026-09-28T18:30."),
+            "id" to intProp("cancel: reminder id from list."),
+        ),
+        required = listOf("action"),
     )
 
     // ----------------------------------------------------------------- builders

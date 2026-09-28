@@ -15,6 +15,17 @@ import com.talkto.core.memory.ActionRecord
 import com.talkto.core.memory.ActionType
 import com.talkto.core.memory.InMemoryActionLogStore
 import com.talkto.core.memory.MemoryRepository
+import com.talkto.core.device.BatteryInfo
+import com.talkto.core.device.DeviceActions
+import com.talkto.core.device.MemoryInfo
+import com.talkto.core.device.SettingsPanel
+import com.talkto.core.device.StorageInfo
+import com.talkto.core.notes.InMemoryNoteStore
+import com.talkto.core.notes.InMemoryReminderStore
+import com.talkto.core.notes.NotesRepository
+import com.talkto.core.notes.RecordingScheduler
+import com.talkto.core.reminders.RemindersRepository
+import kotlin.random.Random
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Rule
@@ -64,7 +75,25 @@ class OfflineAgentTest {
         override fun sleep() { petLog += "sleep" }
         override fun wake() { petLog += "wake" }
         override fun status() = "Чувствам се чудесно."
+        override fun progress() = "Ниво 3."
+        override fun gameWon() { petLog += "won" }
     }
+
+    private val deviceLog = mutableListOf<String>()
+    private val device = object : DeviceActions {
+        override fun battery() = BatteryInfo(15, charging = false)
+        override fun storage() = StorageInfo(totalBytes = 64L shl 30, freeBytes = 10L shl 30)
+        override fun memory() = MemoryInfo(8L shl 30, 3L shl 30, low = false)
+        override fun setTorch(on: Boolean) = true.also { deviceLog += "torch:$on" }
+        override fun setVolume(percent: Int?, step: Int) = (percent ?: (50 + step * 10)).also { deviceLog += "volume:$it" }
+        override fun mute() = 0.also { deviceLog += "mute" }
+        override fun openSettings(panel: SettingsPanel) = true.also { deviceLog += "panel:$panel" }
+        override fun setTimer(seconds: Int, label: String?) = true.also { deviceLog += "timer:$seconds" }
+        override fun setAlarm(hour: Int, minute: Int, label: String?) = true.also { deviceLog += "alarm:$hour:$minute" }
+    }
+    private val reminderStore = InMemoryReminderStore()
+    // Monday 2026-09-28 14:10 UTC
+    private val nowMs = 1_790_604_600_000L
 
     @Before fun setUp() {
         root = tmp.newFolder("sd").toPath().toRealPath()
@@ -76,8 +105,13 @@ class OfflineAgentTest {
             files = FileSystemManager(PathGuard(listOf(root))),
             apps = apps, avatar = avatar, memory = memory,
             gate = { confirmations += it; approve },
+            clock = { nowMs },
+            device = device,
+            notes = NotesRepository(InMemoryNoteStore(), clock = { System.nanoTime() }),
+            reminders = RemindersRepository(reminderStore, RecordingScheduler(), clock = { nowMs }),
+            zone = { ZoneOffset.UTC },
         )
-        agent = OfflineAgent(dispatcher, memory, pet, zone = { ZoneOffset.UTC })
+        agent = OfflineAgent(dispatcher, memory, pet, zone = { ZoneOffset.UTC }, clock = { nowMs }, random = Random(42))
     }
 
     private suspend fun say(text: String) = agent.send(text) {}
@@ -161,5 +195,98 @@ class OfflineAgentTest {
 
     @Test fun `help lists commands`() = runTest {
         assertThat(say("помощ").text).contains("подреди <папка>")
+    }
+
+    // ------------------------------------------------------------ new offline skills
+
+    @Test fun `calculator and conversions`() = runTest {
+        assertThat(say("колко е 15% от 240").text).isEqualTo("36.")
+        assertThat(say("12*(3+4)").text).isEqualTo("84.")
+        assertThat(say("5 км в мили").text).isEqualTo("5 км = 3,106855961 мили.")
+    }
+
+    @Test fun `notes round trip`() = runTest {
+        assertThat(say("запиши купи мляко").text).isEqualTo("Записах: „купи мляко“.")
+        say("запиши паролата е на рутера")
+        assertThat(say("бележки").text).isEqualTo("1. паролата е на рутера\n2. купи мляко")
+        assertThat(say("намери в бележките мляко").text).contains("купи мляко")
+        assertThat(say("изтрий бележка 1").text).isEqualTo("Изтрих бележка 1.")
+        assertThat(say("бележки").text).isEqualTo("1. купи мляко")
+    }
+
+    @Test fun `reminders are parsed and scheduled`() = runTest {
+        assertThat(say("напомни ми в 18:30 да купя хляб").text).isEqualTo("Добре, ще ти напомня днес в 18:30: „купя хляб“.")
+        assertThat(say("напомни ми да звънна на мама след 20 минути").text).isEqualTo("Добре, ще ти напомня днес в 14:30: „звънна на мама“.")
+        assertThat(say("напомняния").text).isEqualTo("1. днес в 14:30: звънна на мама\n2. днес в 18:30: купя хляб")
+        assertThat(say("отмени напомняне 1").text).isEqualTo("Отмених напомняне 1.")
+        assertThat(reminderStore.pending().single().text).isEqualTo("купя хляб")
+        assertThat(say("напомни ми нещо").text).startsWith("Кога да ти напомня?")
+    }
+
+    @Test fun `timer and alarm go to the clock app`() = runTest {
+        assertThat(say("таймер 1 час и 5 минути").text).isEqualTo("Пуснах таймер за 1 ч 5 мин.")
+        assertThat(say("аларма 6:45").text).isEqualTo("Будилникът е за 06:45.")
+        assertThat(deviceLog).containsExactly("timer:3900", "alarm:6:45").inOrder()
+    }
+
+    @Test fun `phone controls`() = runTest {
+        assertThat(say("батерия").text).isEqualTo("Батерията е на 15%. Време е за зарядно!")
+        assertThat(say("колко място имам").text).startsWith("Свободни са 10,0 GB от 64,0 GB.")
+        say("фенерче"); say("угаси фенерчето"); say("по-силно"); say("звук 30%"); say("тихо")
+        assertThat(say("отвори wifi").text).isEqualTo("Отварям настройките.")
+        assertThat(say("настройки за bluetooth").text).isEqualTo("Отварям настройките.")
+        assertThat(deviceLog).containsExactly(
+            "torch:true", "torch:false", "volume:60", "volume:30", "mute", "panel:WIFI", "panel:BLUETOOTH",
+        ).inOrder()
+        assertThat(launched).isEmpty() // "отвори wifi" is a settings panel, not an app
+    }
+
+    @Test fun `duplicates are found and extras deleted after confirmation`() = runTest {
+        val bytes = ByteArray(20_000) { (it % 7).toByte() }
+        Files.write(root.resolve("Download/a.bin"), bytes)
+        Files.write(root.resolve("Documents/a copy.bin"), bytes)
+        assertThat(say("дубликати").text).startsWith("Намерих 1 групи еднакви файлове")
+        assertThat(say("изтрий дубликатите").text).startsWith("Преместих 1 дубликата в кошчето")
+        assertThat(confirmations.last()).isInstanceOf(ConfirmationRequest.Delete::class.java)
+        val remaining = listOf("Download/a.bin", "Documents/a copy.bin").count { Files.exists(root.resolve(it)) }
+        assertThat(remaining).isEqualTo(1)
+    }
+
+    @Test fun `cleanup summarises what can be freed`() = runTest {
+        Files.write(root.resolve("Download/old.apk"), ByteArray(10))
+        Files.createDirectories(root.resolve("Download/empty"))
+        val r = say("почисти").text
+        assertThat(r).contains("APK")
+        assertThat(r).contains("празни папки")
+    }
+
+    @Test fun `guess the number game`() = runTest {
+        assertThat(say("познай числото").text).startsWith("Намислих си число")
+        var lo = 1
+        var hi = 100
+        var reply = ""
+        repeat(10) {
+            if (reply.startsWith("Позна")) return@repeat
+            val mid = (lo + hi) / 2
+            reply = say(mid.toString()).text
+            if (reply.startsWith("Нагоре")) lo = mid + 1 else if (reply.startsWith("Надолу")) hi = mid - 1
+        }
+        assertThat(reply).startsWith("Позна!")
+        assertThat(petLog).contains("won")
+        assertThat(agent.recognizes("50")).isFalse() // game over, bare numbers mean nothing again
+    }
+
+    @Test fun `fun commands`() = runTest {
+        assertThat(say("хвърли зар").text).matches("Падна се [1-6]\\.")
+        assertThat(say("ези или тура").text).isAnyOf("Ези!", "Тура!")
+        assertThat(say("случайно число от 1 до 3").text).isAnyOf("Избрах 1.", "Избрах 2.", "Избрах 3.")
+        assertThat(say("виц").text).isNotEmpty()
+        assertThat(say("камък").text).startsWith("Аз избрах")
+        assertThat(say("ниво").text).isEqualTo("Ниво 3.")
+    }
+
+    @Test fun `time and greeting use the injected clock`() = runTest {
+        assertThat(say("колко е часът").text).isEqualTo("Часът е 14:10, понеделник, 28 септември.")
+        assertThat(say("здравей").text).startsWith("Добър ден!")
     }
 }

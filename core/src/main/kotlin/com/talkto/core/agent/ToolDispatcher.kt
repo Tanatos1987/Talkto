@@ -7,6 +7,8 @@ import com.talkto.core.avatar.AvatarStyle
 import com.talkto.core.avatar.Expression
 import com.talkto.core.avatar.GeneratedAvatar
 import com.talkto.core.avatar.Gesture
+import com.talkto.core.device.DeviceActions
+import com.talkto.core.device.SettingsPanel
 import com.talkto.core.error.ErrorMapper
 import com.talkto.core.error.TalktoError
 import com.talkto.core.files.DeletionPlan
@@ -16,6 +18,8 @@ import com.talkto.core.files.SearchQuery
 import com.talkto.core.memory.ActionRecord
 import com.talkto.core.memory.ActionType
 import com.talkto.core.memory.MemoryRepository
+import com.talkto.core.notes.NotesRepository
+import com.talkto.core.reminders.RemindersRepository
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -27,6 +31,8 @@ import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import java.io.File
+import java.time.LocalDateTime
+import java.time.ZoneId
 
 /** Avatar side-effects the agent may trigger. Implemented by the Android `AvatarEngine`. */
 interface AvatarActions {
@@ -79,6 +85,10 @@ class ToolDispatcher(
     private val gate: ConfirmationGate,
     private val clock: () -> Long = System::currentTimeMillis,
     private val onError: (TalktoError) -> Unit = {},
+    private val device: DeviceActions? = null,
+    private val notes: NotesRepository? = null,
+    private val reminders: RemindersRepository? = null,
+    private val zone: () -> ZoneId = ZoneId::systemDefault,
 ) {
     private val json = Json { encodeDefaults = true; explicitNulls = false }
 
@@ -89,6 +99,9 @@ class ToolDispatcher(
             ToolProtocol.TERMINATE_APP -> terminateApp(input)
             ToolProtocol.GENERATE_AVATAR -> generateAvatar(input)
             ToolProtocol.ANIMATE_AVATAR -> animateAvatar(input)
+            ToolProtocol.DEVICE -> device(input)
+            ToolProtocol.NOTES -> notes(input)
+            ToolProtocol.REMINDERS -> reminders(input)
             else -> throw TalktoError.InvalidInput("Unknown tool '$name'")
         }
         ToolOutcome(result.toString(), isError = false)
@@ -162,6 +175,19 @@ class ToolDispatcher(
                 confirmOrThrow(ConfirmationRequest.EmptyTrash)
                 buildJsonObject { put("removed_batches", files.emptyTrash()) }
             }
+            "storage_report" -> json.encodeToJsonElement(files.storageReport(a.str("path") ?: "~"))
+            "find_duplicates" -> {
+                val r = files.findDuplicates(a.str("path") ?: "~")
+                // Cap the payload: a phone can have hundreds of groups; totals stay exact.
+                buildJsonObject {
+                    put("groups_found", r.groups.size)
+                    put("wasted_bytes", r.wastedBytes)
+                    put("scanned_files", r.scannedFiles)
+                    put("truncated", r.truncated)
+                    put("groups", json.encodeToJsonElement(r.groups.take(40)))
+                }
+            }
+            "find_empty_dirs" -> json.encodeToJsonElement(files.findEmptyDirectories(a.str("path") ?: "~"))
             null -> throw TalktoError.InvalidInput("operation is required")
             else -> throw TalktoError.InvalidInput("Unknown operation '$op'")
         }
@@ -258,6 +284,80 @@ class ToolDispatcher(
         )
         avatar.animate(cmd)
         return buildJsonObject { put("ok", true) }
+    }
+
+    // ------------------------------------------------------ device, notes, reminders
+
+    private fun device(a: JsonObject): JsonElement {
+        val d = device ?: throw TalktoError.CapabilityUnavailable("Device controls are not available")
+        return when (val action = a.req("action")) {
+            "battery" -> json.encodeToJsonElement(d.battery())
+            "storage" -> json.encodeToJsonElement(d.storage())
+            "memory" -> json.encodeToJsonElement(d.memory())
+            "torch_on", "torch_off" -> {
+                if (!d.setTorch(action == "torch_on")) throw TalktoError.CapabilityUnavailable("This phone has no flashlight")
+                buildJsonObject { put("torch", action == "torch_on") }
+            }
+            "volume_up" -> buildJsonObject { put("volume_percent", d.setVolume(step = 1)) }
+            "volume_down" -> buildJsonObject { put("volume_percent", d.setVolume(step = -1)) }
+            "volume_mute" -> buildJsonObject { put("volume_percent", d.mute()) }
+            "volume_set" -> {
+                val p = (a.long("percent") ?: throw TalktoError.InvalidInput("percent is required")).toInt().coerceIn(0, 100)
+                buildJsonObject { put("volume_percent", d.setVolume(percent = p)) }
+            }
+            "open_settings" -> {
+                val panel = runCatching { SettingsPanel.valueOf(a.req("panel").uppercase()) }
+                    .getOrElse { throw TalktoError.InvalidInput("Unknown panel '${a.str("panel")}'") }
+                if (!d.openSettings(panel)) throw TalktoError.CapabilityUnavailable("This settings screen is not available on the phone")
+                buildJsonObject { put("opened", panel.name.lowercase()) }
+            }
+            "set_timer" -> {
+                val sec = (a.long("seconds") ?: throw TalktoError.InvalidInput("seconds is required")).toInt()
+                if (sec !in 1..86_399) throw TalktoError.InvalidInput("Timer must be between 1 second and 24 hours")
+                if (!d.setTimer(sec, a.str("label"))) throw TalktoError.CapabilityUnavailable("No clock app accepts timers")
+                buildJsonObject { put("timer_seconds", sec) }
+            }
+            "set_alarm" -> {
+                val h = (a.long("hour") ?: throw TalktoError.InvalidInput("hour is required")).toInt()
+                val m = (a.long("minute") ?: 0L).toInt()
+                if (h !in 0..23 || m !in 0..59) throw TalktoError.InvalidInput("Invalid time $h:$m")
+                if (!d.setAlarm(h, m, a.str("label"))) throw TalktoError.CapabilityUnavailable("No clock app accepts alarms")
+                buildJsonObject { put("alarm", String.format(java.util.Locale.ROOT, "%02d:%02d", h, m)) }
+            }
+            else -> throw TalktoError.InvalidInput("Unknown device action '$action'")
+        }
+    }
+
+    private suspend fun notes(a: JsonObject): JsonElement {
+        val n = notes ?: throw TalktoError.CapabilityUnavailable("Notes are not available")
+        return when (val action = a.req("action")) {
+            "add" -> json.encodeToJsonElement(n.add(a.req("text")))
+            "list" -> json.encodeToJsonElement(n.list().take(100))
+            "search" -> json.encodeToJsonElement(n.search(a.req("query")).take(100))
+            "delete" -> {
+                n.delete(a.long("id") ?: throw TalktoError.InvalidInput("id is required"))
+                buildJsonObject { put("deleted", true) }
+            }
+            else -> throw TalktoError.InvalidInput("Unknown notes action '$action'")
+        }
+    }
+
+    private suspend fun reminders(a: JsonObject): JsonElement {
+        val r = reminders ?: throw TalktoError.CapabilityUnavailable("Reminders are not available")
+        return when (val action = a.req("action")) {
+            "add" -> {
+                val at = a.long("in_minutes")?.let { clock() + it * 60_000L }
+                    ?: a.str("at")?.let { iso ->
+                        runCatching { LocalDateTime.parse(iso).atZone(zone()).toInstant().toEpochMilli() }
+                            .getOrElse { throw TalktoError.InvalidInput("'at' must look like 2026-09-28T18:30") }
+                    }
+                    ?: throw TalktoError.InvalidInput("Give in_minutes or at")
+                json.encodeToJsonElement(r.add(a.req("text"), at))
+            }
+            "list" -> json.encodeToJsonElement(r.pending())
+            "cancel" -> json.encodeToJsonElement(r.cancel(a.long("id") ?: throw TalktoError.InvalidInput("id is required")))
+            else -> throw TalktoError.InvalidInput("Unknown reminders action '$action'")
+        }
     }
 
     // ---------------------------------------------------------------- helpers

@@ -161,6 +161,7 @@ class ToolDispatcherTest {
     @Test fun `tool schemas are strict objects`() {
         assertThat(ToolProtocol.all.map { it.name() }).containsExactly(
             "manage_file", "launch_app", "terminate_app", "generate_avatar_from_image", "animate_avatar",
+            "device", "notes", "reminders",
         )
         ToolProtocol.all.forEach { t ->
             assertThat(t.strict().orElse(false)).isTrue()

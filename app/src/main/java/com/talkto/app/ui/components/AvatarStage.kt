@@ -56,6 +56,7 @@ import com.talkto.app.avatar.OutfitConfig
 import com.talkto.core.avatar.Expression
 import com.talkto.core.avatar.FaceAnchors
 import com.talkto.core.avatar.Gesture
+import com.talkto.core.pet.LifeStage
 import kotlinx.coroutines.delay
 import kotlin.math.PI
 import kotlin.math.abs
@@ -79,6 +80,7 @@ fun AvatarStage(
     outfit: OutfitConfig,
     sleeping: Boolean,
     onTap: () -> Unit,
+    stage: LifeStage = LifeStage.ADULT,
     modifier: Modifier = Modifier,
     description: String = "Talkto",
 ) {
@@ -137,7 +139,8 @@ fun AvatarStage(
             },
     ) {
         Canvas(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { onTap() } }) {
-            val frame = fitFrame(size, visual.bitmap)
+            // The built-in creature grows with its life stage; every layer uses the same scaled frame.
+            val frame = fitFrame(size, visual.bitmap).let { if (image == null) it.forStage(stage) else it }
             val a = visual.anchors
             if (image != null) {
                 drawImage(
@@ -148,7 +151,7 @@ fun AvatarStage(
                     dstSize = IntSize(frame.width.toInt(), frame.height.toInt()),
                 )
             } else {
-                drawCreature(frame, pose.expression)
+                drawCreature(frame, pose.expression, stage)
             }
 
             val lidClosure = when {
@@ -220,7 +223,37 @@ private fun samplePalette(bitmap: Bitmap?, a: FaceAnchors): Palette {
 
 // ------------------------------------------------------------------------ creature
 
-private fun DrawScope.drawCreature(f: Frame, expression: Expression) {
+/** Shrinks around the bottom centre, so a young creature stands on the same spot, just smaller. */
+private fun Frame.forStage(stage: LifeStage): Frame {
+    val scale = when (stage) {
+        LifeStage.EGG -> 0.62f
+        LifeStage.BABY -> 0.72f
+        LifeStage.CHILD -> 0.84f
+        LifeStage.TEEN -> 0.93f
+        LifeStage.ADULT -> 1f
+    }
+    return Frame(left + width * (1 - scale) / 2, top + height * (1 - scale), width * scale, height * scale)
+}
+
+/** An egg still has its shell around the lower half. */
+private fun DrawScope.drawCreature(f: Frame, expression: Expression, stage: LifeStage) {
+    drawCreatureBody(f, expression)
+    if (stage == LifeStage.EGG) {
+        val shell = Path().apply {
+            moveTo(f.x(0.12f), f.y(0.66f))
+            listOf(0.22f, 0.32f, 0.42f, 0.52f, 0.62f, 0.72f, 0.82f).forEachIndexed { i, x ->
+                lineTo(f.x(x), f.y(if (i % 2 == 0) 0.58f else 0.68f))
+            }
+            lineTo(f.x(0.88f), f.y(0.66f))
+            cubicTo(f.x(0.9f), f.y(0.95f), f.x(0.1f), f.y(0.95f), f.x(0.12f), f.y(0.66f))
+            close()
+        }
+        drawPath(shell, Color(0xFFFFF4DC))
+        drawPath(shell, INK.copy(alpha = 0.35f), style = Stroke(width = f.width * 0.012f))
+    }
+}
+
+private fun DrawScope.drawCreatureBody(f: Frame, expression: Expression) {
     val body = Path().apply {
         moveTo(f.x(0.5f), f.y(0.2f))
         cubicTo(f.x(0.86f), f.y(0.2f), f.x(0.9f), f.y(0.6f), f.x(0.84f), f.y(0.8f))

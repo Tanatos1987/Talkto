@@ -11,13 +11,17 @@ import com.talkto.app.avatar.AvatarEngine
 import com.talkto.app.avatar.FaceAnchorDetector
 import com.talkto.app.avatar.SpeechEngine
 import com.talkto.app.data.db.RoomActionLogStore
+import com.talkto.app.data.db.RoomNoteStore
+import com.talkto.app.data.db.RoomReminderStore
 import com.talkto.app.data.db.TalktoDatabase
 import com.talkto.app.data.prefs.PetStore
 import com.talkto.app.data.prefs.SettingsRepository
 import com.talkto.app.data.prefs.talktoDataStore
+import com.talkto.app.device.AndroidDeviceActions
 import com.talkto.app.error.GlobalErrorHandler
 import com.talkto.app.files.StorageAccess
 import com.talkto.app.pet.PetEngine
+import com.talkto.app.reminders.AndroidReminderScheduler
 import com.talkto.app.security.KeyCipher
 import com.talkto.core.agent.AgentConfig
 import com.talkto.core.agent.ClaudeAgent
@@ -30,6 +34,8 @@ import com.talkto.core.avatar.StabilityImageApi
 import com.talkto.core.files.FileSystemManager
 import com.talkto.core.files.PathGuard
 import com.talkto.core.memory.MemoryRepository
+import com.talkto.core.notes.NotesRepository
+import com.talkto.core.reminders.RemindersRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -81,8 +87,11 @@ class AppContainer(private val context: Context) {
     val speech = SpeechEngine(context, appScope)
     val avatar = AvatarEngine(context, generator, FaceAnchorDetector(), speech, petStore, pathGuard, appScope)
 
-    // ---- apps
+    // ---- apps, phone, notes, reminders (all work without an API key)
     val apps = AndroidAppController(context)
+    val device = AndroidDeviceActions(context)
+    val notes = NotesRepository(RoomNoteStore(database.notes()))
+    val reminders = RemindersRepository(RoomReminderStore(database.reminders()), AndroidReminderScheduler(context))
 
     // ---- agent
     val confirmations = ConfirmationBroker(onWaitingInBackground = { AgentService.notifyConfirmationPending(context) })
@@ -94,6 +103,9 @@ class AppContainer(private val context: Context) {
         memory = memory,
         gate = confirmations,
         onError = { /* surfaced to the user through Claude's reply; the avatar reacts in AgentSession */ },
+        device = device,
+        notes = notes,
+        reminders = reminders,
     )
 
     private val clientHolder = AnthropicClientHolder(settings)
@@ -116,6 +128,8 @@ class AppContainer(private val context: Context) {
             override fun sleep() = pet.setSleeping(true)
             override fun wake() = pet.setSleeping(false)
             override fun status() = pet.state.value.feeling()
+            override fun progress() = pet.state.value.progressText()
+            override fun gameWon() = pet.gameWon()
         },
     )
 
@@ -125,6 +139,10 @@ class AppContainer(private val context: Context) {
         pet.start()
         avatar.restore()
         appScope.launch { memory.prune() }
+        // Force-stop and updates clear AlarmManager; re-arming on every start is cheap and idempotent.
+        appScope.launch {
+            reminders.rescheduleAll().forEach { missed -> reminders.fired(missed.id)?.let { AndroidReminderScheduler.notify(context, it) } }
+        }
         appScope.launch { pet.state.collect { avatar.setMood(it.mood) } }
     }
 
