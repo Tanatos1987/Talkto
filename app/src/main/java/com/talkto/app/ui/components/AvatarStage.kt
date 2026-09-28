@@ -12,7 +12,6 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -35,7 +34,6 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextMeasurer
@@ -79,7 +77,6 @@ fun AvatarStage(
     pose: AvatarPose,
     outfit: OutfitConfig,
     sleeping: Boolean,
-    onTap: () -> Unit,
     stage: LifeStage = LifeStage.ADULT,
     modifier: Modifier = Modifier,
     description: String = "Talkto",
@@ -138,7 +135,8 @@ fun AvatarStage(
                 }
             },
     ) {
-        Canvas(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { onTap() } }) {
+        // Touches are handled by the caller (petTouches), shared with the 3D view.
+        Canvas(Modifier.fillMaxSize()) {
             // The built-in creature grows with its life stage; every layer uses the same scaled frame.
             val frame = fitFrame(size, visual.bitmap).let { if (image == null) it.forStage(stage) else it }
             val a = visual.anchors
@@ -162,11 +160,12 @@ fun AvatarStage(
             }
             drawEyelids(frame, a, palette.skin, lidClosure)
 
-            val showMouth = pose.speaking || pose.expression == Expression.SURPRISED || image == null
+            val showMouth = pose.speaking || pose.expression == Expression.SURPRISED || pose.expression == Expression.TONGUE || image == null
             if (showMouth) {
                 val open = when {
                     pose.speaking -> mouthOpen
                     pose.expression == Expression.SURPRISED -> 0.7f
+                    pose.expression == Expression.TONGUE -> 0.35f
                     else -> 0f
                 }
                 val round = if (pose.expression == Expression.SURPRISED && !pose.speaking) 0.9f else mouthRound
@@ -392,6 +391,13 @@ private fun DrawScope.drawExpression(
         Expression.CONFUSED -> {
             val bob = sin(phase * 2f * PI.toFloat()) * d * 0.05f
             drawLabel(measurer, "?", Offset(f.x(a.faceRight) - d * 0.05f, f.y(a.faceTop) - d * 0.35f + bob), TextStyle(fontSize = 38.sp, fontWeight = FontWeight.Black, color = Color(0xFF9B5DE5)))
+        }
+        Expression.TONGUE -> {
+            // Tongue out, wiggling a little.
+            val cx = f.x(a.mouthX) + sin(phase * 2f * PI.toFloat() * 3f) * d * 0.02f
+            val top = f.y(a.mouthY) + d * 0.02f
+            drawRoundRect(Color(0xFFFF6F91), Offset(cx - d * 0.13f, top), Size(d * 0.26f, d * 0.32f), CornerRadius(d * 0.13f))
+            drawLine(Color(0xFFD94A6E), Offset(cx, top + d * 0.04f), Offset(cx, top + d * 0.22f), strokeWidth = d * 0.02f, cap = StrokeCap.Round)
         }
         Expression.NEUTRAL -> Unit
     }

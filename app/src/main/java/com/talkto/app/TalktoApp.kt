@@ -11,6 +11,8 @@ import com.talkto.app.avatar.AvatarEngine
 import com.talkto.app.avatar.FaceAnchorDetector
 import com.talkto.app.avatar.SpeechEngine
 import com.talkto.app.data.db.RoomActionLogStore
+import com.talkto.app.data.db.RoomHistoryStore
+import com.talkto.app.data.db.RoomProfileStore
 import com.talkto.app.data.db.RoomNoteStore
 import com.talkto.app.data.db.RoomReminderStore
 import com.talkto.app.data.db.TalktoDatabase
@@ -33,9 +35,12 @@ import com.talkto.core.avatar.FileAvatarCache
 import com.talkto.core.avatar.StabilityImageApi
 import com.talkto.core.files.FileSystemManager
 import com.talkto.core.files.PathGuard
+import com.talkto.core.history.HistoryRepository
 import com.talkto.core.memory.MemoryRepository
 import com.talkto.core.notes.NotesRepository
+import com.talkto.core.profile.ProfileRepository
 import com.talkto.core.reminders.RemindersRepository
+import com.talkto.core.touch.Temperament
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -93,6 +98,11 @@ class AppContainer(private val context: Context) {
     val notes = NotesRepository(RoomNoteStore(database.notes()))
     val reminders = RemindersRepository(RoomReminderStore(database.reminders()), AndroidReminderScheduler(context))
 
+    // ---- learning about the user, conversation log, touch temperament
+    val profile = ProfileRepository(RoomProfileStore(database.profile()))
+    val history = HistoryRepository(RoomHistoryStore(database.history()))
+    val temperament = Temperament()
+
     // ---- agent
     val confirmations = ConfirmationBroker(onWaitingInBackground = { AgentService.notifyConfirmationPending(context) })
 
@@ -106,6 +116,8 @@ class AppContainer(private val context: Context) {
         device = device,
         notes = notes,
         reminders = reminders,
+        profile = profile,
+        history = history,
     )
 
     private val clientHolder = AnthropicClientHolder(settings)
@@ -131,14 +143,17 @@ class AppContainer(private val context: Context) {
             override fun progress() = pet.state.value.progressText()
             override fun gameWon() = pet.gameWon()
         },
+        profile = profile,
+        history = history,
     )
 
-    val agentSession = AgentSession(agent, offlineAgent, avatar, pet, settings, errors)
+    val agentSession = AgentSession(agent, offlineAgent, avatar, pet, settings, errors, profile, history)
 
     fun start() {
         pet.start()
         avatar.restore()
         appScope.launch { memory.prune() }
+        appScope.launch { history.prune(); agentSession.restore() }
         // Force-stop and updates clear AlarmManager; re-arming on every start is cheap and idempotent.
         appScope.launch {
             reminders.rescheduleAll().forEach { missed -> reminders.fired(missed.id)?.let { AndroidReminderScheduler.notify(context, it) } }
@@ -160,6 +175,11 @@ class AppContainer(private val context: Context) {
             appendLine("terminate_methods_available: ${apps.availableTerminateMethods().joinToString { it.name.lowercase() }}")
             appendLine("avatar: ${visual.style?.name?.lowercase() ?: "default Talkto creature"}; photo_picked: ${avatar.hasPendingPhoto()}")
             append("image_api_key: ${if (settings.settings.value.stabilityKey.isNullOrBlank()) "missing" else "set"}")
+            val today = now.toLocalDate()
+            if (runCatching { profile.isBirthday(today.dayOfMonth, today.monthValue) }.getOrDefault(false)) {
+                append("\ntoday_is_the_users_birthday: true")
+            }
+            runCatching { profile.promptBlock() }.getOrNull()?.takeIf { it.isNotEmpty() }?.let { append("\n").append(it) }
         }
     }
 }

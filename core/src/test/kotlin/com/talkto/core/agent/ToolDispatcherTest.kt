@@ -161,11 +161,23 @@ class ToolDispatcherTest {
     @Test fun `tool schemas are strict objects`() {
         assertThat(ToolProtocol.all.map { it.name() }).containsExactly(
             "manage_file", "launch_app", "terminate_app", "generate_avatar_from_image", "animate_avatar",
-            "device", "notes", "reminders",
+            "device", "notes", "reminders", "user_profile", "conversation_history",
         )
         ToolProtocol.all.forEach { t ->
             assertThat(t.strict().orElse(false)).isTrue()
             assertThat(t.inputSchema()._additionalProperties()["additionalProperties"].toString()).isEqualTo("false")
         }
+    }
+
+    @Test fun `profile refuses to store secrets`() = runTest {
+        val profile = com.talkto.core.profile.ProfileRepository(com.talkto.core.profile.InMemoryProfileStore())
+        val d = ToolDispatcher(
+            files = FileSystemManager(PathGuard(listOf(root))), apps = apps, avatar = avatar,
+            memory = MemoryRepository(store), gate = { true }, profile = profile,
+        )
+        assertThat(d.dispatch("user_profile", args("""{"action":"remember","key":"wifi password","value":"hunter2"}""")).isError).isTrue()
+        assertThat(d.dispatch("user_profile", args("""{"action":"remember","key":"note:card","value":"4111 1111 1111 1111"}""")).isError).isTrue()
+        assertThat(d.dispatch("user_profile", args("""{"action":"remember","key":"likes:чай","value":"чай с мед"}""")).isError).isFalse()
+        assertThat(profile.get("likes:чай")).isEqualTo("чай с мед")
     }
 }

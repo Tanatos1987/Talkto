@@ -14,6 +14,9 @@ import com.talkto.core.avatar.Expression
 import com.talkto.core.avatar.Gesture
 import com.talkto.core.error.ErrorMapper
 import com.talkto.core.error.TalktoError
+import com.talkto.core.history.HistoryRepository
+import com.talkto.core.history.Speaker
+import com.talkto.core.profile.ProfileRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -63,16 +66,38 @@ class AgentSession(
     private val pet: PetEngine,
     private val settings: SettingsRepository,
     private val errors: GlobalErrorHandler,
+    private val profile: ProfileRepository,
+    private val history: HistoryRepository,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
     private val _state = MutableStateFlow(AgentUiState())
     val state: StateFlow<AgentUiState> = _state.asStateFlow()
 
+    /** Claude gets the recorded conversation once per process, so it remembers what was said before a restart. */
+    @Volatile private var claudeSeeded = false
+
+    /** Shows the last recorded lines after an app restart. */
+    suspend fun restore() {
+        val lines = runCatching { history.recent(RESTORE_LINES) }.getOrDefault(emptyList())
+        if (lines.isEmpty() || _state.value.messages.isNotEmpty()) return
+        _state.update { it.copy(messages = lines.map { u -> ChatMessage(u.speaker == Speaker.USER, u.text, u.atMs) }) }
+    }
+
     suspend fun run(text: String) {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return
         // A turn started right after a cold start (e.g. from a notification) must see the saved API key.
-        settings.awaitLoaded()
+        val cfg = settings.awaitLoaded()
+        history.enabled = cfg.recordConversations
+        val online = cfg.hasClaudeKey
+        // Personal shortcuts ("кино" -> "тихо") and learning happen before routing, so both brains benefit.
+        val command = runCatching { profile.expandAlias(trimmed) }.getOrNull() ?: trimmed
+        runCatching { profile.learnFrom(trimmed) }
+        if (online && !claudeSeeded) {
+            claudeSeeded = true
+            runCatching { claude.seed(history.recent(SEED_LINES).map { (it.speaker == Speaker.USER) to it.text }) }
+        }
+        runCatching { history.record(Speaker.USER, trimmed, if (online) "claude" else "offline") }
         _state.update { it.copy(messages = it.messages + ChatMessage(true, trimmed, clock()), busy = true) }
         avatar.play(AnimationCommand(Expression.THINKING, Gesture.NONE, holdMs = 30_000))
         var toolErrors = 0
@@ -84,17 +109,18 @@ class AgentSession(
                     is AgentEvent.ToolFinished -> if (event.isError) toolErrors++
                 }
             }
-            val reply = if (!settings.settings.value.hasClaudeKey) {
-                offline.send(trimmed, onEvent)
+            val reply = if (!online) {
+                offline.send(command, onEvent)
             } else {
                 try {
-                    claude.send(trimmed, onEvent)
+                    claude.send(command, onEvent)
                 } catch (t: Throwable) {
                     val err = ErrorMapper.map(t)
-                    if (err.kind != TalktoError.Kind.NETWORK || !offline.recognizes(trimmed)) throw err
-                    offline.send(trimmed, onEvent).let { it.copy(text = OFFLINE_FALLBACK_PREFIX + it.text) }
+                    if (err.kind != TalktoError.Kind.NETWORK || !offline.recognizes(command)) throw err
+                    offline.send(command, onEvent).let { it.copy(text = OFFLINE_FALLBACK_PREFIX + it.text) }
                 }
             }
+            runCatching { history.record(Speaker.TALKTO, reply.text, if (online) "claude" else "offline") }
             _state.update { it.copy(messages = it.messages + ChatMessage(false, reply.text, clock())) }
             pet.rewardTask(success = toolErrors == 0 && !reply.refused)
             if (reply.text.isNotBlank()) {
@@ -112,13 +138,22 @@ class AgentSession(
         }
     }
 
+    /** Starts a fresh chat on screen and for Claude. The recorded log is kept (clear it from Settings). */
     suspend fun newConversation() {
         claude.reset()
         offline.reset()
+        claudeSeeded = true // a new conversation means: do not pull the old one back in
         _state.value = AgentUiState()
+    }
+
+    suspend fun clearHistory() {
+        history.clear()
+        newConversation()
     }
 
     private companion object {
         const val OFFLINE_FALLBACK_PREFIX = "Нямам връзка с Claude, затова го направих сам. "
+        const val RESTORE_LINES = 30
+        const val SEED_LINES = 20
     }
 }

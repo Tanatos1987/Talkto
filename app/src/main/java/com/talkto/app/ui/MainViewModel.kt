@@ -1,6 +1,8 @@
 package com.talkto.app.ui
 
 import android.app.Application
+import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import androidx.annotation.StringRes
 import androidx.lifecycle.AndroidViewModel
@@ -17,7 +19,10 @@ import com.talkto.core.avatar.AnimationCommand
 import com.talkto.core.avatar.AvatarStyle
 import com.talkto.core.avatar.Expression
 import com.talkto.core.avatar.Gesture
+import com.talkto.core.history.Utterance
 import com.talkto.core.memory.Habit
+import com.talkto.core.profile.Fact
+import com.talkto.core.touch.Touch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -25,7 +30,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-data class SystemLine(@StringRes val res: Int, val atMs: Long, val args: List<Any> = emptyList())
+/** A line for the speech bubble that does not come from the assistant: a string resource, or ready [text]. */
+data class SystemLine(@StringRes val res: Int, val atMs: Long, val args: List<Any> = emptyList(), val text: String? = null)
 
 data class PermissionState(
     val allFiles: Boolean = false,
@@ -127,9 +133,26 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun toggleSleep() = c.pet.toggleSleep()
 
-    fun petTheAvatar() {
-        c.pet.pet()
-        c.avatar.play(AnimationCommand(Expression.LOVE, Gesture.NOD, holdMs = 1_200))
+    private val _lookAt = MutableStateFlow<Pair<Float, Float>?>(null)
+    /** Where the finger last touched the pet, for the 3D eyes. */
+    val lookAt: StateFlow<Pair<Float, Float>?> = _lookAt.asStateFlow()
+
+    val reactions = c.avatar.reactions
+
+    fun onTouchDown(nx: Float, ny: Float) {
+        _lookAt.value = nx to ny
+    }
+
+    /** Slap, hit, pat, caress or poke: the pet's temperament decides how it feels about it. */
+    fun onTouch(touch: Touch) {
+        val happy = c.pet.state.value.happiness > 60f && !c.pet.state.value.sleeping
+        val r = c.temperament.react(touch, petHappy = happy)
+        c.pet.touched(r.happinessDelta, r.bondDelta)
+        c.avatar.react(r, touch)
+        r.line?.let { line ->
+            _systemLine.value = SystemLine(0, System.currentTimeMillis(), text = line)
+            viewModelScope.launch { c.avatar.speak(line, voice = c.settings.settings.value.voiceEnabled) }
+        }
     }
 
     // ------------------------------------------------------------------ avatar
@@ -165,4 +188,48 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun requestShizuku() = ShizukuBridge.requestPermission()
+
+    // ------------------------------------------------------- 3D, history, profile
+
+    fun setAvatar3d(enabled: Boolean) = viewModelScope.launch { c.settings.setAvatar3d(enabled) }
+
+    fun setRecordConversations(enabled: Boolean) = viewModelScope.launch {
+        c.settings.setRecordConversations(enabled)
+        c.history.enabled = enabled
+    }
+
+    private val _facts = MutableStateFlow<List<Fact>>(emptyList())
+    val facts: StateFlow<List<Fact>> = _facts.asStateFlow()
+
+    fun loadProfile() = viewModelScope.launch { _facts.value = runCatching { c.profile.all() }.getOrDefault(emptyList()) }
+
+    fun forgetFact(key: String) = viewModelScope.launch {
+        c.profile.forget(key)
+        loadProfile()
+    }
+
+    private val _historyItems = MutableStateFlow<List<Utterance>>(emptyList())
+    val historyItems: StateFlow<List<Utterance>> = _historyItems.asStateFlow()
+
+    /** Newest first, filtered by [query] when given. */
+    fun loadHistory(query: String = "") = viewModelScope.launch {
+        _historyItems.value = runCatching {
+            if (query.isBlank()) c.history.recent(500).asReversed() else c.history.search(query, 200)
+        }.getOrDefault(emptyList())
+    }
+
+    fun clearHistory() = viewModelScope.launch {
+        c.agentSession.clearHistory()
+        loadHistory()
+    }
+
+    /** Shares the transcript as plain text through the Android share sheet. */
+    fun shareHistory(context: Context) = viewModelScope.launch {
+        val text = runCatching { c.history.export() }.getOrDefault("")
+        if (text.isBlank()) return@launch
+        val send = Intent(Intent.ACTION_SEND).setType("text/plain")
+            .putExtra(Intent.EXTRA_SUBJECT, "Talkto")
+            .putExtra(Intent.EXTRA_TEXT, text)
+        context.startActivity(Intent.createChooser(send, null))
+    }
 }

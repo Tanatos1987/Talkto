@@ -18,7 +18,9 @@ import com.talkto.core.files.SearchQuery
 import com.talkto.core.memory.ActionRecord
 import com.talkto.core.memory.ActionType
 import com.talkto.core.memory.MemoryRepository
+import com.talkto.core.history.HistoryRepository
 import com.talkto.core.notes.NotesRepository
+import com.talkto.core.profile.ProfileRepository
 import com.talkto.core.reminders.RemindersRepository
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -89,6 +91,8 @@ class ToolDispatcher(
     private val notes: NotesRepository? = null,
     private val reminders: RemindersRepository? = null,
     private val zone: () -> ZoneId = ZoneId::systemDefault,
+    private val profile: ProfileRepository? = null,
+    private val history: HistoryRepository? = null,
 ) {
     private val json = Json { encodeDefaults = true; explicitNulls = false }
 
@@ -102,6 +106,8 @@ class ToolDispatcher(
             ToolProtocol.DEVICE -> device(input)
             ToolProtocol.NOTES -> notes(input)
             ToolProtocol.REMINDERS -> reminders(input)
+            ToolProtocol.USER_PROFILE -> userProfile(input)
+            ToolProtocol.CONVERSATION_HISTORY -> conversationHistory(input)
             else -> throw TalktoError.InvalidInput("Unknown tool '$name'")
         }
         ToolOutcome(result.toString(), isError = false)
@@ -360,6 +366,32 @@ class ToolDispatcher(
         }
     }
 
+    private suspend fun userProfile(a: JsonObject): JsonElement {
+        val p = profile ?: throw TalktoError.CapabilityUnavailable("Profile memory is not available")
+        return when (val action = a.req("action")) {
+            "list" -> json.encodeToJsonElement(p.all())
+            "remember" -> {
+                val key = a.req("key")
+                if (SECRET_KEY.containsMatchIn(key) || SECRET_VALUE.containsMatchIn(a.req("value"))) {
+                    throw TalktoError.InvalidInput("Secrets such as passwords, PINs or card numbers are not stored in the profile")
+                }
+                json.encodeToJsonElement(p.remember(key, a.req("value"), source = "claude"))
+            }
+            "forget" -> buildJsonObject { put("forgotten", p.forget(a.req("what"))) }
+            else -> throw TalktoError.InvalidInput("Unknown user_profile action '$action'")
+        }
+    }
+
+    private suspend fun conversationHistory(a: JsonObject): JsonElement {
+        val h = history ?: throw TalktoError.CapabilityUnavailable("Conversation history is not available")
+        val limit = (a.long("limit") ?: 20).toInt().coerceIn(1, 100)
+        return when (val action = a.req("action")) {
+            "search" -> json.encodeToJsonElement(h.search(a.req("query"), limit))
+            "recent" -> json.encodeToJsonElement(h.recent(limit))
+            else -> throw TalktoError.InvalidInput("Unknown conversation_history action '$action'")
+        }
+    }
+
     // ---------------------------------------------------------------- helpers
 
     private suspend fun confirmOrThrow(request: ConfirmationRequest) {
@@ -371,6 +403,11 @@ class ToolDispatcher(
     private suspend fun record(type: ActionType, subject: String, source: String?, target: String?) {
         // Memory is best-effort: a full database must never break the action the user asked for.
         runCatching { memory.record(ActionRecord(type = type, subject = subject, source = source, target = target, timestampMs = clock())) }
+    }
+
+    private companion object {
+        val SECRET_KEY = Regex("парол|password|pin|пин|cvv|card|карта", RegexOption.IGNORE_CASE)
+        val SECRET_VALUE = Regex("\\b\\d{4}[ -]?\\d{4}[ -]?\\d{4}[ -]?\\d{4}\\b")
     }
 
     private fun hintFor(kind: TalktoError.Kind): String = when (kind) {

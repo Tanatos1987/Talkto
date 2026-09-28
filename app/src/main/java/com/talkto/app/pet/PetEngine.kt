@@ -113,7 +113,10 @@ class PetEngine(
 
     fun setSleeping(asleep: Boolean) = mutate { it.copy(sleeping = asleep) }
 
-    fun pet() = mutate(XpReason.PET) { it.copy(happiness = (it.happiness + 3f).cap(), bond = (it.bond + 0.5f).cap()) }
+    /** A touch changed how the pet feels. Kind touches still earn a little XP. */
+    fun touched(happinessDelta: Float, bondDelta: Float) = mutate(if (happinessDelta > 0) XpReason.PET else null) {
+        it.copy(happiness = (it.happiness + happinessDelta).cap(), bond = (it.bond + bondDelta).cap())
+    }
 
     fun gameWon() = mutate(XpReason.GAME_WON) { it.copy(happiness = (it.happiness + 10f).cap(), bond = (it.bond + 1f).cap()) }
 

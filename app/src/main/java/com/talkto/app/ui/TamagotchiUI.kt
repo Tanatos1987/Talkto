@@ -37,6 +37,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -108,18 +109,22 @@ import com.talkto.app.avatar.OUTFIT_PALETTE
 import com.talkto.app.avatar.OutfitConfig
 import com.talkto.app.files.StorageAccess
 import com.talkto.app.pet.PetState
+import com.talkto.app.avatar3d.Avatar3DView
 import com.talkto.app.ui.components.AvatarStage
+import com.talkto.app.ui.components.petTouches
 import com.talkto.app.ui.theme.TalktoColors
 import com.talkto.core.agent.ConfirmationRequest
 import com.talkto.core.avatar.AvatarStyle
 import com.talkto.core.agent.ToolProtocol
+import com.talkto.core.history.Speaker
 import com.talkto.core.memory.Habit
+import com.talkto.core.profile.ProfileRepository
 import com.talkto.core.pet.LifeStage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
-private enum class Sheet { NONE, WARDROBE, AVATAR, SETTINGS }
+private enum class Sheet { NONE, WARDROBE, AVATAR, SETTINGS, HISTORY }
 
 @Composable
 fun TamagotchiScreen(vm: MainViewModel) {
@@ -132,12 +137,13 @@ fun TamagotchiScreen(vm: MainViewModel) {
     val permissions by vm.permissions.collectAsStateWithLifecycle()
     val confirmation by vm.confirmation.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val lookAt by vm.lookAt.collectAsStateWithLifecycle()
     var sheet by rememberSaveable { mutableStateOf(Sheet.NONE) }
 
     val lastReply = agent.messages.lastOrNull { !it.fromUser }
     val bubbleText = when {
         systemLine != null && (lastReply == null || systemLine!!.atMs > lastReply.atMs) ->
-            stringResource(systemLine!!.res, *systemLine!!.args.toTypedArray())
+            systemLine!!.text ?: stringResource(systemLine!!.res, *systemLine!!.args.toTypedArray())
         else -> lastReply?.text
     }
 
@@ -152,22 +158,31 @@ fun TamagotchiScreen(vm: MainViewModel) {
     ) {
         Header(
             online = settings.hasClaudeKey || !settings.loaded,
-            onSettings = { vm.loadHabits(); sheet = Sheet.SETTINGS },
+            onSettings = { vm.loadHabits(); vm.loadProfile(); sheet = Sheet.SETTINGS },
         )
         StatsRow(pet)
         if (!permissions.allFiles) PermissionBanner()
         Spacer(Modifier.height(8.dp))
 
         DeviceScreen(Modifier.weight(1f)) {
-            AvatarStage(
-                visual = visual,
-                pose = pose,
-                outfit = outfit,
-                sleeping = pet.sleeping,
-                stage = pet.stage,
-                onTap = vm::petTheAvatar,
-                modifier = Modifier.fillMaxSize().padding(top = 72.dp, bottom = 12.dp, start = 24.dp, end = 24.dp),
-            )
+            val stageModifier = Modifier.fillMaxSize().padding(top = 72.dp, bottom = 12.dp, start = 24.dp, end = 24.dp)
+            // A photo avatar is a 2D portrait; the built-in creature is 3D unless switched off in Settings.
+            if (visual.bitmap == null && settings.avatar3d) {
+                Avatar3DView(
+                    pose = pose,
+                    outfit = outfit,
+                    stage = pet.stage,
+                    sleeping = pet.sleeping,
+                    background = MaterialTheme.colorScheme.surfaceVariant,
+                    reactions = vm.reactions,
+                    lookAt = lookAt,
+                    modifier = stageModifier,
+                )
+            } else {
+                AvatarStage(visual = visual, pose = pose, outfit = outfit, sleeping = pet.sleeping, stage = pet.stage, modifier = stageModifier)
+            }
+            // Transparent layer above either renderer: slaps, hits, pats and caresses.
+            Box(stageModifier.petTouches(onDown = vm::onTouchDown, onTouch = vm::onTouch))
             SpeechBubble(
                 text = when {
                     agent.busy && agent.activeTool != null -> stringResource(R.string.tool_running, toolLabel(agent.activeTool!!))
@@ -205,7 +220,8 @@ fun TamagotchiScreen(vm: MainViewModel) {
     when (sheet) {
         Sheet.WARDROBE -> WardrobeSheet(outfit, onChange = vm::saveOutfit, onDismiss = { sheet = Sheet.NONE })
         Sheet.AVATAR -> AvatarCreatorSheet(vm, onDismiss = { sheet = Sheet.NONE })
-        Sheet.SETTINGS -> SettingsSheet(vm, permissions, onDismiss = { sheet = Sheet.NONE })
+        Sheet.SETTINGS -> SettingsSheet(vm, permissions, onDismiss = { sheet = Sheet.NONE }, onHistory = { sheet = Sheet.HISTORY })
+        Sheet.HISTORY -> HistorySheet(vm, onDismiss = { sheet = Sheet.NONE })
         Sheet.NONE -> Unit
     }
 
@@ -593,7 +609,7 @@ private fun AvatarCreatorSheet(vm: MainViewModel, onDismiss: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SettingsSheet(vm: MainViewModel, permissions: PermissionState, onDismiss: () -> Unit) {
+private fun SettingsSheet(vm: MainViewModel, permissions: PermissionState, onDismiss: () -> Unit, onHistory: () -> Unit) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val habits by vm.habits.collectAsStateWithLifecycle()
     val ctx = LocalContext.current
@@ -624,6 +640,32 @@ private fun SettingsSheet(vm: MainViewModel, permissions: PermissionState, onDis
                 Text(stringResource(R.string.settings_voice), modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
                 Switch(checked = settings.voiceEnabled, onCheckedChange = vm::setVoice)
             }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.settings_avatar_3d), modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                Switch(checked = settings.avatar3d, onCheckedChange = vm::setAvatar3d)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.settings_record), modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                Switch(checked = settings.recordConversations, onCheckedChange = vm::setRecordConversations)
+            }
+            Text(stringResource(R.string.settings_record_note), style = MaterialTheme.typography.bodyMedium)
+            OutlinedButton(onClick = onHistory, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                Text(stringResource(R.string.settings_history))
+            }
+
+            HorizontalDivider(Modifier.padding(vertical = 16.dp))
+            Text(stringResource(R.string.settings_profile), style = MaterialTheme.typography.titleMedium)
+            val facts by vm.facts.collectAsStateWithLifecycle()
+            if (facts.isEmpty()) {
+                Text(stringResource(R.string.settings_profile_empty), style = MaterialTheme.typography.bodyMedium)
+            } else {
+                facts.forEach { f ->
+                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(ProfileRepository.label(f), modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                        TextButton(onClick = { vm.forgetFact(f.key) }) { Text(stringResource(R.string.settings_forget)) }
+                    }
+                }
+            }
 
             HorizontalDivider(Modifier.padding(vertical = 16.dp))
             PermissionRow(stringResource(R.string.perm_storage_title), permissions.allFiles) { StorageAccess.openAllFilesAccess(ctx) }
@@ -645,6 +687,74 @@ private fun SettingsSheet(vm: MainViewModel, permissions: PermissionState, onDis
         }
     }
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HistorySheet(vm: MainViewModel, onDismiss: () -> Unit) {
+    val items by vm.historyItems.collectAsStateWithLifecycle()
+    var query by rememberSaveable { mutableStateOf("") }
+    var confirmClear by remember { mutableStateOf(false) }
+    val ctx = LocalContext.current
+    LaunchedEffect(query) { vm.loadHistory(query) }
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
+            Text(stringResource(R.string.history_title), style = MaterialTheme.typography.headlineSmall)
+            Text(stringResource(R.string.history_count, items.size), style = MaterialTheme.typography.labelSmall)
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it.take(100) },
+                label = { Text(stringResource(R.string.history_search)) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { vm.shareHistory(ctx) }, enabled = items.isNotEmpty(), modifier = Modifier.weight(1f)) {
+                    Text(stringResource(R.string.history_share))
+                }
+                OutlinedButton(onClick = { confirmClear = true }, enabled = items.isNotEmpty(), modifier = Modifier.weight(1f)) {
+                    Text(stringResource(R.string.history_clear), color = TalktoColors.Tomato)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            if (items.isEmpty()) {
+                Text(stringResource(R.string.history_empty), style = MaterialTheme.typography.bodyMedium)
+            } else {
+                LazyColumn(Modifier.fillMaxWidth().height(420.dp)) {
+                    items(items.size) { i ->
+                        val u = items[i]
+                        val you = u.speaker == Speaker.USER
+                        Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                            Text(
+                                (if (you) stringResource(R.string.history_you) else "Talkto") + " · " + HISTORY_TIME.format(java.time.Instant.ofEpochMilli(u.atMs)),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (you) TalktoColors.Denim else TalktoColors.Mint,
+                            )
+                            Text(u.text, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (confirmClear) {
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            title = { Text(stringResource(R.string.history_clear_confirm_title)) },
+            text = { Text(stringResource(R.string.history_clear_confirm_body)) },
+            confirmButton = {
+                Button(onClick = { confirmClear = false; vm.clearHistory() }, colors = ButtonDefaults.buttonColors(containerColor = TalktoColors.Tomato)) {
+                    Text(stringResource(R.string.confirm_delete_yes))
+                }
+            },
+            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text(stringResource(R.string.confirm_no)) } },
+        )
+    }
+}
+
+private val HISTORY_TIME: java.time.format.DateTimeFormatter =
+    java.time.format.DateTimeFormatter.ofPattern("dd.MM HH:mm").withZone(java.time.ZoneId.systemDefault())
 
 @Composable
 private fun KeyField(label: String, value: String, isSet: Boolean, onChange: (String) -> Unit) {

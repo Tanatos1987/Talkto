@@ -92,6 +92,8 @@ class OfflineAgentTest {
         override fun setAlarm(hour: Int, minute: Int, label: String?) = true.also { deviceLog += "alarm:$hour:$minute" }
     }
     private val reminderStore = InMemoryReminderStore()
+    private val profile = com.talkto.core.profile.ProfileRepository(com.talkto.core.profile.InMemoryProfileStore())
+    private val history = com.talkto.core.history.HistoryRepository(com.talkto.core.profile.InMemoryHistoryStore())
     // Monday 2026-09-28 14:10 UTC
     private val nowMs = 1_790_604_600_000L
 
@@ -111,7 +113,10 @@ class OfflineAgentTest {
             reminders = RemindersRepository(reminderStore, RecordingScheduler(), clock = { nowMs }),
             zone = { ZoneOffset.UTC },
         )
-        agent = OfflineAgent(dispatcher, memory, pet, zone = { ZoneOffset.UTC }, clock = { nowMs }, random = Random(42))
+        agent = OfflineAgent(
+            dispatcher, memory, pet, zone = { ZoneOffset.UTC }, clock = { nowMs }, random = Random(42),
+            profile = profile, history = history,
+        )
     }
 
     private suspend fun say(text: String) = agent.send(text) {}
@@ -288,5 +293,31 @@ class OfflineAgentTest {
     @Test fun `time and greeting use the injected clock`() = runTest {
         assertThat(say("колко е часът").text).isEqualTo("Часът е 14:10, понеделник, 28 септември.")
         assertThat(say("здравей").text).startsWith("Добър ден!")
+    }
+
+    // --------------------------------------------------------------- learning
+
+    @Test fun `learns and recalls the user`() = runTest {
+        // The session stores facts before the agent answers; do the same here.
+        profile.learnFrom("Казвам се Мария")
+        assertThat(say("Казвам се Мария").text).isEqualTo("Приятно ми е, Мария! Ще го запомня.")
+        profile.learnFrom("обичам джаз")
+        assertThat(say("как се казвам").text).isEqualTo("Казваш се Мария.")
+        assertThat(say("какво знаеш за мен").text).contains("Обичаш джаз")
+        assertThat(say("здравей").text).startsWith("Добър ден, Мария!")
+        assertThat(say("забрави джаз").text).isEqualTo("Забравих го.")
+        assertThat(say("какво знаеш за мен").text).doesNotContain("джаз")
+    }
+
+    @Test fun `conversation history is searchable`() = runTest {
+        history.record(com.talkto.core.history.Speaker.USER, "рецепта за баница", "offline")
+        history.record(com.talkto.core.history.Speaker.TALKTO, "С кори и сирене", "offline")
+        assertThat(say("история").text).isEqualTo("Ти: рецепта за баница\nАз: С кори и сирене")
+        assertThat(say("какво говорихме за баница").text).contains("ти: рецепта за баница")
+        assertThat(say("търси в разговорите пица").text).startsWith("Не помня")
+    }
+
+    @Test fun `tongue`() = runTest {
+        assertThat(say("плезни се").text).isEqualTo("Бе-е-е!")
     }
 }

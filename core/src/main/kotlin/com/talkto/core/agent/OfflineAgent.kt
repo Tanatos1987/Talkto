@@ -1,6 +1,10 @@
 package com.talkto.core.agent
 
+import com.talkto.core.history.HistoryRepository
+import com.talkto.core.history.Speaker
 import com.talkto.core.memory.MemoryRepository
+import com.talkto.core.profile.FactExtractor
+import com.talkto.core.profile.ProfileRepository
 import com.talkto.core.tools.Calculator
 import com.talkto.core.tools.FunPack
 import com.talkto.core.tools.TimeParser
@@ -53,6 +57,8 @@ class OfflineAgent(
     private val zone: () -> ZoneId = ZoneId::systemDefault,
     private val clock: () -> Long = System::currentTimeMillis,
     random: Random = Random.Default,
+    private val profile: ProfileRepository? = null,
+    private val history: HistoryRepository? = null,
 ) : Assistant {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -87,6 +93,7 @@ class OfflineAgent(
         if (text.isEmpty()) return AgentReply(NOT_UNDERSTOOD, needsApiKey = true)
         val turn = Turn(onEvent)
         special(text)?.let { return AgentReply(it) }
+        learnedReply(text)?.let { return AgentReply(it) }
         for (r in rules) {
             val m = r.pattern.matchEntire(text) ?: continue
             return AgentReply(r.run(turn, m))
@@ -100,6 +107,7 @@ class OfflineAgent(
         if (t.isEmpty()) return false
         if (game != null && t.toIntOrNull() != null) return true
         if (Calculator.extract(t) != null || UnitConverter.convert(t) != null) return true
+        if (FactExtractor.extract(t).isNotEmpty()) return true
         return rules.any { it.pattern.matches(t) }
     }
 
@@ -128,13 +136,77 @@ class OfflineAgent(
         return null
     }
 
+    /**
+     * Confirms what was just learned. The facts themselves are stored by the session (in both modes),
+     * so this only phrases the reply; it never stores twice.
+     */
+    private fun learnedReply(t: String): String? {
+        val facts = FactExtractor.extract(t)
+        if (facts.isEmpty()) return null
+        return facts.joinToString(" ") { (k, v) ->
+            when {
+                k == "name" -> "Приятно ми е, $v! Ще го запомня."
+                k.startsWith("alias:") -> "Добре! Когато кажеш „${k.removePrefix("alias:")}“, ще направя „$v“."
+                k.startsWith("note:") -> "Запомних."
+                k.startsWith("likes:") -> "Запомних, че обичаш $v."
+                k.startsWith("dislikes:") -> "Разбрах, няма да забравя, че не обичаш $v."
+                k == "birthday" -> "Записах рождения ти ден: $v. Ще те поздравя!"
+                k == "city" -> "Значи живееш в $v. Запомних."
+                k == "job" -> "Работиш като $v, интересно! Запомних."
+                else -> "Запомних."
+            }
+        }
+    }
+
     // ---------------------------------------------------------------------- rules
 
     private val rules: List<Rule> = listOf(
         // --- conversation & pet
         rule("помощ|help|команди|какво можеш(?: да правиш)?|\\?") { HELP },
         rule("(?:здравей|здрасти|здрасте|привет|хей|hi|hello|hey|добър ден|добър вечер)(?: talkto)?") {
-            "${greeting()}! ${pet.status()} Кажи „помощ“, за да видиш какво мога без API ключ."
+            val name = profile?.get("name")?.let { ", $it" }.orEmpty()
+            val today = now()
+            val birthday = profile?.isBirthday(today.dayOfMonth, today.monthValue) == true
+            (if (birthday) "Честит рожден ден$name! 🎂 " else "${greeting()}$name! ") +
+                "${pet.status()} Кажи „помощ“, за да видиш какво мога без API ключ."
+        },
+
+        // --- what Talkto knows about the user, and the conversation log
+        rule("как се казвам|кой съм аз|знаеш ли как се казвам|what is my name|what's my name") {
+            profile?.get("name")?.let { "Казваш се $it." } ?: "Още не знам. Кажи ми „казвам се …“."
+        },
+        rule("какво знаеш за мен|какво помниш за мен|какво си запомнил|what do you know about me") {
+            profile?.describe() ?: "Паметта за теб не е достъпна."
+        },
+        rule("забрави всичко(?: за мен)?|forget everything(?: about me)?") {
+            val n = profile?.forgetAll() ?: 0
+            if (n == 0) "Нямаше какво да забравя." else "Забравих всичко, което знаех за теб ($n неща)."
+        },
+        rule("забрави(?:,)? (?:че )?(.+)|forget (.+)") { m ->
+            val what = m.groupValues[1].ifEmpty { m.groupValues[2] }
+            val n = profile?.forget(what) ?: 0
+            if (n == 0) "Не намирам нищо за „$what“ в паметта си." else "Забравих го."
+        },
+        rule("история(?:та)?|за какво говорихме|последни(?:те)? разговори|chat history") {
+            val lines = history?.recent(8).orEmpty()
+            if (lines.isEmpty()) "Още нямаме записани разговори." else lines.joinToString("\n") { u ->
+                (if (u.speaker == Speaker.USER) "Ти: " else "Аз: ") + u.text.take(80)
+            }
+        },
+        rule("(?:търси|намери) в (?:историята|разговорите) (.+)|(?:кога|какво) (?:говорихме|казах) за (.+)|search history (.+)") { m ->
+            val q = listOf(1, 2, 3).map { m.groupValues[it] }.first { it.isNotEmpty() }
+            val hits = history?.search(q, 5).orEmpty()
+            if (hits.isEmpty()) "Не помня да сме говорили за „$q“." else hits.joinToString("\n") { u ->
+                val at = ZonedDateTime.ofInstant(Instant.ofEpochMilli(u.atMs), zone())
+                "${whenText(at)} - " + (if (u.speaker == Speaker.USER) "ти: " else "аз: ") + u.text.take(80)
+            }
+        },
+        rule("изтрий историята|изчисти историята|clear history") { "Историята се изтрива от Настройки > История, там питам за потвърждение." },
+
+        // --- playful face
+        rule("плезни се|изплези се|плези се|покажи (?:ми )?език(?:а)?|бее+|stick (?:out )?your tongue(?: out)?") {
+            tool(ToolProtocol.ANIMATE_AVATAR, args { put("expression", "tongue"); put("gesture", "bounce"); put("hold_ms", 2_500) })
+            "Бе-е-е!"
         },
         rule("колко е часът|кой ден сме|what time is it|time|час") {
             val now = now()
@@ -632,7 +704,9 @@ class OfflineAgent(
             • Бележки: запиши …, бележки, намери в бележките …, изтрий бележка 2
             • Сметки: колко е 15% от 240, 12*(3+4), 5 км в мили, 100 f в c
             • Игри: познай числото, камък / ножица / хартия, хвърли зар, ези или тура, случайно число от 1 до 10, виц, факт
-            • Любимец: нахрани, играй, спи, събуди се, как си, ниво, навици
+            • Любимец: нахрани, играй, спи, събуди се, как си, ниво, навици, плезни се
+            • За теб: казвам се …, обичам …, запомни, че …, когато кажа „…“ направи „…“, какво знаеш за мен, забрави …
+            • Разговори: история, търси в разговорите …
             С Claude ключ: свободен разговор, задачи от няколко стъпки, предложения по навиците. Със Stability ключ: аватар от снимка.
         """.trimIndent()
 

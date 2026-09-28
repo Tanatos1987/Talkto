@@ -34,6 +34,10 @@ data class Settings(
     val anthropicKey: String? = null,
     val stabilityKey: String? = null,
     val voiceEnabled: Boolean = true,
+    /** Keep a log of conversations on the phone (history, continuity, learning). */
+    val recordConversations: Boolean = true,
+    /** Render the built-in pet in 3D (OpenGL) instead of the flat 2D drawing. */
+    val avatar3d: Boolean = true,
     /** False only for the placeholder before DataStore delivered its first value. */
     val loaded: Boolean = false,
 ) {
@@ -54,6 +58,8 @@ class SettingsRepository(private val store: DataStore<Preferences>, private val 
             anthropicKey = p[ANTHROPIC]?.let(cipher::decrypt),
             stabilityKey = p[STABILITY]?.let(cipher::decrypt),
             voiceEnabled = p[VOICE] ?: true,
+            recordConversations = p[RECORD] ?: true,
+            avatar3d = p[AVATAR_3D] ?: true,
             loaded = true,
         )
     }.stateIn(scope, SharingStarted.Eagerly, Settings())
@@ -66,12 +72,18 @@ class SettingsRepository(private val store: DataStore<Preferences>, private val 
 
     suspend fun setVoice(enabled: Boolean) = store.edit { it[VOICE] = enabled }
 
+    suspend fun setRecordConversations(enabled: Boolean) = store.edit { it[RECORD] = enabled }
+
+    suspend fun setAvatar3d(enabled: Boolean) = store.edit { it[AVATAR_3D] = enabled }
+
     suspend fun awaitLoaded(): Settings = settings.first { it.loaded }
 
     private companion object {
         val ANTHROPIC = stringPreferencesKey("anthropic_key_enc")
         val STABILITY = stringPreferencesKey("stability_key_enc")
         val VOICE = booleanPreferencesKey("voice_enabled")
+        val RECORD = booleanPreferencesKey("record_conversations")
+        val AVATAR_3D = booleanPreferencesKey("avatar_3d")
     }
 }
 

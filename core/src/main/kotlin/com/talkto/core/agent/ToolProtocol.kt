@@ -16,9 +16,14 @@ object ToolProtocol {
     const val DEVICE = "device"
     const val NOTES = "notes"
     const val REMINDERS = "reminders"
+    const val USER_PROFILE = "user_profile"
+    const val CONVERSATION_HISTORY = "conversation_history"
 
     val all: List<Tool> by lazy {
-        listOf(manageFile(), launchApp(), terminateApp(), generateAvatar(), animateAvatar(), device(), notes(), reminders())
+        listOf(
+            manageFile(), launchApp(), terminateApp(), generateAvatar(), animateAvatar(), device(), notes(), reminders(),
+            userProfile(), conversationHistory(),
+        )
     }
 
     private fun manageFile() = tool(
@@ -111,7 +116,7 @@ object ToolProtocol {
         description = "Make the avatar react: set a facial expression, play a gesture and optionally speak a short line with lip-sync. " +
             "Use it to show emotion that matches your reply; keep speech under 200 characters.",
         properties = mapOf(
-            "expression" to enumProp("Facial expression.", "neutral", "happy", "sad", "surprised", "thinking", "sleepy", "angry", "love", "confused"),
+            "expression" to enumProp("Facial expression. tongue = playfully sticks the tongue out.", "neutral", "happy", "sad", "surprised", "thinking", "sleepy", "angry", "love", "confused", "tongue"),
             "gesture" to enumProp("Body gesture.", "none", "nod", "shake", "wave", "bounce", "spin"),
             "speech" to strProp("Optional short line spoken aloud with lip-sync."),
             "hold_ms" to intProp("How long to hold the expression, 500-10000 ms. Default 2500."),
@@ -162,6 +167,33 @@ object ToolProtocol {
             "in_minutes" to intProp("add: minutes from now."),
             "at" to strProp("add: local date-time, e.g. 2026-09-28T18:30."),
             "id" to intProp("cancel: reminder id from list."),
+        ),
+        required = listOf("action"),
+    )
+
+    private fun userProfile() = tool(
+        name = USER_PROFILE,
+        description = "Long-term memory about the user, kept on the phone and shown in <user_profile>. Use remember when the user " +
+            "shares a stable fact or preference (name, birthday, city, job, likes/dislikes, how they want things done). " +
+            "Keys: name, birthday, city, job, age, favourite:<thing>, likes:<thing>, dislikes:<thing>, note:<topic>, " +
+            "alias:<phrase> (value = the command that phrase should run). Do not store secrets such as passwords or card numbers.",
+        properties = mapOf(
+            "action" to enumProp("What to do.", "list", "remember", "forget"),
+            "key" to strProp("remember: fact key, e.g. likes:кафе."),
+            "value" to strProp("remember: the fact."),
+            "what" to strProp("forget: key or words to forget."),
+        ),
+        required = listOf("action"),
+    )
+
+    private fun conversationHistory() = tool(
+        name = CONVERSATION_HISTORY,
+        description = "The recorded log of past conversations with the user (both yours and offline mode). " +
+            "search finds earlier messages by words; recent returns the latest lines.",
+        properties = mapOf(
+            "action" to enumProp("What to do.", "search", "recent"),
+            "query" to strProp("search: words to look for."),
+            "limit" to intProp("How many lines, default 20, at most 100."),
         ),
         required = listOf("action"),
     )

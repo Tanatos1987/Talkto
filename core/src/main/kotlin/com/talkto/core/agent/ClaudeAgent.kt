@@ -53,6 +53,9 @@ data class AgentReply(
 interface Assistant {
     suspend fun send(userText: String, onEvent: suspend (AgentEvent) -> Unit = {}): AgentReply
     suspend fun reset()
+
+    /** Continue an earlier, recorded conversation. (fromUser, text) pairs, oldest first. */
+    suspend fun seed(turns: List<Pair<Boolean, String>>) {}
 }
 
 /**
@@ -79,6 +82,33 @@ class ClaudeAgent(
     private val json = Json { ignoreUnknownKeys = true }
 
     override suspend fun reset() = lock.withLock { history.clear() }
+
+    /**
+     * Continues an earlier conversation after an app restart: the recorded log becomes plain text turns.
+     * Only applied while the in-memory history is empty. Consecutive same-speaker lines are merged and the
+     * seed always starts with the user, as the API requires alternating roles.
+     */
+    override suspend fun seed(turns: List<Pair<Boolean, String>>) = lock.withLock {
+        if (history.isNotEmpty()) return@withLock
+        val merged = ArrayList<Pair<Boolean, String>>()
+        turns.filter { it.second.isNotBlank() }.forEach { (fromUser, text) ->
+            val last = merged.lastOrNull()
+            if (last != null && last.first == fromUser) merged[merged.lastIndex] = fromUser to (last.second + "\n" + text)
+            else merged += fromUser to text
+        }
+        while (merged.isNotEmpty() && !merged.first().first) merged.removeAt(0)
+        // The next send() adds a user turn, so the seed must end with Talkto.
+        while (merged.isNotEmpty() && merged.last().first) merged.removeAt(merged.lastIndex)
+        merged.forEach { (fromUser, text) ->
+            history += MessageParam.builder()
+                .role(if (fromUser) MessageParam.Role.USER else MessageParam.Role.ASSISTANT)
+                .content(text)
+                .build()
+        }
+    }
+
+    /** Messages currently held (for tests and diagnostics). */
+    val historySize: Int get() = history.size
 
     override suspend fun send(userText: String, onEvent: suspend (AgentEvent) -> Unit): AgentReply = lock.withLock {
         require(userText.isNotBlank()) { "Empty message" }

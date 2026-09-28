@@ -102,6 +102,23 @@
     <string name="stage_teen">Тийнейджър</string>
     <string name="stage_adult">Възрастен</string>
 
+    <!-- 3D, history, profile -->
+    <string name="settings_avatar_3d">3D любимец</string>
+    <string name="settings_record">Записвай разговорите</string>
+    <string name="settings_record_note">Разговорите остават само на телефона. От тях Talkto помни за какво сте говорили и се учи.</string>
+    <string name="settings_profile">Какво знам за теб</string>
+    <string name="settings_profile_empty">Още нищо. Кажи ми „казвам се …“, „обичам …“ или „запомни, че …“.</string>
+    <string name="settings_history">История на разговорите</string>
+    <string name="history_title">История</string>
+    <string name="history_search">Търси в разговорите</string>
+    <string name="history_empty">Няма записани разговори.</string>
+    <string name="history_share">Сподели</string>
+    <string name="history_clear">Изтрий историята</string>
+    <string name="history_clear_confirm_title">Да изтрия ли цялата история?</string>
+    <string name="history_clear_confirm_body">Всички записани разговори ще бъдат изтрити от телефона. Това не може да се върне.</string>
+    <string name="history_you">Ти</string>
+    <string name="history_count">%1$d реплики</string>
+
     <!-- Foreground service -->
     <string name="notif_channel_agent">Задачи на Talkto</string>
     <string name="notif_agent_title">Talkto работи по задача</string>
