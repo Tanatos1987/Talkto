@@ -1,0 +1,293 @@
+package com.talkto.core.agent
+
+import com.talkto.core.apps.AppController
+import com.talkto.core.apps.TerminateMethod
+import com.talkto.core.avatar.AnimationCommand
+import com.talkto.core.avatar.AvatarStyle
+import com.talkto.core.avatar.Expression
+import com.talkto.core.avatar.GeneratedAvatar
+import com.talkto.core.avatar.Gesture
+import com.talkto.core.error.ErrorMapper
+import com.talkto.core.error.TalktoError
+import com.talkto.core.files.DeletionPlan
+import com.talkto.core.files.FileSystemManager
+import com.talkto.core.files.OrganizeStrategy
+import com.talkto.core.files.SearchQuery
+import com.talkto.core.memory.ActionRecord
+import com.talkto.core.memory.ActionType
+import com.talkto.core.memory.MemoryRepository
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.longOrNull
+import kotlinx.serialization.json.put
+import java.io.File
+
+/** Avatar side-effects the agent may trigger. Implemented by the Android `AvatarEngine`. */
+interface AvatarActions {
+    fun hasPendingPhoto(): Boolean
+    suspend fun generateFromPendingPhoto(style: AvatarStyle, extraPrompt: String?): GeneratedAvatar
+    suspend fun generateFromFile(path: String, style: AvatarStyle, extraPrompt: String?): GeneratedAvatar
+    suspend fun animate(command: AnimationCommand)
+}
+
+/** What the human is asked to approve. Structured, so the app renders it with localised strings. */
+sealed interface ConfirmationRequest {
+    val destructive: Boolean
+
+    data class Delete(val plan: DeletionPlan) : ConfirmationRequest {
+        override val destructive = true
+    }
+
+    data class Overwrite(val source: String, val destination: String) : ConfirmationRequest {
+        override val destructive = true
+    }
+
+    data class Organize(val folder: String, val fileCount: Int, val strategy: OrganizeStrategy) : ConfirmationRequest {
+        override val destructive = false
+    }
+
+    data object EmptyTrash : ConfirmationRequest {
+        override val destructive = true
+    }
+}
+
+/** Human-in-the-loop gate. The UI answers with a dialog; tests answer programmatically. */
+fun interface ConfirmationGate {
+    suspend fun confirm(request: ConfirmationRequest): Boolean
+}
+
+data class ToolOutcome(val content: String, val isError: Boolean)
+
+/**
+ * Executes Claude's tool calls. Every call:
+ * 1. parses and validates arguments (strict schemas guarantee shape, not meaning);
+ * 2. runs through the engines, which enforce the safety rules themselves;
+ * 3. records successful actions into adaptive memory;
+ * 4. returns JSON (success) or a typed error object with is_error = true. It never throws.
+ */
+class ToolDispatcher(
+    private val files: FileSystemManager,
+    private val apps: AppController,
+    private val avatar: AvatarActions,
+    private val memory: MemoryRepository,
+    private val gate: ConfirmationGate,
+    private val clock: () -> Long = System::currentTimeMillis,
+    private val onError: (TalktoError) -> Unit = {},
+) {
+    private val json = Json { encodeDefaults = true; explicitNulls = false }
+
+    suspend fun dispatch(name: String, input: JsonObject): ToolOutcome = try {
+        val result: JsonElement = when (name) {
+            ToolProtocol.MANAGE_FILE -> manageFile(input)
+            ToolProtocol.LAUNCH_APP -> launchApp(input)
+            ToolProtocol.TERMINATE_APP -> terminateApp(input)
+            ToolProtocol.GENERATE_AVATAR -> generateAvatar(input)
+            ToolProtocol.ANIMATE_AVATAR -> animateAvatar(input)
+            else -> throw TalktoError.InvalidInput("Unknown tool '$name'")
+        }
+        ToolOutcome(result.toString(), isError = false)
+    } catch (t: Throwable) {
+        val err = ErrorMapper.map(t) // rethrows CancellationException
+        onError(err)
+        ToolOutcome(
+            buildJsonObject {
+                put("error", err.kind.name.lowercase())
+                put("message", err.message ?: "")
+                put("hint", hintFor(err.kind))
+            }.toString(),
+            isError = true,
+        )
+    }
+
+    // ------------------------------------------------------------ manage_file
+
+    private suspend fun manageFile(a: JsonObject): JsonElement {
+        val dryRun = a.bool("dry_run") ?: false
+        return when (val op = a.str("operation")) {
+            "list" -> json.encodeToJsonElement(files.list(a.str("path") ?: "~"))
+            "search" -> {
+                val days = a.long("modified_within_days")
+                val q = SearchQuery(
+                    root = a.str("path") ?: "~",
+                    namePattern = a.str("name_pattern"),
+                    extensions = a.strList("extensions"),
+                    minSizeBytes = a.long("min_size_bytes"),
+                    maxSizeBytes = a.long("max_size_bytes"),
+                    modifiedAfterEpochMs = days?.let { clock() - it * 86_400_000L },
+                    limit = (a.long("max_results") ?: 100).toInt().coerceIn(1, 1000),
+                )
+                val found = files.search(q)
+                record(ActionType.FILE_SEARCH, q.namePattern ?: q.extensions.joinToString(","), q.root, null)
+                buildJsonObject {
+                    put("count", found.size)
+                    put("truncated", found.size >= q.limit)
+                    put("results", json.encodeToJsonElement(found))
+                }
+            }
+            "copy", "move" -> {
+                val src = a.req("path")
+                val dst = a.req("destination")
+                val overwrite = a.bool("overwrite") ?: false
+                if (overwrite && !dryRun) confirmOrThrow(ConfirmationRequest.Overwrite(src, dst))
+                val report = if (op == "move") files.move(src, dst, overwrite, dryRun) else files.copy(src, dst, overwrite, dryRun)
+                if (!dryRun) report.moves.forEach { m ->
+                    record(if (op == "move") ActionType.FILE_MOVE else ActionType.FILE_COPY, File(m.from).name, File(m.from).parent, File(m.to).parent)
+                }
+                json.encodeToJsonElement(report)
+            }
+            "rename" -> json.encodeToJsonElement(files.rename(a.req("path"), a.req("new_name"), dryRun))
+            "mkdir" -> json.encodeToJsonElement(files.createDirectory(a.req("path")))
+            "organize" -> {
+                val dir = a.req("path")
+                val strategy = when (a.str("strategy") ?: "by_type") {
+                    "by_month" -> OrganizeStrategy.BY_MONTH
+                    "by_extension" -> OrganizeStrategy.BY_EXTENSION
+                    else -> OrganizeStrategy.BY_TYPE
+                }
+                val plan = files.organize(dir, strategy, dryRun = true)
+                if (dryRun || plan.moves.isEmpty()) return json.encodeToJsonElement(plan)
+                confirmOrThrow(ConfirmationRequest.Organize(dir, plan.moves.size, strategy))
+                val done = files.organize(dir, strategy, dryRun = false)
+                record(ActionType.FILE_ORGANIZE, strategy.name.lowercase(), dir, null)
+                json.encodeToJsonElement(done)
+            }
+            "delete" -> delete(a)
+            "empty_trash" -> {
+                confirmOrThrow(ConfirmationRequest.EmptyTrash)
+                buildJsonObject { put("removed_batches", files.emptyTrash()) }
+            }
+            null -> throw TalktoError.InvalidInput("operation is required")
+            else -> throw TalktoError.InvalidInput("Unknown operation '$op'")
+        }
+    }
+
+    private suspend fun delete(a: JsonObject): JsonElement {
+        val targets = a.strList("paths").ifEmpty { listOfNotNull(a.str("path")) }
+        val token = a.str("confirmation_token")
+
+        if (token == null || a.bool("dry_run") == true) {
+            if (targets.isEmpty()) throw TalktoError.InvalidInput("delete needs path or paths")
+            val plan = files.planDeletion(targets, a.bool("permanent") ?: false)
+            return buildJsonObject {
+                put("dry_run", true)
+                put("plan", json.encodeToJsonElement(plan))
+                put("next_step", "Tell the user what will be deleted. Only if they agree, call delete again with confirmation_token=\"${plan.token}\".")
+            }
+        }
+
+        // The dialog shows what the token covers, not what the model claims it covers.
+        val preview = files.peekPlan(token)
+            ?: throw TalktoError.ConfirmationRequired("Deletion token is unknown or expired. Run the dry-run again.")
+        val ok = gate.confirm(ConfirmationRequest.Delete(preview))
+        if (!ok) {
+            files.discardPlan(token)
+            throw TalktoError.ConfirmationRequired("The user declined the deletion in the confirmation dialog.")
+        }
+        val result = files.executeDeletion(token)
+        preview.targets.forEach { record(ActionType.FILE_DELETE, File(it).name, File(it).parent, null) }
+        return json.encodeToJsonElement(result)
+    }
+
+    // ------------------------------------------------------------------- apps
+
+    private suspend fun launchApp(a: JsonObject): JsonElement {
+        if (a.bool("list_only") == true) {
+            val all = apps.installedApps()
+            val q = a.str("app")?.lowercase().orEmpty()
+            val filtered = if (q.isBlank() || q == "*") all else all.filter { q in it.label.lowercase() || q in it.packageName }
+            return json.encodeToJsonElement(filtered.ifEmpty { all }.take(300))
+        }
+        val result = apps.launch(a.req("app"))
+        if (result.success) record(ActionType.APP_LAUNCH, result.packageName, null, null)
+        return json.encodeToJsonElement(result)
+    }
+
+    private suspend fun terminateApp(a: JsonObject): JsonElement {
+        val method = when (a.str("method")) {
+            "accessibility" -> TerminateMethod.ACCESSIBILITY
+            "shizuku" -> TerminateMethod.SHIZUKU
+            "root" -> TerminateMethod.ROOT
+            "background_kill" -> TerminateMethod.BACKGROUND_KILL
+            else -> TerminateMethod.AUTO
+        }
+        val result = apps.terminate(a.req("app"), method)
+        if (result.success) record(ActionType.APP_TERMINATE, result.packageName, null, null)
+        return buildJsonObject {
+            put("result", json.encodeToJsonElement(result))
+            put("available_methods", JsonArray(apps.availableTerminateMethods().map { JsonPrimitive(it.name.lowercase()) }))
+        }
+    }
+
+    // ----------------------------------------------------------------- avatar
+
+    private suspend fun generateAvatar(a: JsonObject): JsonElement {
+        val style = runCatching { AvatarStyle.valueOf(a.req("style").uppercase()) }
+            .getOrElse { throw TalktoError.InvalidInput("Unknown style '${a.str("style")}'") }
+        val extra = a.str("extra_prompt")
+        val avatar = when (a.req("source")) {
+            "picked_photo" -> {
+                if (!avatar.hasPendingPhoto()) {
+                    throw TalktoError.InvalidInput("No photo picked yet. Ask the user to tap the photo button and choose a picture.")
+                }
+                avatar.generateFromPendingPhoto(style, extra)
+            }
+            "path" -> avatar.generateFromFile(a.req("path"), style, extra)
+            else -> throw TalktoError.InvalidInput("source must be picked_photo or path")
+        }
+        record(ActionType.AVATAR, style.name.lowercase(), null, null)
+        return buildJsonObject {
+            put("avatar_id", avatar.id)
+            put("style", style.name.lowercase())
+            put("from_cache", avatar.fromCache)
+            put("status", "The new avatar is now shown on screen.")
+        }
+    }
+
+    private suspend fun animateAvatar(a: JsonObject): JsonElement {
+        val cmd = AnimationCommand(
+            expression = a.str("expression")?.let { runCatching { Expression.valueOf(it.uppercase()) }.getOrNull() } ?: Expression.NEUTRAL,
+            gesture = a.str("gesture")?.let { runCatching { Gesture.valueOf(it.uppercase()) }.getOrNull() } ?: Gesture.NONE,
+            speech = a.str("speech")?.take(400),
+            holdMs = (a.long("hold_ms") ?: 2_500L).coerceIn(500L, 10_000L),
+        )
+        avatar.animate(cmd)
+        return buildJsonObject { put("ok", true) }
+    }
+
+    // ---------------------------------------------------------------- helpers
+
+    private suspend fun confirmOrThrow(request: ConfirmationRequest) {
+        if (!gate.confirm(request)) {
+            throw TalktoError.ConfirmationRequired("The user declined in the confirmation dialog: ${request::class.simpleName}")
+        }
+    }
+
+    private suspend fun record(type: ActionType, subject: String, source: String?, target: String?) {
+        // Memory is best-effort: a full database must never break the action the user asked for.
+        runCatching { memory.record(ActionRecord(type = type, subject = subject, source = source, target = target, timestampMs = clock())) }
+    }
+
+    private fun hintFor(kind: TalktoError.Kind): String = when (kind) {
+        TalktoError.Kind.PERMISSION_DENIED -> "Ask the user to grant 'All files access' to Talkto in system settings."
+        TalktoError.Kind.PROTECTED_PATH -> "This location is protected on purpose. Explain why and suggest a safe alternative."
+        TalktoError.Kind.NOT_FOUND -> "Search for the item first or ask the user for the exact name."
+        TalktoError.Kind.ALREADY_EXISTS -> "Ask whether to overwrite, or pick another name."
+        TalktoError.Kind.CONFIRMATION_REQUIRED -> "Do not retry automatically. Tell the user nothing was changed."
+        TalktoError.Kind.CAPABILITY_UNAVAILABLE -> "Explain which permission or service the user can enable, and offer another method."
+        TalktoError.Kind.API_KEY_MISSING -> "Ask the user to add the API key in Talkto settings."
+        else -> "Explain the problem briefly and suggest a next step."
+    }
+
+    private fun JsonObject.str(k: String): String? = (this[k] as? JsonPrimitive)?.takeIf { it.isString }?.content?.takeIf { it.isNotBlank() }
+    private fun JsonObject.req(k: String): String = str(k) ?: throw TalktoError.InvalidInput("'$k' is required")
+    private fun JsonObject.bool(k: String): Boolean? = (this[k] as? JsonPrimitive)?.booleanOrNull
+    private fun JsonObject.long(k: String): Long? = (this[k] as? JsonPrimitive)?.longOrNull
+    private fun JsonObject.strList(k: String): List<String> =
+        (this[k] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.content?.takeIf(String::isNotBlank) }.orEmpty()
+}

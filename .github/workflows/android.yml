@@ -1,0 +1,64 @@
+name: Android CI
+
+on:
+  push:
+    branches: [ "**" ]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      HAS_KEYSTORE: ${{ secrets.TALKTO_KEYSTORE_B64 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Core unit tests (JVM)
+        run: ./gradlew :core:test --stacktrace
+
+      - name: App unit tests (Robolectric)
+        run: ./gradlew :app:testDebugUnitTest --stacktrace
+
+      - name: Lint
+        run: ./gradlew :app:lintDebug
+
+      - name: Build debug APK
+        run: ./gradlew :app:assembleDebug
+
+      - name: Build signed release APK
+        if: env.HAS_KEYSTORE == 'true'
+        env:
+          TALKTO_KEYSTORE_B64: ${{ secrets.TALKTO_KEYSTORE_B64 }}
+          TALKTO_KEYSTORE_PASSWORD: ${{ secrets.TALKTO_KEYSTORE_PASSWORD }}
+          TALKTO_KEY_ALIAS: ${{ secrets.TALKTO_KEY_ALIAS }}
+          TALKTO_KEY_PASSWORD: ${{ secrets.TALKTO_KEY_PASSWORD }}
+        run: |
+          echo "$TALKTO_KEYSTORE_B64" | base64 -d > release.jks
+          TALKTO_KEYSTORE=release.jks ./gradlew :app:assembleRelease
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: talkto-apk
+          path: app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-reports
+          path: |
+            core/build/reports/tests
+            app/build/reports/tests
+            app/build/reports/lint-results-debug.html

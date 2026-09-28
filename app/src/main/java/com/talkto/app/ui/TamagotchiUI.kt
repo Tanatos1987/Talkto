@@ -1,0 +1,727 @@
+package com.talkto.app.ui
+
+import android.Manifest
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.material.icons.rounded.Checkroom
+import androidx.compose.material.icons.rounded.Face
+import androidx.compose.material.icons.rounded.Restaurant
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.SportsEsports
+import androidx.compose.material.icons.rounded.WbSunny
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil3.compose.AsyncImage
+import com.talkto.app.R
+import com.talkto.app.agent.PendingConfirmation
+import com.talkto.app.avatar.Clothes
+import com.talkto.app.avatar.Glasses
+import com.talkto.app.avatar.Hat
+import com.talkto.app.avatar.OUTFIT_PALETTE
+import com.talkto.app.avatar.OutfitConfig
+import com.talkto.app.files.StorageAccess
+import com.talkto.app.pet.PetState
+import com.talkto.app.ui.components.AvatarStage
+import com.talkto.app.ui.theme.TalktoColors
+import com.talkto.core.agent.ConfirmationRequest
+import com.talkto.core.avatar.AvatarStyle
+import com.talkto.core.agent.ToolProtocol
+import com.talkto.core.memory.Habit
+import java.util.Locale
+
+private enum class Sheet { NONE, WARDROBE, AVATAR, SETTINGS }
+
+@Composable
+fun TamagotchiScreen(vm: MainViewModel) {
+    val pet by vm.pet.collectAsStateWithLifecycle()
+    val pose by vm.pose.collectAsStateWithLifecycle()
+    val visual by vm.visual.collectAsStateWithLifecycle()
+    val outfit by vm.outfit.collectAsStateWithLifecycle()
+    val agent by vm.agent.collectAsStateWithLifecycle()
+    val systemLine by vm.systemLine.collectAsStateWithLifecycle()
+    val permissions by vm.permissions.collectAsStateWithLifecycle()
+    val confirmation by vm.confirmation.collectAsStateWithLifecycle()
+    var sheet by rememberSaveable { mutableStateOf(Sheet.NONE) }
+
+    val lastReply = agent.messages.lastOrNull { !it.fromUser }
+    val bubbleText = when {
+        systemLine != null && (lastReply == null || systemLine!!.atMs > lastReply.atMs) -> stringResource(systemLine!!.res)
+        else -> lastReply?.text
+    }
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .imePadding()
+            .padding(horizontal = 16.dp),
+    ) {
+        Header(onSettings = { vm.loadHabits(); sheet = Sheet.SETTINGS })
+        StatsRow(pet)
+        if (!permissions.allFiles) PermissionBanner()
+        Spacer(Modifier.height(8.dp))
+
+        DeviceScreen(Modifier.weight(1f)) {
+            AvatarStage(
+                visual = visual,
+                pose = pose,
+                outfit = outfit,
+                sleeping = pet.sleeping,
+                onTap = vm::petTheAvatar,
+                modifier = Modifier.fillMaxSize().padding(top = 72.dp, bottom = 12.dp, start = 24.dp, end = 24.dp),
+            )
+            SpeechBubble(
+                text = when {
+                    agent.busy && agent.activeTool != null -> stringResource(R.string.tool_running, toolLabel(agent.activeTool!!))
+                    agent.busy -> stringResource(R.string.thinking)
+                    else -> bubbleText
+                },
+                busy = agent.busy,
+                modifier = Modifier.align(Alignment.TopCenter).padding(12.dp),
+            )
+            if (visual.generating) {
+                Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.25f)), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(color = TalktoColors.Sunflower)
+                        Spacer(Modifier.height(8.dp))
+                        Text(stringResource(R.string.avatar_generating), color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        ActionRow(
+            sleeping = pet.sleeping,
+            onFeed = vm::feed,
+            onPlay = vm::play,
+            onSleep = vm::toggleSleep,
+            onWardrobe = { sheet = Sheet.WARDROBE },
+            onAvatar = { sheet = Sheet.AVATAR },
+        )
+        Spacer(Modifier.height(12.dp))
+        ChatInput(busy = agent.busy, onSend = vm::send)
+        Spacer(Modifier.height(12.dp))
+    }
+
+    when (sheet) {
+        Sheet.WARDROBE -> WardrobeSheet(outfit, onChange = vm::saveOutfit, onDismiss = { sheet = Sheet.NONE })
+        Sheet.AVATAR -> AvatarCreatorSheet(vm, onDismiss = { sheet = Sheet.NONE })
+        Sheet.SETTINGS -> SettingsSheet(vm, permissions, onDismiss = { sheet = Sheet.NONE })
+        Sheet.NONE -> Unit
+    }
+
+    confirmation?.let { ConfirmationDialog(it, onAnswer = vm::answerConfirmation) }
+}
+
+// ----------------------------------------------------------------------- header & stats
+
+@Composable
+private fun Header(onSettings: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            "TALKTO",
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.weight(1f),
+        )
+        IconButton(onClick = onSettings) {
+            Icon(Icons.Rounded.Settings, contentDescription = stringResource(R.string.action_settings))
+        }
+    }
+}
+
+@Composable
+private fun StatsRow(pet: PetState) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Stat(stringResource(R.string.stat_satiety), pet.satiety, TalktoColors.Tomato, Modifier.weight(1f))
+        Stat(stringResource(R.string.stat_energy), pet.energy, TalktoColors.Sunflower, Modifier.weight(1f))
+        Stat(stringResource(R.string.stat_happiness), pet.happiness, TalktoColors.Mint, Modifier.weight(1f))
+        Stat(stringResource(R.string.stat_bond), pet.bond, TalktoColors.Denim, Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun Stat(label: String, value: Float, color: Color, modifier: Modifier) {
+    val animated by animateFloatAsState(value / 100f, label = "stat")
+    Column(modifier) {
+        Text(label.uppercase(Locale.getDefault()), style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Spacer(Modifier.height(3.dp))
+        LinearProgressIndicator(
+            progress = { animated },
+            modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
+            color = if (value < 25f) TalktoColors.Tomato else color,
+            trackColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.1f),
+            drawStopIndicator = {},
+        )
+    }
+}
+
+@Composable
+private fun PermissionBanner() {
+    val ctx = LocalContext.current
+    Surface(
+        color = TalktoColors.Sunflower.copy(alpha = 0.25f),
+        shape = MaterialTheme.shapes.small,
+        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+    ) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.perm_storage_title), style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.perm_storage_body), style = MaterialTheme.typography.bodyMedium)
+            }
+            Spacer(Modifier.width(8.dp))
+            Button(onClick = { StorageAccess.openAllFilesAccess(ctx) }) { Text(stringResource(R.string.perm_grant)) }
+        }
+    }
+}
+
+// ----------------------------------------------------------------------- the "device"
+
+/** The LCD window of the toy: soft green screen with a faint pixel grid. */
+@Composable
+private fun DeviceScreen(modifier: Modifier, content: @Composable BoxScope.() -> Unit) {
+    val screen = MaterialTheme.colorScheme.surfaceVariant
+    val dot = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.05f)
+    Box(
+        modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(36.dp))
+            .background(screen)
+            .border(BorderStroke(6.dp, MaterialTheme.colorScheme.onBackground.copy(alpha = 0.85f)), RoundedCornerShape(36.dp)),
+    ) {
+        Canvas(Modifier.fillMaxSize()) {
+            val step = 14.dp.toPx()
+            var y = step / 2
+            while (y < size.height) {
+                var x = step / 2
+                while (x < size.width) {
+                    drawCircle(dot, 1.4.dp.toPx(), Offset(x, y)); x += step
+                }
+                y += step
+            }
+        }
+        content()
+    }
+}
+
+@Composable
+private fun SpeechBubble(text: String?, busy: Boolean, modifier: Modifier) {
+    AnimatedVisibility(
+        visible = !text.isNullOrBlank(),
+        enter = fadeIn() + scaleIn(initialScale = 0.9f),
+        exit = fadeOut() + scaleOut(targetScale = 0.9f),
+        modifier = modifier,
+    ) {
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surface,
+            shadowElevation = 4.dp,
+            border = BorderStroke(2.dp, MaterialTheme.colorScheme.onBackground),
+            modifier = Modifier.animateContentSize(),
+        ) {
+            Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (busy) {
+                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text(
+                    text.orEmpty(),
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 5,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                )
+            }
+        }
+    }
+}
+
+// ----------------------------------------------------------------------- controls
+
+@Composable
+private fun ActionRow(
+    sleeping: Boolean,
+    onFeed: () -> Unit,
+    onPlay: () -> Unit,
+    onSleep: () -> Unit,
+    onWardrobe: () -> Unit,
+    onAvatar: () -> Unit,
+) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        ToyButton(Icons.Rounded.Restaurant, stringResource(R.string.action_feed), TalktoColors.Tomato, onFeed)
+        ToyButton(Icons.Rounded.SportsEsports, stringResource(R.string.action_play), TalktoColors.Mint, onPlay)
+        ToyButton(
+            if (sleeping) Icons.Rounded.WbSunny else Icons.Rounded.Bedtime,
+            stringResource(if (sleeping) R.string.action_wake else R.string.action_sleep),
+            TalktoColors.Denim, onSleep,
+        )
+        ToyButton(Icons.Rounded.Checkroom, stringResource(R.string.action_wardrobe), TalktoColors.Sunflower, onWardrobe)
+        ToyButton(Icons.Rounded.Face, stringResource(R.string.action_avatar), Color(0xFF9B5DE5), onAvatar)
+    }
+}
+
+/** Big round button like the ones on the plastic egg. */
+@Composable
+private fun ToyButton(icon: ImageVector, label: String, color: Color, onClick: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(62.dp)) {
+        Box(
+            Modifier
+                .size(54.dp)
+                .clip(CircleShape)
+                .background(color)
+                .border(3.dp, MaterialTheme.colorScheme.onBackground, CircleShape)
+                .clickable(onClickLabel = label, onClick = onClick),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(icon, contentDescription = label, tint = TalktoColors.Ink)
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+    }
+}
+
+@Composable
+private fun ChatInput(busy: Boolean, onSend: (String) -> Unit) {
+    var text by rememberSaveable { mutableStateOf("") }
+    val submit = {
+        if (text.isNotBlank() && !busy) {
+            onSend(text); text = ""
+        }
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        TextField(
+            value = text,
+            onValueChange = { text = it },
+            placeholder = { Text(stringResource(R.string.input_hint)) },
+            modifier = Modifier.weight(1f),
+            shape = RoundedCornerShape(24.dp),
+            maxLines = 4,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+            keyboardActions = KeyboardActions(onSend = { submit() }),
+            colors = TextFieldDefaults.colors(
+                focusedIndicatorColor = Color.Transparent,
+                unfocusedIndicatorColor = Color.Transparent,
+                disabledIndicatorColor = Color.Transparent,
+            ),
+        )
+        Spacer(Modifier.width(8.dp))
+        IconButton(
+            onClick = submit,
+            enabled = text.isNotBlank() && !busy,
+            modifier = Modifier.size(52.dp).clip(CircleShape).background(TalktoColors.Ink),
+        ) {
+            if (busy) {
+                CircularProgressIndicator(Modifier.size(20.dp), color = TalktoColors.Sunflower, strokeWidth = 2.dp)
+            } else {
+                Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = stringResource(R.string.send), tint = TalktoColors.Sunflower)
+            }
+        }
+    }
+}
+
+// ----------------------------------------------------------------------- sheets
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun WardrobeSheet(outfit: OutfitConfig, onChange: (OutfitConfig) -> Unit, onDismiss: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp).verticalScroll(rememberScrollState())) {
+            Text(stringResource(R.string.wardrobe_title), style = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.height(12.dp))
+
+            SectionLabel(stringResource(R.string.slot_hat))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Hat.entries.forEach { h ->
+                    FilterChip(selected = outfit.hat == h, onClick = { onChange(outfit.copy(hat = h)) }, label = { Text(hatLabel(h)) })
+                }
+            }
+            ColorRow(outfit.hatColor) { onChange(outfit.copy(hatColor = it)) }
+
+            SectionLabel(stringResource(R.string.slot_glasses))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Glasses.entries.forEach { g ->
+                    FilterChip(selected = outfit.glasses == g, onClick = { onChange(outfit.copy(glasses = g)) }, label = { Text(glassesLabel(g)) })
+                }
+            }
+
+            SectionLabel(stringResource(R.string.slot_outfit))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Clothes.entries.forEach { c ->
+                    FilterChip(selected = outfit.clothes == c, onClick = { onChange(outfit.copy(clothes = c)) }, label = { Text(clothesLabel(c)) })
+                }
+            }
+            ColorRow(outfit.clothesColor) { onChange(outfit.copy(clothesColor = it)) }
+        }
+    }
+}
+
+@Composable
+private fun ColorRow(selected: Long, onPick: (Long) -> Unit) {
+    Row(Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OUTFIT_PALETTE.forEach { c ->
+            Box(
+                Modifier
+                    .size(if (c == selected) 34.dp else 28.dp)
+                    .clip(CircleShape)
+                    .background(Color(c))
+                    .border(if (c == selected) 3.dp else 1.dp, MaterialTheme.colorScheme.onBackground, CircleShape)
+                    .clickable { onPick(c) },
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun AvatarCreatorSheet(vm: MainViewModel, onDismiss: () -> Unit) {
+    val pending by vm.pendingPhoto.collectAsStateWithLifecycle()
+    val visual by vm.visual.collectAsStateWithLifecycle()
+    var style by rememberSaveable { mutableStateOf(AvatarStyle.ANIME_2D) }
+    var extra by rememberSaveable { mutableStateOf("") }
+    var cameraUri by remember { mutableStateOf<Uri?>(null) }
+
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> if (uri != null) vm.onPhotoPicked(uri) }
+    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok -> if (ok) vm.onPhotoPicked(cameraUri) }
+    val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) vm.newCameraUri().also { cameraUri = it; camera.launch(it) }
+    }
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp).verticalScroll(rememberScrollState())) {
+            Text(stringResource(R.string.avatar_title), style = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.height(12.dp))
+
+            Box(
+                Modifier.fillMaxWidth().aspectRatio(1.6f).clip(MaterialTheme.shapes.medium).background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (pending != null) {
+                    AsyncImage(model = pending, contentDescription = null, modifier = Modifier.fillMaxSize())
+                } else {
+                    Icon(Icons.Rounded.Face, contentDescription = null, modifier = Modifier.size(64.dp))
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                    modifier = Modifier.weight(1f),
+                ) { Text(stringResource(R.string.avatar_pick_gallery)) }
+                OutlinedButton(onClick = { cameraPermission.launch(Manifest.permission.CAMERA) }, modifier = Modifier.weight(1f)) {
+                    Text(stringResource(R.string.avatar_take_photo))
+                }
+            }
+
+            SectionLabel(stringResource(R.string.avatar_style))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                AvatarStyle.entries.forEach { s ->
+                    FilterChip(selected = style == s, onClick = { style = s }, label = { Text(styleLabel(s)) })
+                }
+            }
+            OutlinedTextField(
+                value = extra,
+                onValueChange = { extra = it.take(200) },
+                label = { Text(stringResource(R.string.avatar_extra_prompt)) },
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                singleLine = true,
+            )
+            Spacer(Modifier.height(16.dp))
+            Button(
+                onClick = { vm.generateAvatar(style, extra); onDismiss() },
+                enabled = pending != null && !visual.generating,
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = TalktoColors.Ink, contentColor = TalktoColors.Sunflower),
+            ) { Text(stringResource(R.string.avatar_generate), fontWeight = FontWeight.Bold) }
+            if (visual.bitmap != null) {
+                TextButton(onClick = { vm.resetAvatar(); onDismiss() }, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.avatar_reset))
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SettingsSheet(vm: MainViewModel, permissions: PermissionState, onDismiss: () -> Unit) {
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    val habits by vm.habits.collectAsStateWithLifecycle()
+    val ctx = LocalContext.current
+    // Keys are never pre-filled: an empty field means "keep the current key".
+    var claudeKey by remember { mutableStateOf("") }
+    var stabilityKey by remember { mutableStateOf("") }
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp).verticalScroll(rememberScrollState())) {
+            Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.height(12.dp))
+            KeyField(stringResource(R.string.settings_anthropic_key), claudeKey, settings.hasClaudeKey) { claudeKey = it }
+            KeyField(stringResource(R.string.settings_stability_key), stabilityKey, !settings.stabilityKey.isNullOrBlank()) { stabilityKey = it }
+            Text(stringResource(R.string.settings_keys_note), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 6.dp))
+            Button(
+                onClick = {
+                    vm.saveKeys(claudeKey.takeIf { it.isNotBlank() }, stabilityKey.takeIf { it.isNotBlank() })
+                    claudeKey = ""; stabilityKey = ""
+                },
+                enabled = claudeKey.isNotBlank() || stabilityKey.isNotBlank(),
+            ) { Text(stringResource(R.string.save)) }
+
+            HorizontalDivider(Modifier.padding(vertical = 16.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.settings_voice), modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                Switch(checked = settings.voiceEnabled, onCheckedChange = vm::setVoice)
+            }
+
+            HorizontalDivider(Modifier.padding(vertical = 16.dp))
+            PermissionRow(stringResource(R.string.perm_storage_title), permissions.allFiles) { StorageAccess.openAllFilesAccess(ctx) }
+            PermissionRow(stringResource(R.string.perm_accessibility), permissions.accessibility) { StorageAccess.openAccessibilitySettings(ctx) }
+            PermissionRow(stringResource(R.string.perm_shizuku), permissions.shizuku) { vm.requestShizuku() }
+
+            HorizontalDivider(Modifier.padding(vertical = 16.dp))
+            Text(stringResource(R.string.settings_habits), style = MaterialTheme.typography.titleMedium)
+            if (habits.isEmpty()) {
+                Text(stringResource(R.string.settings_habits_empty), style = MaterialTheme.typography.bodyMedium)
+            } else {
+                habits.forEach { HabitRow(it, onForget = { vm.forgetHabit(it.key) }) }
+            }
+
+            HorizontalDivider(Modifier.padding(vertical = 16.dp))
+            OutlinedButton(onClick = { vm.newConversation(); onDismiss() }, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.settings_new_chat))
+            }
+        }
+    }
+}
+
+@Composable
+private fun KeyField(label: String, value: String, isSet: Boolean, onChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onChange,
+        label = { Text(label) },
+        placeholder = { if (isSet) Text("••••••••  ✓") },
+        singleLine = true,
+        visualTransformation = PasswordVisualTransformation(),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+    )
+}
+
+@Composable
+private fun PermissionRow(label: String, granted: Boolean, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+        if (granted) {
+            Text("✓", color = TalktoColors.Mint, fontWeight = FontWeight.Black)
+        } else {
+            TextButton(onClick = onClick) { Text(stringResource(R.string.perm_grant)) }
+        }
+    }
+}
+
+@Composable
+private fun HabitRow(habit: Habit, onForget: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(habit.description, style = MaterialTheme.typography.bodyMedium)
+            Text("×${habit.occurrences} · ${(habit.confidence * 100).toInt()}%", style = MaterialTheme.typography.labelSmall)
+        }
+        TextButton(onClick = onForget) { Text(stringResource(R.string.settings_forget)) }
+    }
+}
+
+@Composable
+private fun SectionLabel(text: String) {
+    Text(text.uppercase(Locale.getDefault()), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 14.dp, bottom = 6.dp))
+}
+
+// ----------------------------------------------------------------------- confirmation
+
+@Composable
+private fun ConfirmationDialog(p: PendingConfirmation, onAnswer: (Long, Boolean) -> Unit) {
+    val (title, body, yes) = when (val r = p.request) {
+        is ConfirmationRequest.Delete -> Triple(
+            stringResource(R.string.confirm_delete_title, r.plan.fileCount),
+            stringResource(
+                if (r.plan.permanent) R.string.confirm_delete_body_permanent else R.string.confirm_delete_body_trash,
+                r.plan.fileCount, r.plan.directoryCount, formatBytes(r.plan.totalBytes),
+            ) + "\n\n" + r.plan.sample.take(6).joinToString("\n") { "• " + it.substringAfterLast('/') },
+            stringResource(R.string.confirm_delete_yes),
+        )
+        is ConfirmationRequest.Overwrite -> Triple(
+            stringResource(R.string.confirm_overwrite_title),
+            stringResource(R.string.confirm_overwrite_body, r.source.substringAfterLast('/'), r.destination.substringAfterLast('/')),
+            stringResource(R.string.confirm_yes),
+        )
+        is ConfirmationRequest.Organize -> Triple(
+            stringResource(R.string.confirm_organize_title),
+            stringResource(R.string.confirm_organize_body, r.fileCount, r.folder.substringAfterLast('/')),
+            stringResource(R.string.confirm_yes),
+        )
+        ConfirmationRequest.EmptyTrash -> Triple(
+            stringResource(R.string.confirm_empty_trash_title),
+            stringResource(R.string.confirm_empty_trash_body),
+            stringResource(R.string.confirm_delete_yes),
+        )
+    }
+    AlertDialog(
+        onDismissRequest = { onAnswer(p.id, false) },
+        title = { Text(title) },
+        text = { Text(body) },
+        confirmButton = {
+            Button(
+                onClick = { onAnswer(p.id, true) },
+                colors = if (p.request.destructive) ButtonDefaults.buttonColors(containerColor = TalktoColors.Tomato) else ButtonDefaults.buttonColors(),
+            ) { Text(yes) }
+        },
+        dismissButton = { TextButton(onClick = { onAnswer(p.id, false) }) { Text(stringResource(R.string.confirm_no)) } },
+    )
+}
+
+// ----------------------------------------------------------------------- labels
+
+private fun formatBytes(b: Long): String = when {
+    b >= 1L shl 30 -> String.format(Locale.getDefault(), "%.1f GB", b / (1L shl 30).toDouble())
+    b >= 1L shl 20 -> String.format(Locale.getDefault(), "%.1f MB", b / (1L shl 20).toDouble())
+    b >= 1L shl 10 -> String.format(Locale.getDefault(), "%.0f KB", b / (1L shl 10).toDouble())
+    else -> "$b B"
+}
+
+@Composable
+private fun toolLabel(tool: String) = when (tool) {
+    ToolProtocol.MANAGE_FILE -> stringResource(R.string.tool_manage_file)
+    ToolProtocol.LAUNCH_APP -> stringResource(R.string.tool_launch_app)
+    ToolProtocol.TERMINATE_APP -> stringResource(R.string.tool_terminate_app)
+    ToolProtocol.GENERATE_AVATAR -> stringResource(R.string.tool_generate_avatar)
+    ToolProtocol.ANIMATE_AVATAR -> stringResource(R.string.tool_animate_avatar)
+    else -> tool
+}
+
+@Composable
+private fun styleLabel(s: AvatarStyle) = stringResource(
+    when (s) {
+        AvatarStyle.ANIME_2D -> R.string.style_anime_2d
+        AvatarStyle.CARTOON_3D -> R.string.style_cartoon_3d
+        AvatarStyle.PIXEL_ART -> R.string.style_pixel_art
+        AvatarStyle.CHIBI -> R.string.style_chibi
+        AvatarStyle.WATERCOLOR -> R.string.style_watercolor
+    },
+)
+
+@Composable
+private fun hatLabel(h: Hat) = stringResource(
+    when (h) {
+        Hat.NONE -> R.string.none
+        Hat.PARTY -> R.string.hat_party
+        Hat.BEANIE -> R.string.hat_beanie
+        Hat.CROWN -> R.string.hat_crown
+        Hat.TOP_HAT -> R.string.hat_top_hat
+        Hat.CAP -> R.string.hat_cap
+    },
+)
+
+@Composable
+private fun glassesLabel(g: Glasses) = stringResource(
+    when (g) {
+        Glasses.NONE -> R.string.none
+        Glasses.ROUND -> R.string.glasses_round
+        Glasses.SUNGLASSES -> R.string.glasses_sunglasses
+        Glasses.HEART -> R.string.glasses_heart
+        Glasses.MONOCLE -> R.string.glasses_monocle
+    },
+)
+
+@Composable
+private fun clothesLabel(c: Clothes) = stringResource(
+    when (c) {
+        Clothes.NONE -> R.string.none
+        Clothes.SCARF -> R.string.clothes_scarf
+        Clothes.BOWTIE -> R.string.clothes_bowtie
+        Clothes.HOODIE -> R.string.clothes_hoodie
+        Clothes.TIE -> R.string.clothes_tie
+    },
+)

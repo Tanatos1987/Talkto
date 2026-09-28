@@ -1,0 +1,131 @@
+package com.talkto.app
+
+import android.app.Application
+import android.content.Context
+import com.talkto.app.agent.AgentService
+import com.talkto.app.agent.AgentSession
+import com.talkto.app.agent.AnthropicClientHolder
+import com.talkto.app.agent.ConfirmationBroker
+import com.talkto.app.apps.AndroidAppController
+import com.talkto.app.avatar.AvatarEngine
+import com.talkto.app.avatar.FaceAnchorDetector
+import com.talkto.app.avatar.SpeechEngine
+import com.talkto.app.data.db.RoomActionLogStore
+import com.talkto.app.data.db.TalktoDatabase
+import com.talkto.app.data.prefs.PetStore
+import com.talkto.app.data.prefs.SettingsRepository
+import com.talkto.app.data.prefs.talktoDataStore
+import com.talkto.app.error.GlobalErrorHandler
+import com.talkto.app.files.StorageAccess
+import com.talkto.app.pet.PetEngine
+import com.talkto.app.security.KeyCipher
+import com.talkto.core.agent.AgentConfig
+import com.talkto.core.agent.ClaudeAgent
+import com.talkto.core.agent.ToolDispatcher
+import com.talkto.core.avatar.AvatarGenerator
+import com.talkto.core.avatar.FileAvatarCache
+import com.talkto.core.avatar.StabilityImageApi
+import com.talkto.core.files.FileSystemManager
+import com.talkto.core.files.PathGuard
+import com.talkto.core.memory.MemoryRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+
+class TalktoApp : Application() {
+
+    lateinit var container: AppContainer
+        private set
+
+    override fun onCreate() {
+        super.onCreate()
+        container = AppContainer(this)
+        container.errors.install()
+        container.start()
+    }
+}
+
+/**
+ * Manual dependency graph. Small enough that a DI framework would add more ceremony than it removes;
+ * every collaborator is constructed exactly once here, which also makes the wiring easy to audit.
+ */
+class AppContainer(private val context: Context) {
+
+    val errors = GlobalErrorHandler(context)
+
+    /** Process-wide scope. SupervisorJob: one failed child never cancels the others. */
+    val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default + errors.coroutineHandler)
+
+    private val dataStore = context.talktoDataStore
+    val settings = SettingsRepository(dataStore, KeyCipher(), appScope)
+    val petStore = PetStore(dataStore)
+    val pet = PetEngine(petStore, appScope)
+
+    // ---- files
+    val pathGuard = PathGuard(StorageAccess.managedRoots(context))
+    val files = FileSystemManager(pathGuard)
+
+    // ---- memory
+    val database = TalktoDatabase.create(context)
+    val memory = MemoryRepository(RoomActionLogStore(database.actionLog()))
+
+    // ---- avatar
+    private val imageApi = StabilityImageApi(apiKey = { settings.settings.value.stabilityKey })
+    private val generator = AvatarGenerator(imageApi, FileAvatarCache(context.filesDir.toPath().resolve("avatars")))
+    val speech = SpeechEngine(context, appScope)
+    val avatar = AvatarEngine(context, generator, FaceAnchorDetector(), speech, petStore, pathGuard, appScope)
+
+    // ---- apps
+    val apps = AndroidAppController(context)
+
+    // ---- agent
+    val confirmations = ConfirmationBroker(onWaitingInBackground = { AgentService.notifyConfirmationPending(context) })
+
+    private val dispatcher = ToolDispatcher(
+        files = files,
+        apps = apps,
+        avatar = avatar,
+        memory = memory,
+        gate = confirmations,
+        onError = { /* surfaced to the user through Claude's reply; the avatar reacts in AgentSession */ },
+    )
+
+    private val clientHolder = AnthropicClientHolder(settings)
+
+    val agent = ClaudeAgent(
+        client = clientHolder::get,
+        dispatcher = dispatcher,
+        memory = memory,
+        liveContext = ::liveContext,
+        config = AgentConfig(),
+    )
+
+    val agentSession = AgentSession(agent, avatar, pet, settings, errors)
+
+    fun start() {
+        pet.start()
+        avatar.restore()
+        appScope.launch { memory.prune() }
+        appScope.launch { pet.state.collect { avatar.setMood(it.mood) } }
+    }
+
+    /** The per-request context block. It changes every call, so it sits after the prompt-cache breakpoint. */
+    private suspend fun liveContext(): String {
+        val now = ZonedDateTime.now()
+        val visual = avatar.visual.value
+        return buildString {
+            appendLine("now: ${now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm EEEE", Locale.ENGLISH))} (${now.zone})")
+            appendLine("device_locale: ${Locale.getDefault().toLanguageTag()}")
+            appendLine("pet: ${pet.state.value.describe()}")
+            appendLine("all_files_access: ${if (StorageAccess.hasAllFilesAccess()) "granted" else "NOT granted - file tools will fail until the user enables it"}")
+            appendLine("storage_roots: ${pathGuard.roots.joinToString()}")
+            appendLine("terminate_methods_available: ${apps.availableTerminateMethods().joinToString { it.name.lowercase() }}")
+            appendLine("avatar: ${visual.style?.name?.lowercase() ?: "default Talkto creature"}; photo_picked: ${avatar.hasPendingPhoto()}")
+            append("image_api_key: ${if (settings.settings.value.stabilityKey.isNullOrBlank()) "missing" else "set"}")
+        }
+    }
+}
