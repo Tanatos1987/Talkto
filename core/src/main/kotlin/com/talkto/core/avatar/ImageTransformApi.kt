@@ -74,7 +74,7 @@ class StabilityImageApi(
             .build()
 
         return http.newCall(httpRequest).await().use { response ->
-            val bytes = response.body.bytes()
+            val bytes = response.body?.bytes() ?: ByteArray(0)
             when {
                 response.isSuccessful -> bytes
                 else -> throw mapHttpError(response.code, bytes.decodeToString())

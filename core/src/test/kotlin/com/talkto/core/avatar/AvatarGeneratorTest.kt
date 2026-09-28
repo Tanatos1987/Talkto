@@ -4,8 +4,8 @@ import com.google.common.truth.Truth.assertThat
 import com.talkto.core.error.TalktoError
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
-import mockwebserver3.MockResponse
-import mockwebserver3.MockWebServer
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
 import okio.Buffer
 import org.junit.Rule
 import org.junit.Test
@@ -113,16 +113,16 @@ class AvatarGeneratorTest {
 
     @Test fun `stability client sends multipart with auth and returns bytes`() = runTest {
         MockWebServer().use { server ->
-            server.enqueue(MockResponse.Builder().code(200).addHeader("Content-Type", "image/png").body(Buffer().write(png)).build())
+            server.enqueue(MockResponse().setResponseCode(200).addHeader("Content-Type", "image/png").setBody(Buffer().write(png)))
             server.start()
             val api = StabilityImageApi(apiKey = { "sk-test" }, baseUrl = server.url("/").toString())
             val out = api.transform(TransformRequest(jpeg, "image/jpeg", "prompt", "neg", 0.6f))
             assertThat(out).isEqualTo(png)
             val recorded = server.takeRequest()
-            assertThat(recorded.url.encodedPath).isEqualTo("/v2beta/stable-image/control/structure")
-            assertThat(recorded.headers["Authorization"]).isEqualTo("Bearer sk-test")
-            assertThat(recorded.headers["Accept"]).isEqualTo("image/*")
-            val body = recorded.body!!.utf8()
+            assertThat(recorded.path).isEqualTo("/v2beta/stable-image/control/structure")
+            assertThat(recorded.getHeader("Authorization")).isEqualTo("Bearer sk-test")
+            assertThat(recorded.getHeader("Accept")).isEqualTo("image/*")
+            val body = recorded.body.readUtf8()
             assertThat(body).contains("name=\"control_strength\"")
             assertThat(body).contains("0.60")
         }
@@ -130,8 +130,8 @@ class AvatarGeneratorTest {
 
     @Test fun `stability client maps http errors`() = runTest {
         MockWebServer().use { server ->
-            server.enqueue(MockResponse.Builder().code(429).body("{\"message\":\"slow down\"}").build())
-            server.enqueue(MockResponse.Builder().code(401).body("{}").build())
+            server.enqueue(MockResponse().setResponseCode(429).setBody("{\"message\":\"slow down\"}"))
+            server.enqueue(MockResponse().setResponseCode(401).setBody("{}"))
             server.start()
             val api = StabilityImageApi(apiKey = { "k" }, baseUrl = server.url("/").toString())
             val req = TransformRequest(jpeg, "image/jpeg", "p", "n")
