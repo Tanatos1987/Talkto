@@ -20,7 +20,7 @@ import kotlinx.coroutines.flow.Flow
 /**
  * The 3D pet. A transparent [GLTextureView] (OpenGL ES 2.0) hosted in Compose; the renderer runs on its own GL thread
  * and reads the latest [SceneState] every frame, so recomposition never blocks rendering.
- * Paused with the lifecycle to save battery when Talkto is not on screen.
+ * Paused with the lifecycle to save battery when ZnaiKo is not on screen.
  */
 @Composable
 fun Avatar3DView(

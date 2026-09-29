@@ -31,7 +31,7 @@ interface HistoryStore {
 }
 
 /**
- * The conversation log: every user message and every Talkto reply, stored on the phone.
+ * The conversation log: every user message and every ZnaiKo reply, stored on the phone.
  * It restores the chat after a restart, lets Claude pick up where the talk left off, is searchable
  * ("за какво говорихме за рецептата?"), and can be exported or wiped by the user at any time.
  */
@@ -62,7 +62,7 @@ class HistoryRepository(
     suspend fun export(zone: ZoneId = ZoneId.systemDefault(), limit: Int = 5_000): String {
         val fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm", Locale.ROOT).withZone(zone)
         return store.recent(limit).joinToString("\n") { u ->
-            val who = if (u.speaker == Speaker.USER) "Аз" else "Talkto"
+            val who = if (u.speaker == Speaker.USER) "Аз" else "ZnaiKo"
             "[${fmt.format(Instant.ofEpochMilli(u.atMs))}] $who: ${u.text}"
         }
     }

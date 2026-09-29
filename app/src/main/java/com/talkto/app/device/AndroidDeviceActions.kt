@@ -105,7 +105,7 @@ class AndroidDeviceActions(private val context: Context) : DeviceActions {
         return audio.getStreamVolume(AudioManager.STREAM_MUSIC) * 100 / max
     }
 
-    /** Talkto is on screen when the user asks, so starting an activity from the app context is allowed. */
+    /** ZnaiKo is on screen when the user asks, so starting an activity from the app context is allowed. */
     private fun start(intent: Intent): Boolean = try {
         context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         true

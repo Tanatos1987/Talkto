@@ -1,6 +1,8 @@
 package com.talkto.app.ui
 
 import android.Manifest
+import android.content.ActivityNotFoundException
+import android.speech.RecognizerIntent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.graphics.ImageDecoder
@@ -123,6 +125,7 @@ import com.talkto.app.ui.components.AvatarStage
 import com.talkto.app.ui.components.petTouches
 import com.talkto.app.ui.theme.TalktoColors
 import com.talkto.app.voice.VoiceLanguage
+import com.talkto.core.voice.VoicePreset
 import com.talkto.app.voice.VoiceState
 import com.talkto.core.agent.ConfirmationRequest
 import com.talkto.core.avatar.AvatarStyle
@@ -230,7 +233,20 @@ fun TamagotchiScreen(vm: MainViewModel) {
         )
         Spacer(Modifier.height(12.dp))
         val voice by vm.voice.collectAsStateWithLifecycle()
-        val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> if (granted) vm.startListening() }
+        // Without the microphone permission the system dialog still works, so a "no" is not a dead end.
+        val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> vm.startListening(dialogOnly = !granted) }
+        val speechDialog = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            vm.onVoiceDialogResult(result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS))
+        }
+        LaunchedEffect(Unit) {
+            vm.voiceDialogRequests.collect { lang ->
+                try {
+                    speechDialog.launch(vm.voiceDialogIntent(lang))
+                } catch (_: ActivityNotFoundException) {
+                    vm.onVoiceDialogUnavailable()
+                }
+            }
+        }
         val ctx = LocalContext.current
         ChatInput(
             busy = agent.busy,
@@ -270,7 +286,7 @@ fun TamagotchiScreen(vm: MainViewModel) {
 private fun Header(online: Boolean, onSettings: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(
-            "TALKTO",
+            "ZNAIKO",
             style = MaterialTheme.typography.headlineSmall,
             color = MaterialTheme.colorScheme.onBackground,
         )
@@ -681,6 +697,40 @@ private fun AvatarCreatorSheet(vm: MainViewModel, onDismiss: () -> Unit) {
     }
 }
 
+/** Character voices (pitch and rate) and, optionally, a specific voice of the phone's TTS engine. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun VoicePicker(vm: MainViewModel, selected: VoicePreset, engineVoice: String?) {
+    val voices by vm.engineVoices.collectAsStateWithLifecycle()
+    var showEngine by remember { mutableStateOf(false) }
+    Text(stringResource(R.string.settings_voice_character), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        VoicePreset.entries.forEach { p ->
+            FilterChip(selected = p == selected, onClick = { vm.setVoicePreset(p) }, label = { Text(p.bg) })
+        }
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        TextButton(onClick = { vm.previewVoice(selected) }) { Text(stringResource(R.string.settings_voice_preview)) }
+        TextButton(onClick = {
+            showEngine = !showEngine
+            if (showEngine) vm.loadEngineVoices()
+        }) { Text(stringResource(R.string.settings_voice_engine)) }
+    }
+    if (showEngine) {
+        if (voices.isEmpty()) {
+            Text(stringResource(R.string.settings_voice_engine_none), style = MaterialTheme.typography.bodyMedium)
+        } else {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = engineVoice == null, onClick = { vm.setTtsVoice(null) }, label = { Text(stringResource(R.string.settings_voice_engine_auto)) })
+                voices.forEachIndexed { i, v ->
+                    val label = "${v.language} #${i + 1}" + if (v.offline) "" else " ☁"
+                    FilterChip(selected = engineVoice == v.name, onClick = { vm.setTtsVoice(v.name) }, label = { Text(label) })
+                }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SettingsSheet(
@@ -720,6 +770,7 @@ private fun SettingsSheet(
                 Text(stringResource(R.string.settings_voice), modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
                 Switch(checked = settings.voiceEnabled, onCheckedChange = vm::setVoice)
             }
+            VoicePicker(vm, settings.voicePreset, settings.ttsVoice)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.settings_hands_free), modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
                 Switch(checked = settings.handsFree, onCheckedChange = vm::setHandsFree)
@@ -909,7 +960,7 @@ private fun HistorySheet(vm: MainViewModel, onDismiss: () -> Unit) {
                         val you = u.speaker == Speaker.USER
                         Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
                             Text(
-                                (if (you) stringResource(R.string.history_you) else "Talkto") + " · " + HISTORY_TIME.format(java.time.Instant.ofEpochMilli(u.atMs)),
+                                (if (you) stringResource(R.string.history_you) else "ZnaiKo") + " · " + HISTORY_TIME.format(java.time.Instant.ofEpochMilli(u.atMs)),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = if (you) TalktoColors.Denim else TalktoColors.Mint,
                             )

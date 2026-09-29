@@ -13,6 +13,7 @@ import com.talkto.app.pet.PetState
 import com.talkto.app.security.KeyCipher
 import com.talkto.core.avatar.AvatarStyle
 import com.talkto.core.avatar.FaceAnchors
+import com.talkto.core.voice.VoicePreset
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
@@ -41,8 +42,12 @@ data class Settings(
     val avatar3d: Boolean = true,
     /** Speech recognition language: AUTO (detect bg/en where supported), BG or EN. */
     val voiceLanguage: String = "AUTO",
-    /** Hands-free: after Talkto answers a spoken question, it listens again. */
+    /** Hands-free: after ZnaiKo answers a spoken question, it listens again. */
     val handsFree: Boolean = false,
+    /** Character voice (pitch and rate), see VoicePreset. */
+    val voicePreset: VoicePreset = VoicePreset.DEFAULT,
+    /** A specific engine voice by name; null lets the engine pick one for the language. */
+    val ttsVoice: String? = null,
     /** False only for the placeholder before DataStore delivered its first value. */
     val loaded: Boolean = false,
 ) {
@@ -67,6 +72,8 @@ class SettingsRepository(private val store: DataStore<Preferences>, private val 
             avatar3d = p[AVATAR_3D] ?: true,
             voiceLanguage = p[VOICE_LANG] ?: "AUTO",
             handsFree = p[HANDS_FREE] ?: false,
+            voicePreset = VoicePreset.parse(p[VOICE_PRESET]),
+            ttsVoice = p[TTS_VOICE],
             loaded = true,
         )
     }.stateIn(scope, SharingStarted.Eagerly, Settings())
@@ -87,6 +94,10 @@ class SettingsRepository(private val store: DataStore<Preferences>, private val 
 
     suspend fun setHandsFree(enabled: Boolean) = store.edit { it[HANDS_FREE] = enabled }
 
+    suspend fun setVoicePreset(preset: VoicePreset) = store.edit { it[VOICE_PRESET] = preset.name }
+
+    suspend fun setTtsVoice(name: String?) = store.edit { if (name == null) it.remove(TTS_VOICE) else it[TTS_VOICE] = name }
+
     suspend fun awaitLoaded(): Settings = settings.first { it.loaded }
 
     private companion object {
@@ -97,6 +108,8 @@ class SettingsRepository(private val store: DataStore<Preferences>, private val 
         val AVATAR_3D = booleanPreferencesKey("avatar_3d")
         val VOICE_LANG = stringPreferencesKey("voice_language")
         val HANDS_FREE = booleanPreferencesKey("hands_free")
+        val VOICE_PRESET = stringPreferencesKey("voice_preset")
+        val TTS_VOICE = stringPreferencesKey("tts_voice")
     }
 }
 

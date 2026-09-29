@@ -53,7 +53,7 @@ class AnthropicClientHolder(private val settings: SettingsRepository) {
 }
 
 /**
- * One conversation with Talkto. Owned by the application container and driven by [AgentService],
+ * One conversation with ZnaiKo. Owned by the application container and driven by [AgentService],
  * so a turn survives the user switching away (for example while Recents is being swiped).
  *
  * Routing: with a Claude key every message goes to Claude. Without one, [offline] handles simple commands.

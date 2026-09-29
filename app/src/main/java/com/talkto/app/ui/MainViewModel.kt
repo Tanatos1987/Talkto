@@ -20,7 +20,9 @@ import com.talkto.core.avatar.AvatarStyle
 import com.talkto.core.avatar.Expression
 import com.talkto.core.avatar.Gesture
 import com.talkto.app.background.BackgroundConfig
+import com.talkto.app.avatar.SpeechEngine
 import com.talkto.app.voice.VoiceLanguage
+import com.talkto.core.voice.VoicePreset
 import com.talkto.app.voice.VoiceState
 import com.talkto.core.history.Utterance
 import com.talkto.core.scene.MoodScene
@@ -198,7 +200,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val voice: StateFlow<VoiceState> = c.voice.state
 
-    /** True when the last message was spoken; hands-free mode then listens again after Talkto answers. */
+    /** True when the last message was spoken; hands-free mode then listens again after ZnaiKo answers. */
     @Volatile private var lastInputWasVoice = false
 
     init {
@@ -230,20 +232,58 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun startListening() {
-        c.avatar.stopSpeaking() // barge-in: talking over Talkto interrupts it
+    /** [dialogOnly]: skip the in-app recogniser (e.g. the microphone permission was denied). */
+    fun startListening(dialogOnly: Boolean = false) {
+        c.avatar.stopSpeaking() // barge-in: talking over ZnaiKo interrupts it
         val lang = runCatching { VoiceLanguage.valueOf(c.settings.settings.value.voiceLanguage) }.getOrDefault(VoiceLanguage.AUTO)
+        if (dialogOnly) c.voice.preferDialog = true
         c.voice.start(lang) { heard ->
             lastInputWasVoice = true
             AgentService.submit(getApplication(), heard)
         }
     }
 
+    /** The UI opens the system speech dialog for each emission. */
+    val voiceDialogRequests = c.voice.dialogRequests
+
+    fun voiceDialogIntent(lang: VoiceLanguage) = c.voice.dialogIntent(lang)
+
+    fun onVoiceDialogResult(results: List<String>?) = c.voice.deliverDialogResult(results)
+
+    fun onVoiceDialogUnavailable() = c.voice.dialogUnavailable()
+
     fun stopListening() = c.voice.stop()
 
     fun setVoiceLanguage(lang: VoiceLanguage) = viewModelScope.launch { c.settings.setVoiceLanguage(lang.name) }
 
     fun setHandsFree(enabled: Boolean) = viewModelScope.launch { c.settings.setHandsFree(enabled) }
+
+    fun setVoicePreset(preset: VoicePreset) = viewModelScope.launch {
+        c.settings.setVoicePreset(preset)
+        c.speech.setVoice(preset, c.settings.settings.value.ttsVoice)
+        c.avatar.speak(preset.sample, voice = true)
+    }
+
+    fun setTtsVoice(name: String?) = viewModelScope.launch {
+        c.settings.setTtsVoice(name)
+        val preset = c.settings.settings.value.voicePreset
+        c.speech.setVoice(preset, name)
+        c.avatar.speak(preset.sample, voice = true)
+    }
+
+    /** Plays a preset's sample without saving it. The saved voice returns on the next settings change. */
+    fun previewVoice(preset: VoicePreset) = viewModelScope.launch {
+        val s = c.settings.settings.value
+        c.speech.setVoice(preset, s.ttsVoice)
+        c.avatar.speak(preset.sample, voice = true)
+        c.speech.setVoice(s.voicePreset, s.ttsVoice)
+    }
+
+    private val _engineVoices = MutableStateFlow<List<SpeechEngine.VoiceOption>>(emptyList())
+    /** Voices installed in the phone's TTS engine (bg and en). */
+    val engineVoices: StateFlow<List<SpeechEngine.VoiceOption>> = _engineVoices.asStateFlow()
+
+    fun loadEngineVoices() = viewModelScope.launch { _engineVoices.value = c.speech.availableVoices() }
 
     // -------------------------------------------------------------- backgrounds
 
@@ -308,7 +348,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val text = runCatching { c.history.export() }.getOrDefault("")
         if (text.isBlank()) return@launch
         val send = Intent(Intent.ACTION_SEND).setType("text/plain")
-            .putExtra(Intent.EXTRA_SUBJECT, "Talkto")
+            .putExtra(Intent.EXTRA_SUBJECT, "ZnaiKo")
             .putExtra(Intent.EXTRA_TEXT, text)
         context.startActivity(Intent.createChooser(send, null))
     }

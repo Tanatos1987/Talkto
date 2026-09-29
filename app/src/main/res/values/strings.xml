@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Talkto</string>
-    <string name="accessibility_service_label">Talkto: управление на приложения</string>
-    <string name="accessibility_service_description">Позволява на Talkto да затваря приложения от екрана с последните приложения, когато вие поискате. Talkto не чете съдържанието на екрана ви за нищо друго.</string>
+    <string name="app_name">ZnaiKo</string>
+    <string name="accessibility_service_label">ZnaiKo: управление на приложения</string>
+    <string name="accessibility_service_description">Позволява на ZnaiKo да затваря приложения от екрана с последните приложения, когато вие поискате. ZnaiKo не чете съдържанието на екрана ви за нищо друго.</string>
 
     <!-- Main screen -->
-    <string name="input_hint">Кажи нещо на Talkto…</string>
+    <string name="input_hint">Кажи нещо на ZnaiKo…</string>
     <string name="send">Изпрати</string>
     <string name="action_feed">Нахрани</string>
     <string name="action_play">Играй</string>
@@ -20,7 +20,7 @@
     <string name="stat_bond">Връзка</string>
     <string name="thinking">Мисля…</string>
     <string name="tool_running">Работя: %1$s</string>
-    <string name="greeting">Здрасти! Аз съм Talkto. Какво да направим днес?</string>
+    <string name="greeting">Здрасти! Аз съм ZnaiKo. Какво да направим днес?</string>
     <string name="greeting_offline">Здрасти! Работя и без API ключ: кажи „помощ“ за командите. С Claude ключ мога много повече.</string>
     <string name="mode_offline">Офлайн режим</string>
     <string name="mode_online">Claude</string>
@@ -34,7 +34,7 @@
     <string name="avatar_extra_prompt">Допълнителни детайли (по избор)</string>
     <string name="avatar_generate">Генерирай</string>
     <string name="avatar_generating">Рисувам те…</string>
-    <string name="avatar_reset">Върни стандартния Talkto</string>
+    <string name="avatar_reset">Върни стандартния ZnaiKo</string>
     <string name="avatar_ready">Готово! Как ти се струвам?</string>
     <string name="style_anime_2d">Аниме 2D</string>
     <string name="style_cartoon_3d">Анимация 3D</string>
@@ -55,7 +55,7 @@
     <string name="settings_anthropic_key">Claude API ключ</string>
     <string name="settings_stability_key">Stability AI ключ (за аватара)</string>
     <string name="settings_voice">Гласови отговори</string>
-    <string name="settings_offline_note">Без Claude ключ Talkto работи в офлайн режим: прости команди за приложения, файлове и любимеца (кажи „помощ“). Ключът отключва свободния разговор, задачите от няколко стъпки и предложенията по навиците. Stability ключът е нужен само за аватар от снимка.</string>
+    <string name="settings_offline_note">Без Claude ключ ZnaiKo работи в офлайн режим: прости команди за приложения, файлове и любимеца (кажи „помощ“). Ключът отключва свободния разговор, задачите от няколко стъпки и предложенията по навиците. Stability ключът е нужен само за аватар от снимка.</string>
     <string name="settings_keys_note">Ключовете се пазят криптирани с Android Keystore и никога не напускат устройството, освен към съответния API.</string>
     <string name="settings_habits">Научени навици</string>
     <string name="settings_habits_empty">Все още не съм забелязал навици.</string>
@@ -67,29 +67,29 @@
 
     <!-- Permissions -->
     <string name="perm_storage_title">Нужен ми е достъп до файловете</string>
-    <string name="perm_storage_body">За да търся, местя и подреждам файлове, разреши „Достъп до всички файлове“ за Talkto.</string>
+    <string name="perm_storage_body">За да търся, местя и подреждам файлове, разреши „Достъп до всички файлове“ за ZnaiKo.</string>
     <string name="perm_grant">Разреши</string>
     <string name="perm_accessibility">Включи услугата за достъпност, за да затварям приложения.</string>
 
     <!-- Confirmation -->
     <string name="confirm_delete_title">Да изтрия ли %1$d файла?</string>
-    <string name="confirm_delete_body_trash">%1$d файла, %2$d папки, %3$s ще отидат в кошчето на Talkto (може да се възстановят).</string>
+    <string name="confirm_delete_body_trash">%1$d файла, %2$d папки, %3$s ще отидат в кошчето на ZnaiKo (може да се възстановят).</string>
     <string name="confirm_delete_body_permanent">%1$d файла, %2$d папки, %3$s ще бъдат изтрити завинаги.</string>
     <string name="confirm_overwrite_title">Да заменя ли?</string>
     <string name="confirm_overwrite_body">„%2$s“ вече съществува. Да го заменя ли с „%1$s“?</string>
     <string name="confirm_organize_title">Да подредя ли папката?</string>
     <string name="confirm_organize_body">Ще преместя %1$d файла в „%2$s“ в подпапки.</string>
     <string name="confirm_empty_trash_title">Да изпразня ли кошчето?</string>
-    <string name="confirm_empty_trash_body">Всичко в кошчето на Talkto ще бъде изтрито завинаги.</string>
+    <string name="confirm_empty_trash_body">Всичко в кошчето на ZnaiKo ще бъде изтрито завинаги.</string>
     <string name="confirm_yes">Да</string>
     <string name="confirm_delete_yes">Изтрий</string>
     <string name="confirm_no">Не</string>
-    <string name="notif_confirm_title">Talkto чака потвърждение</string>
+    <string name="notif_confirm_title">ZnaiKo чака потвърждение</string>
     <string name="notif_confirm_body">Докосни, за да прегледаш действието.</string>
 
     <!-- Reminders & progression -->
     <string name="notif_channel_reminders">Напомняния</string>
-    <string name="notif_reminder_title">Talkto ти напомня</string>
+    <string name="notif_reminder_title">ZnaiKo ти напомня</string>
     <string name="level_short">Ниво %1$d · %2$s</string>
     <string name="streak_short">%1$d дни подред</string>
     <string name="level_up">Ура! Вече съм на ниво %1$d!</string>
@@ -105,7 +105,7 @@
     <!-- 3D, history, profile -->
     <string name="settings_avatar_3d">3D любимец</string>
     <string name="settings_record">Записвай разговорите</string>
-    <string name="settings_record_note">Разговорите остават само на телефона. От тях Talkto помни за какво сте говорили и се учи.</string>
+    <string name="settings_record_note">Разговорите остават само на телефона. От тях ZnaiKo помни за какво сте говорили и се учи.</string>
     <string name="settings_profile">Какво знам за теб</string>
     <string name="settings_profile_empty">Още нищо. Кажи ми „казвам се …“, „обичам …“ или „запомни, че …“.</string>
     <string name="settings_history">История на разговорите</string>
@@ -146,8 +146,8 @@
     <string name="mood_surprised">изненадан</string>
 
     <!-- Foreground service -->
-    <string name="notif_channel_agent">Задачи на Talkto</string>
-    <string name="notif_agent_title">Talkto работи по задача</string>
+    <string name="notif_channel_agent">Задачи на ZnaiKo</string>
+    <string name="notif_agent_title">ZnaiKo работи по задача</string>
 
     <!-- Friendly errors spoken by the avatar -->
     <string name="err_permission">Нямам права за тази папка. Ще ми разрешиш ли достъп до файловете от настройките?</string>
@@ -184,4 +184,9 @@
     <string name="tool_generate_avatar">рисувам аватар</string>
     <string name="tool_animate_avatar">мимики</string>
     <string name="perm_shizuku">Shizuku (am force-stop)</string>
+    <string name="settings_voice_character">Гласът на ZnaiKo</string>
+    <string name="settings_voice_preview">Чуй</string>
+    <string name="settings_voice_engine">Гласове на телефона</string>
+    <string name="settings_voice_engine_none">Няма намерени гласове. Инсталирай „Услуги за говор от Google“ и изтегли български глас.</string>
+    <string name="settings_voice_engine_auto">Автоматично</string>
 </resources>

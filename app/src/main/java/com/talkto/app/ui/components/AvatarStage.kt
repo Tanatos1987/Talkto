@@ -79,7 +79,7 @@ fun AvatarStage(
     sleeping: Boolean,
     stage: LifeStage = LifeStage.ADULT,
     modifier: Modifier = Modifier,
-    description: String = "Talkto",
+    description: String = "ZnaiKo",
 ) {
     val image: ImageBitmap? = remember(visual.bitmap) { visual.bitmap?.asImageBitmap() }
     val palette = remember(visual.bitmap, visual.anchors) { samplePalette(visual.bitmap, visual.anchors) }

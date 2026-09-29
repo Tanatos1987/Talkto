@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * Foreground service that executes agent turns.
  *
  * Why a service: a turn can outlive the Activity. Closing an app through the Accessibility route
- * opens Recents (Talkto leaves the foreground), and long searches or organise runs take seconds.
+ * opens Recents (ZnaiKo leaves the foreground), and long searches or organise runs take seconds.
  * The service keeps the process at foreground priority until the last queued turn is done, then stops.
  */
 class AgentService : LifecycleService() {
@@ -93,7 +93,7 @@ class AgentService : LifecycleService() {
             }
         }
 
-        /** Shown when a tool waits for a yes/no while Talkto is not on screen. */
+        /** Shown when a tool waits for a yes/no while ZnaiKo is not on screen. */
         fun notifyConfirmationPending(context: Context) {
             ensureChannel(context)
             val n = NotificationCompat.Builder(context, CHANNEL_ID)

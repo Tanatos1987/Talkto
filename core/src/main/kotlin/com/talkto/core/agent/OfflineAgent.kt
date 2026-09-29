@@ -45,7 +45,7 @@ interface PetActions {
 }
 
 /**
- * Talkto without an API key. A deterministic command parser (Bulgarian and English) that drives the same
+ * ZnaiKo without an API key. A deterministic command parser (Bulgarian and English) that drives the same
  * [ToolDispatcher] as Claude, so path protection, dry-runs, confirmation dialogs and habit learning all
  * behave identically. Commands are an ordered rule table; the first rule that matches wins.
  * Anything open-ended returns [AgentReply.needsApiKey] so the UI can explain what the key unlocks.
@@ -171,7 +171,7 @@ class OfflineAgent(
                 "${pet.status()} Кажи „помощ“, за да видиш какво мога без API ключ."
         },
 
-        // --- what Talkto knows about the user, and the conversation log
+        // --- what ZnaiKo knows about the user, and the conversation log
         rule("как се казвам|кой съм аз|знаеш ли как се казвам|what is my name|what's my name") {
             profile?.get("name")?.let { "Казваш се $it." } ?: "Още не знам. Кажи ми „казвам се …“."
         },
@@ -286,7 +286,7 @@ class OfflineAgent(
             val what = (body.removeRange(found.start, found.end))
                 .replace(Regex("^\\s*(?:да|за|че|to|about)\\s+", RegexOption.IGNORE_CASE), "")
                 .replace(Regex("\\s+(?:да|за|to)\\s*$", RegexOption.IGNORE_CASE), "")
-                .trim().trim(',').ifEmpty { "Напомняне от Talkto" }
+                .trim().trim(',').ifEmpty { "Напомняне от ZnaiKo" }
             val at = found.at.toLocalDateTime().withNano(0).toString()
             val (_, err) = tool(ToolProtocol.REMINDERS, args { put("action", "add"); put("text", what); put("at", at) })
             err?.let { return@rule errorText(it) }
@@ -464,7 +464,7 @@ class OfflineAgent(
             err?.let { return@rule errorText(it) }
             val r = ok?.obj()?.get("result")?.obj()
             val label = r?.s("label") ?: m.v(1)
-            if (r?.b("success") == true) "Затворих $label." else "Не успях да затворя $label. Включи услугата за достъпност на Talkto или Shizuku от Настройки."
+            if (r?.b("success") == true) "Затворих $label." else "Не успях да затворя $label. Включи услугата за достъпност на ZnaiKo или Shizuku от Настройки."
         },
 
         // --- files
@@ -481,7 +481,7 @@ class OfflineAgent(
             "Готово, вече се казва „${m.v(2)}“."
         },
         rule("(?:изтрий|махни|delete|remove) (.+)") { m ->
-            deleteTwoStep(listOf(m.v(1))) { n, trash -> if (trash) "Преместих $n неща в кошчето на Talkto." else "Изтрих $n неща." }
+            deleteTwoStep(listOf(m.v(1))) { n, trash -> if (trash) "Преместих $n неща в кошчето на ZnaiKo." else "Изтрих $n неща." }
         },
         rule("(?:подреди|организирай|organi[sz]e|sort|tidy(?: up)?) (?:папка(?:та)? |folder )?(.+?)(?: (?:по|by) (.+))?") { m ->
             val how = m.v(2)
@@ -575,7 +575,7 @@ class OfflineAgent(
         }
         tool(ToolProtocol.MANAGE_FILE, args { put("operation", "storage_report"); put("path", "~") }).first?.obj()?.let {
             val trash = it.l("trashBytes") ?: 0
-            if (trash > 0) lines += "• Кошчето на Talkto заема ${bytes(trash)} („изпразни кошчето“)."
+            if (trash > 0) lines += "• Кошчето на ZnaiKo заема ${bytes(trash)} („изпразни кошчето“)."
         }
         if (lines.none { it.startsWith("•") }) lines += "Не виждам нищо за почистване. Браво!"
         return lines.joinToString("\n")

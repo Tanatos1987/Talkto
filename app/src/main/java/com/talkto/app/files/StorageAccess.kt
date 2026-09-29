@@ -9,7 +9,7 @@ import android.os.storage.StorageManager
 import android.provider.Settings
 import java.nio.file.Path
 
-/** All Files Access (MANAGE_EXTERNAL_STORAGE) helpers and the list of volumes Talkto may manage. */
+/** All Files Access (MANAGE_EXTERNAL_STORAGE) helpers and the list of volumes ZnaiKo may manage. */
 object StorageAccess {
 
     fun hasAllFilesAccess(): Boolean = Environment.isExternalStorageManager()

@@ -56,7 +56,7 @@ data class AvatarPose(
 )
 
 data class AvatarVisual(
-    /** Null = draw the built-in Talkto creature. */
+    /** Null = draw the built-in ZnaiKo creature. */
     val bitmap: Bitmap? = null,
     val anchors: FaceAnchors = DEFAULT_CREATURE_ANCHORS,
     val style: AvatarStyle? = null,

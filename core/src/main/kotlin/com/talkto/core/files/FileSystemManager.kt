@@ -246,7 +246,7 @@ class FileSystemManager(
 
     // ------------------------------------------------------------ analysis
 
-    /** What takes space under [dir]: totals per category, the largest files and the Talkto trash size. */
+    /** What takes space under [dir]: totals per category, the largest files and the ZnaiKo trash size. */
     suspend fun storageReport(dir: String = "~", maxDepth: Int = 16, top: Int = 10): StorageReport = onIo {
         val start = guard.resolve(dir)
         if (!Files.isDirectory(start)) throw TalktoError.NotFound(start.toString())

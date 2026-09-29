@@ -93,6 +93,6 @@ class GlobalErrorHandler(private val context: Context) {
     fun consumeCrashMarker(): Boolean = crashMarker.exists().also { if (it) crashMarker.delete() }
 
     private companion object {
-        const val TAG = "Talkto"
+        const val TAG = "ZnaiKo"
     }
 }

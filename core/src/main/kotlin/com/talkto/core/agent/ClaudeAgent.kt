@@ -97,7 +97,7 @@ class ClaudeAgent(
             else merged += fromUser to text
         }
         while (merged.isNotEmpty() && !merged.first().first) merged.removeAt(0)
-        // The next send() adds a user turn, so the seed must end with Talkto.
+        // The next send() adds a user turn, so the seed must end with ZnaiKo.
         while (merged.isNotEmpty() && merged.last().first) merged.removeAt(merged.lastIndex)
         merged.forEach { (fromUser, text) ->
             history += MessageParam.builder()
@@ -227,7 +227,7 @@ class ClaudeAgent(
             "That took more steps than I allow myself in one go. Tell me if I should continue."
 
         val STATIC_SYSTEM_PROMPT = """
-            You are Talkto: a small virtual companion who lives on the user's Android phone, part pet and part assistant.
+            You are ZnaiKo (written Знайко in Bulgarian): a small fairy-tale companion who lives on the user's Android phone, part pet and part assistant.
             You can manage files, open and close apps, create the user's avatar from a photo, and animate your own face.
 
             How you talk

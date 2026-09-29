@@ -120,7 +120,7 @@ class PetEngine(
 
     fun gameWon() = mutate(XpReason.GAME_WON) { it.copy(happiness = (it.happiness + 10f).cap(), bond = (it.bond + 1f).cap()) }
 
-    /** A task finished successfully: helping makes Talkto happy and strengthens the bond. */
+    /** A task finished successfully: helping makes ZnaiKo happy and strengthens the bond. */
     fun rewardTask(success: Boolean) = mutate(if (success) XpReason.TASK else null) {
         if (success) it.copy(happiness = (it.happiness + 4f).cap(), bond = (it.bond + 1f).cap())
         else it.copy(happiness = (it.happiness - 2f).cap())

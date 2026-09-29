@@ -150,7 +150,7 @@ class GLTextureView(context: Context, private val renderer: GLSurfaceView.Render
     }
 
     private companion object {
-        const val TAG = "Talkto3D"
+        const val TAG = "ZnaiKo3D"
         const val FRAME_MS = 16L
     }
 }

@@ -4,7 +4,7 @@ import com.anthropic.core.JsonValue
 import com.anthropic.models.messages.Tool
 
 /**
- * The five tools Talkto exposes to Claude. Schemas are strict (additionalProperties = false),
+ * The five tools ZnaiKo exposes to Claude. Schemas are strict (additionalProperties = false),
  * so the model's arguments are guaranteed to match; the dispatcher still validates semantics.
  */
 object ToolProtocol {
@@ -42,8 +42,8 @@ object ToolProtocol {
             - delete: ALWAYS two steps. Step 1: call with paths (and optional permanent) and no confirmation_token; you get a
               dry-run plan with a token. Tell the user exactly what will be removed. Step 2: only after the user agrees, call
               again with the same paths and confirmation_token. The app shows its own confirmation dialog as well.
-              Deleted items go to the Talkto trash unless permanent=true.
-            - empty_trash: permanently clear the Talkto trash.
+              Deleted items go to the ZnaiKo trash unless permanent=true.
+            - empty_trash: permanently clear the ZnaiKo trash.
             - storage_report: what takes space under path (per category, largest files, trash size).
             - find_duplicates: byte-identical files under path; in each group the first path is the oldest copy to keep.
               To remove the extras, run delete (two-step as always) with the other paths.
@@ -100,7 +100,7 @@ object ToolProtocol {
 
     private fun generateAvatar() = tool(
         name = GENERATE_AVATAR,
-        description = "Turn a photo into the user's stylised Talkto avatar. source=picked_photo uses the photo the user just chose " +
+        description = "Turn a photo into the user's stylised ZnaiKo avatar. source=picked_photo uses the photo the user just chose " +
             "in the app (ask them to tap the camera/gallery button first if none is pending); source=path uses an image file on storage.",
         properties = mapOf(
             "source" to enumProp("Where the photo comes from.", "picked_photo", "path"),
@@ -159,7 +159,7 @@ object ToolProtocol {
 
     private fun reminders() = tool(
         name = REMINDERS,
-        description = "Reminders delivered as notifications at a set time, even if Talkto is closed. Give either in_minutes or at " +
+        description = "Reminders delivered as notifications at a set time, even if ZnaiKo is closed. Give either in_minutes or at " +
             "(local date-time, ISO format like 2026-09-28T18:30, in the time zone from <live_context>).",
         properties = mapOf(
             "action" to enumProp("What to do.", "add", "list", "cancel"),

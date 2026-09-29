@@ -37,7 +37,7 @@ data class SceneState(
 )
 
 /**
- * The 3D Talkto: a procedurally modelled creature (no asset files) rendered with OpenGL ES 2.0.
+ * The 3D ZnaiKo: a procedurally modelled creature (no asset files) rendered with OpenGL ES 2.0.
  *
  * Shading is a soft "toy" look: wrapped Lambert diffuse, Blinn-Phong highlight and a rim light, so the
  * vinyl-like body reads well on small screens. The face is built from primitives that animate directly:

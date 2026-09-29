@@ -17,7 +17,7 @@ import kotlin.coroutines.resume
  * Closes apps the way a person does: open Recents, find the app's card, swipe it up.
  * This works without root on every launcher that exposes task cards to accessibility
  * (Pixel Launcher, One UI, MIUI, stock AOSP; tested labels are content descriptions or titles).
- * Talkto does not read window content for any other purpose.
+ * ZnaiKo does not read window content for any other purpose.
  */
 class TalktoAccessibilityService : AccessibilityService() {
 

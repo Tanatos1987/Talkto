@@ -6,6 +6,7 @@ import android.speech.tts.UtteranceProgressListener
 import com.talkto.core.avatar.Viseme
 import com.talkto.core.avatar.VisemeFrame
 import com.talkto.core.avatar.VisemePlanner
+import com.talkto.core.voice.VoicePreset
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -38,7 +39,9 @@ class SpeechEngine(context: Context, private val scope: CoroutineScope) {
     private var fallback: Job? = null
     @Volatile private var gotRange = false
     @Volatile private var currentText = ""
-    private val speechRate = 1.05f
+    @Volatile private var speechRate = VoicePreset.DEFAULT.rate
+    @Volatile private var pitch = VoicePreset.DEFAULT.pitch
+    @Volatile private var voiceName: String? = null
 
     private val tts: TextToSpeech = TextToSpeech(context.applicationContext) { status ->
         ready.complete(status == TextToSpeech.SUCCESS)
@@ -73,16 +76,37 @@ class SpeechEngine(context: Context, private val scope: CoroutineScope) {
         })
     }
 
+    data class VoiceOption(val name: String, val language: String, val offline: Boolean)
+
+    /** Character voice: pitch and rate on top of the engine voice; [engineVoice] picks a specific engine voice. */
+    fun setVoice(preset: VoicePreset, engineVoice: String?) {
+        speechRate = preset.rate
+        pitch = preset.pitch
+        voiceName = engineVoice
+    }
+
+    /** Bulgarian and English voices of the installed TTS engine, offline ones first. */
+    suspend fun availableVoices(): List<VoiceOption> {
+        if (withTimeoutOrNull(3_000) { ready.await() } != true) return emptyList()
+        return runCatching { tts.voices.orEmpty() }.getOrDefault(emptySet())
+            .filter { it.locale.language == "bg" || it.locale.language == "en" }
+            .map { VoiceOption(it.name, it.locale.toLanguageTag(), !it.isNetworkConnectionRequired) }
+            .sortedWith(compareByDescending<VoiceOption> { it.language.startsWith("bg") }.thenByDescending { it.offline }.thenBy { it.name })
+    }
+
     /** Speaks [text]. Returns false when no TTS engine is usable; the caller then animates the mouth silently. */
     suspend fun speak(text: String): Boolean {
         val ok = withTimeoutOrNull(3_000) { ready.await() } ?: false
         if (!ok) {
             mimeSilently(text); return false
         }
-        configureLanguage(text)
-        currentText = text
+        // Bulgarian voices read the Latin brand letter by letter; say the name the way it sounds.
+        val spoken = text.replace("ZnaiKo", if (isCyrillic(text)) "Знайко" else "Znayko")
+        configureLanguage(spoken)
+        currentText = spoken
         tts.setSpeechRate(speechRate)
-        return tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, UUID.randomUUID().toString()) == TextToSpeech.SUCCESS
+        tts.setPitch(pitch)
+        return tts.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, UUID.randomUUID().toString()) == TextToSpeech.SUCCESS
     }
 
     /** Mouth movement without sound, used when the voice is switched off. */
@@ -127,9 +151,16 @@ class SpeechEngine(context: Context, private val scope: CoroutineScope) {
     }
 
     private fun configureLanguage(text: String) {
-        val cyrillic = text.count { it in '\u0400'..'\u04FF' } > text.length / 4
-        val target = if (cyrillic) Locale.forLanguageTag("bg-BG") else Locale.getDefault()
+        val target = if (isCyrillic(text)) Locale.forLanguageTag("bg-BG") else Locale.getDefault()
+        // A chosen engine voice wins when it speaks the language of this text.
+        val chosen = voiceName?.let { n -> runCatching { tts.voices?.firstOrNull { it.name == n } }.getOrNull() }
+        if (chosen != null && chosen.locale.language == target.language) {
+            tts.voice = chosen
+            return
+        }
         val result = tts.setLanguage(target)
         if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) tts.setLanguage(Locale.getDefault())
     }
+
+    private fun isCyrillic(text: String) = text.count { it in '\u0400'..'\u04FF' } > text.length / 4
 }

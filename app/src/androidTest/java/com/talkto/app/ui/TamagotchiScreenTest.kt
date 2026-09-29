@@ -24,8 +24,8 @@ class TamagotchiScreenTest {
     @get:Rule(order = 1) val rule = createAndroidComposeRule<MainActivity>()
 
     @Test fun screenShowsPetAndControls() {
-        rule.onNodeWithText("TALKTO").assertIsDisplayed()
-        rule.onNodeWithContentDescription("Talkto").assertIsDisplayed()
+        rule.onNodeWithText("ZNAIKO").assertIsDisplayed()
+        rule.onNodeWithContentDescription("ZnaiKo").assertIsDisplayed()
         rule.onNodeWithContentDescription(rule.activity.getString(R.string.action_feed)).assertIsDisplayed()
     }
 
@@ -36,6 +36,6 @@ class TamagotchiScreenTest {
 
     @Test fun feedingDoesNotCrash() {
         rule.onNodeWithContentDescription(rule.activity.getString(R.string.action_feed)).performClick()
-        rule.onNodeWithText("TALKTO").assertIsDisplayed()
+        rule.onNodeWithText("ZNAIKO").assertIsDisplayed()
     }
 }

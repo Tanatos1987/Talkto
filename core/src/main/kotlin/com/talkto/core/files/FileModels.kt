@@ -51,7 +51,7 @@ data class DeletionPlan(
     val totalBytes: Long,
     /** First files that would disappear, for the confirmation dialog. */
     val sample: List<String>,
-    /** When false the items go to the Talkto trash and can be recovered. */
+    /** When false the items go to the ZnaiKo trash and can be recovered. */
     val permanent: Boolean,
     val expiresAtEpochMs: Long,
 )

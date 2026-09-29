@@ -112,7 +112,7 @@ class HistoryRepositoryTest {
         assertThat(repo.count()).isEqualTo(2)
         assertThat(repo.search("баница").single().speaker).isEqualTo(Speaker.USER)
         assertThat(repo.export(ZoneOffset.UTC)).isEqualTo(
-            "[2026-09-28 14:10] Аз: Как се прави баница?\n[2026-09-28 14:10] Talkto: С точени кори и сирене.",
+            "[2026-09-28 14:10] Аз: Как се прави баница?\n[2026-09-28 14:10] ZnaiKo: С точени кори и сирене.",
         )
     }
 
@@ -124,7 +124,7 @@ class HistoryRepositoryTest {
 }
 
 class ClaudeSeedTest {
-    @Test fun `seed merges same-speaker lines, starts with the user and ends with Talkto`() = runTest {
+    @Test fun `seed merges same-speaker lines, starts with the user and ends with ZnaiKo`() = runTest {
         val agent = ClaudeAgent(
             client = { error("no network in this test") },
             dispatcher = com.talkto.core.agent.ToolDispatcherFixtures.dispatcher(),

@@ -5,7 +5,7 @@ import kotlinx.serialization.Serializable
 import java.util.Locale
 
 /**
- * Something Talkto learned about the user. [key] is stable ("name", "likes:кафе", "alias:кино"),
+ * Something ZnaiKo learned about the user. [key] is stable ("name", "likes:кафе", "alias:кино"),
  * so learning the same thing twice updates instead of duplicating.
  */
 @Serializable
@@ -66,7 +66,7 @@ class ProfileRepository(private val store: ProfileStore, private val clock: () -
         if (facts.isEmpty()) return ""
         return buildString {
             appendLine("<user_profile>")
-            appendLine("What the user told Talkto about themselves (stored on the phone). Use it naturally; never recite it back unprompted.")
+            appendLine("What the user told ZnaiKo about themselves (stored on the phone). Use it naturally; never recite it back unprompted.")
             facts.take(40).forEach { appendLine("- ${it.key}: ${it.value}") }
             append("</user_profile>")
         }

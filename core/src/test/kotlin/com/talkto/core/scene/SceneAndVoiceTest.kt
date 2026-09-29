@@ -32,11 +32,29 @@ class SpeechTextTest {
     @Test fun `wake word and punctuation are removed`() {
         assertThat(SpeechText.clean("Толкто, отвори камерата.")).isEqualTo("отвори камерата")
         assertThat(SpeechText.clean("Hey Talkto open Spotify")).isEqualTo("open Spotify")
+        assertThat(SpeechText.clean("Знайко, отвори камерата")).isEqualTo("отвори камерата")
+        assertThat(SpeechText.clean("hey ZnaiKo open Spotify")).isEqualTo("open Spotify")
         assertThat(SpeechText.clean("  Колко е   часът  ")).isEqualTo("колко е часът")
     }
 
     @Test fun `first usable hypothesis wins`() {
         assertThat(SpeechText.pick(listOf("Токто", "токто нахрани се"))).isEqualTo("нахрани се")
         assertThat(SpeechText.pick(emptyList())).isNull()
+    }
+}
+
+class VoicePresetTest {
+    @Test fun `presets stay in the range Android TTS accepts`() {
+        com.talkto.core.voice.VoicePreset.entries.forEach {
+            assertThat(it.pitch).isIn(com.google.common.collect.Range.closed(0.5f, 2.0f))
+            assertThat(it.rate).isIn(com.google.common.collect.Range.closed(0.5f, 2.0f))
+            assertThat(it.sample).isNotEmpty()
+        }
+    }
+
+    @Test fun `unknown names fall back to the fairy-tale voice`() {
+        assertThat(com.talkto.core.voice.VoicePreset.parse("NOPE")).isEqualTo(com.talkto.core.voice.VoicePreset.FAIRY)
+        assertThat(com.talkto.core.voice.VoicePreset.parse(null)).isEqualTo(com.talkto.core.voice.VoicePreset.FAIRY)
+        assertThat(com.talkto.core.voice.VoicePreset.parse("BEAR")).isEqualTo(com.talkto.core.voice.VoicePreset.BEAR)
     }
 }

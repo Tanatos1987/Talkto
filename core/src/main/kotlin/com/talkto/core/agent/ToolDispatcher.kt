@@ -411,13 +411,13 @@ class ToolDispatcher(
     }
 
     private fun hintFor(kind: TalktoError.Kind): String = when (kind) {
-        TalktoError.Kind.PERMISSION_DENIED -> "Ask the user to grant 'All files access' to Talkto in system settings."
+        TalktoError.Kind.PERMISSION_DENIED -> "Ask the user to grant 'All files access' to ZnaiKo in system settings."
         TalktoError.Kind.PROTECTED_PATH -> "This location is protected on purpose. Explain why and suggest a safe alternative."
         TalktoError.Kind.NOT_FOUND -> "Search for the item first or ask the user for the exact name."
         TalktoError.Kind.ALREADY_EXISTS -> "Ask whether to overwrite, or pick another name."
         TalktoError.Kind.CONFIRMATION_REQUIRED -> "Do not retry automatically. Tell the user nothing was changed."
         TalktoError.Kind.CAPABILITY_UNAVAILABLE -> "Explain which permission or service the user can enable, and offer another method."
-        TalktoError.Kind.API_KEY_MISSING -> "Ask the user to add the API key in Talkto settings."
+        TalktoError.Kind.API_KEY_MISSING -> "Ask the user to add the API key in ZnaiKo settings."
         else -> "Explain the problem briefly and suggest a next step."
     }
 

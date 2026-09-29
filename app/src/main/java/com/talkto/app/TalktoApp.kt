@@ -91,7 +91,9 @@ class AppContainer(private val context: Context) {
     // ---- avatar
     private val imageApi = StabilityImageApi(apiKey = { settings.settings.value.stabilityKey })
     private val generator = AvatarGenerator(imageApi, FileAvatarCache(context.filesDir.toPath().resolve("avatars")))
-    val speech = SpeechEngine(context, appScope)
+    val speech = SpeechEngine(context, appScope).also { engine ->
+        appScope.launch { settings.settings.collect { engine.setVoice(it.voicePreset, it.ttsVoice) } }
+    }
     val avatar = AvatarEngine(context, generator, FaceAnchorDetector(), speech, petStore, pathGuard, appScope)
 
     // ---- apps, phone, notes, reminders (all work without an API key)
@@ -179,7 +181,7 @@ class AppContainer(private val context: Context) {
             appendLine("all_files_access: ${if (StorageAccess.hasAllFilesAccess()) "granted" else "NOT granted - file tools will fail until the user enables it"}")
             appendLine("storage_roots: ${pathGuard.roots.joinToString()}")
             appendLine("terminate_methods_available: ${apps.availableTerminateMethods().joinToString { it.name.lowercase() }}")
-            appendLine("avatar: ${visual.style?.name?.lowercase() ?: "default Talkto creature"}; photo_picked: ${avatar.hasPendingPhoto()}")
+            appendLine("avatar: ${visual.style?.name?.lowercase() ?: "default ZnaiKo creature"}; photo_picked: ${avatar.hasPendingPhoto()}")
             append("image_api_key: ${if (settings.settings.value.stabilityKey.isNullOrBlank()) "missing" else "set"}")
             val today = now.toLocalDate()
             if (runCatching { profile.isBirthday(today.dayOfMonth, today.monthValue) }.getOrDefault(false)) {

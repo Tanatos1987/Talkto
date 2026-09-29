@@ -157,7 +157,7 @@ class OfflineAgentTest {
         assertThat(Files.exists(root.resolve("Download/report.pdf"))).isTrue()
 
         approve = true
-        assertThat(say("изтрий Download/report.pdf").text).isEqualTo("Преместих 1 неща в кошчето на Talkto.")
+        assertThat(say("изтрий Download/report.pdf").text).isEqualTo("Преместих 1 неща в кошчето на ZnaiKo.")
         assertThat(Files.exists(root.resolve("Download/report.pdf"))).isFalse()
     }
 
