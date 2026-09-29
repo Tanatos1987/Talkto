@@ -56,6 +56,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Face
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Restaurant
+import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SportsEsports
 import androidx.compose.material.icons.rounded.Stop
@@ -127,6 +128,11 @@ import com.talkto.app.ui.components.petTouches
 import com.talkto.app.ui.games.GameDialog
 import com.talkto.app.ui.games.GamesSheet
 import com.talkto.app.ui.games.UpdateDialog
+import com.talkto.app.ui.learn.LanguagePicker
+import com.talkto.app.ui.learn.LearnSheet
+import com.talkto.app.ui.learn.LessonDialog
+import com.talkto.app.ui.learn.PracticeChip
+import com.talkto.app.i18n.screenLang
 import com.talkto.app.ui.theme.TalktoColors
 import com.talkto.app.voice.VoiceLanguage
 import com.talkto.core.voice.VoicePreset
@@ -143,7 +149,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
-private enum class Sheet { NONE, WARDROBE, AVATAR, SETTINGS, HISTORY, BACKGROUNDS, GAMES }
+private enum class Sheet { NONE, WARDROBE, AVATAR, SETTINGS, HISTORY, BACKGROUNDS, GAMES, LEARN }
 
 @Composable
 fun TamagotchiScreen(vm: MainViewModel) {
@@ -242,7 +248,7 @@ fun TamagotchiScreen(vm: MainViewModel) {
             onPlay = { sheet = Sheet.GAMES },
             onSleep = vm::toggleSleep,
             onWardrobe = { sheet = Sheet.WARDROBE },
-            onAvatar = { sheet = Sheet.AVATAR },
+            onLearn = { sheet = Sheet.LEARN },
         )
         Spacer(Modifier.height(12.dp))
         val voice by vm.voice.collectAsStateWithLifecycle()
@@ -261,6 +267,9 @@ fun TamagotchiScreen(vm: MainViewModel) {
             }
         }
         val ctx = LocalContext.current
+        val practice by vm.practice.collectAsStateWithLifecycle()
+        practice?.let { target -> PracticeChip(target, onStop = vm::stopPractice) }
+        LaunchedEffect(Unit) { vm.lessonRequests.collect { sheet = Sheet.LEARN } }
         ChatInput(
             busy = agent.busy,
             voice = voice,
@@ -279,7 +288,13 @@ fun TamagotchiScreen(vm: MainViewModel) {
     }
 
     when (sheet) {
-        Sheet.WARDROBE -> WardrobeSheet(outfit, onChange = vm::saveOutfit, onDismiss = { sheet = Sheet.NONE })
+        Sheet.WARDROBE -> WardrobeSheet(outfit, onChange = vm::saveOutfit, onAvatar = { sheet = Sheet.AVATAR }, onDismiss = { sheet = Sheet.NONE })
+        Sheet.LEARN -> LearnSheet(
+            vm,
+            onLesson = { topic, speaking -> sheet = Sheet.NONE; vm.startLesson(topic, speaking) },
+            onPractice = { sheet = Sheet.NONE; vm.startPractice() },
+            onDismiss = { sheet = Sheet.NONE },
+        )
         Sheet.AVATAR -> AvatarCreatorSheet(vm, onDismiss = { sheet = Sheet.NONE })
         Sheet.SETTINGS -> SettingsSheet(
             vm, permissions, onDismiss = { sheet = Sheet.NONE },
@@ -300,6 +315,8 @@ fun TamagotchiScreen(vm: MainViewModel) {
     game?.let { g ->
         GameDialog(g, vm.games, onPlayAgain = { vm.startGame(g.kind, (g.board as? Board.LudoBoard)?.players ?: 2) })
     }
+    val lesson by vm.lessons.state.collectAsStateWithLifecycle()
+    lesson?.let { LessonDialog(it, vm) }
     val updates by vm.pendingUpdates.collectAsStateWithLifecycle()
     updates.firstOrNull()?.let { UpdateDialog(it, pet, onDismiss = vm::dismissUpdate) }
 
@@ -514,7 +531,7 @@ private fun ActionRow(
     onPlay: () -> Unit,
     onSleep: () -> Unit,
     onWardrobe: () -> Unit,
-    onAvatar: () -> Unit,
+    onLearn: () -> Unit,
 ) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         ToyButton(Icons.Rounded.Restaurant, stringResource(R.string.action_feed), TalktoColors.Tomato, onFeed)
@@ -525,7 +542,7 @@ private fun ActionRow(
             TalktoColors.Denim, onSleep,
         )
         ToyButton(Icons.Rounded.Checkroom, stringResource(R.string.action_wardrobe), TalktoColors.Sunflower, onWardrobe)
-        ToyButton(Icons.Rounded.Face, stringResource(R.string.action_avatar), Color(0xFF9B5DE5), onAvatar)
+        ToyButton(Icons.Rounded.School, stringResource(R.string.action_learn), Color(0xFF9B5DE5), onLearn)
     }
 }
 
@@ -630,10 +647,17 @@ private fun MicButton(listening: Boolean, level: Float, onClick: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-private fun WardrobeSheet(outfit: OutfitConfig, onChange: (OutfitConfig) -> Unit, onDismiss: () -> Unit) {
+private fun WardrobeSheet(outfit: OutfitConfig, onChange: (OutfitConfig) -> Unit, onAvatar: () -> Unit, onDismiss: () -> Unit) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp).verticalScroll(rememberScrollState())) {
             Text(stringResource(R.string.wardrobe_title), style = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.height(8.dp))
+            // The avatar from a photo lives here now; its place in the button row went to the lessons.
+            OutlinedButton(onClick = onAvatar, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Rounded.Face, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.wardrobe_avatar))
+            }
             Spacer(Modifier.height(12.dp))
 
             SectionLabel(stringResource(R.string.slot_hat))
@@ -759,7 +783,7 @@ private fun VoicePicker(vm: MainViewModel, selected: VoicePreset, engineVoice: S
     Text(stringResource(R.string.settings_voice_character), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         VoicePreset.entries.forEach { p ->
-            FilterChip(selected = p == selected, onClick = { vm.setVoicePreset(p) }, label = { Text(p.bg) })
+            FilterChip(selected = p == selected, onClick = { vm.setVoicePreset(p) }, label = { Text(p.label(screenLang())) })
         }
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -804,6 +828,8 @@ private fun SettingsSheet(
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp).verticalScroll(rememberScrollState())) {
             Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(12.dp))
+            LanguagePicker(vm)
+            Spacer(Modifier.height(8.dp))
             KeyField(stringResource(R.string.settings_anthropic_key), claudeKey, settings.hasClaudeKey) { claudeKey = it }
             KeyField(stringResource(R.string.settings_stability_key), stabilityKey, !settings.stabilityKey.isNullOrBlank()) { stabilityKey = it }
             if (settings.hasClaudeKey) {
@@ -857,7 +883,7 @@ private fun SettingsSheet(
             } else {
                 facts.forEach { f ->
                     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(ProfileRepository.label(f), modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                        Text(ProfileRepository.label(f, screenLang()), modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                         TextButton(onClick = { vm.forgetFact(f.key) }) { Text(stringResource(R.string.settings_forget)) }
                     }
                 }
@@ -921,7 +947,7 @@ private fun BackgroundsSheet(vm: MainViewModel, onDismiss: () -> Unit) {
                 val photos = config.photos[scene].orEmpty()
                 Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text(scene.bg, style = MaterialTheme.typography.titleMedium)
+                        Text(screenLang().pick(scene.bg, scene.en), style = MaterialTheme.typography.titleMedium)
                         Text(stringResource(R.string.backgrounds_mood_hint, moodHint(scene)), style = MaterialTheme.typography.labelSmall)
                     }
                     TextButton(onClick = {

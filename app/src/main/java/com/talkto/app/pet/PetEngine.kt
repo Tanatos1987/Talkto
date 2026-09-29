@@ -3,6 +3,7 @@ package com.talkto.app.pet
 import com.talkto.app.data.prefs.PetStore
 import com.talkto.core.avatar.Expression
 import com.talkto.core.games.GameOutcome
+import com.talkto.core.i18n.Lang
 import com.talkto.core.games.Skill
 import com.talkto.core.pet.Knowledge
 import com.talkto.core.pet.KnowledgeSource
@@ -72,21 +73,28 @@ data class PetState(
         }
 
     /** Short first-person line for the offline assistant. */
-    fun feeling(): String = when {
-        sleeping -> "Малко съм сънлив, но слушам."
-        satiety < 20f -> "Гладен съм! Ще ме нахраниш ли?"
-        energy < 20f -> "Изморен съм, ще ми дадеш ли да поспя?"
-        happiness < 25f -> "Малко ми е тъжно. Да поиграем?"
-        happiness > 80f -> "Чувствам се чудесно!"
-        else -> "Добре съм."
+    fun feeling(lang: Lang = Lang.BG): String = when {
+        sleeping -> lang.pick("Малко съм сънлив, но слушам.", "I'm a bit sleepy, but I'm listening.")
+        satiety < 20f -> lang.pick("Гладен съм! Ще ме нахраниш ли?", "I'm hungry! Will you feed me?")
+        energy < 20f -> lang.pick("Изморен съм, ще ми дадеш ли да поспя?", "I'm tired. Will you let me have a nap?")
+        happiness < 25f -> lang.pick("Малко ми е тъжно. Да поиграем?", "I'm a little sad. Shall we play?")
+        happiness > 80f -> lang.pick("Чувствам се чудесно!", "I feel wonderful!")
+        else -> lang.pick("Добре съм.", "I'm fine.")
     }
 
-    fun progressText(): String {
+    fun progressText(lang: Lang = Lang.BG): String {
         val toNext = Progression.xpForLevel(level + 1) - xp
-        val streak = if (streakDays > 1) " Идваш $streakDays дни подред!" else ""
         val nextUpdate = Knowledge.needed(updates + 1) - knowledge
-        val learning = if (updates >= Knowledge.UPDATES.size) " Всички обновления са инсталирани." else " До следващото обновление ми трябват още $nextUpdate знания."
-        return "Ниво $level (${stage.bg}), $xp опит. До следващото ниво: $toNext. Версия $version, $knowledge знания.$learning$streak"
+        val allInstalled = updates >= Knowledge.UPDATES.size
+        return if (lang == Lang.BG) {
+            val streak = if (streakDays > 1) " Идваш $streakDays дни подред!" else ""
+            val learning = if (allInstalled) " Всички обновления са инсталирани." else " До следващото обновление ми трябват още $nextUpdate знания."
+            "Ниво $level (${stage.bg}), $xp опит. До следващото ниво: $toNext. Версия $version, $knowledge знания.$learning$streak"
+        } else {
+            val streak = if (streakDays > 1) " You've come $streakDays days in a row!" else ""
+            val learning = if (allInstalled) " All updates are installed." else " I need $nextUpdate more knowledge for the next update."
+            "Level $level (${stage.en}), $xp XP. To the next level: $toNext. Version $version, $knowledge knowledge.$learning$streak"
+        }
     }
 
     fun describe(): String =

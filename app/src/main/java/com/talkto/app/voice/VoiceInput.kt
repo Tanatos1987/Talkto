@@ -7,6 +7,7 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.util.Log
+import com.talkto.core.i18n.Lang
 import com.talkto.core.voice.SpeechText
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -51,6 +52,12 @@ class VoiceInput(private val context: Context) {
 
     /** Set after an in-app failure; from then on the reliable system dialog is used. */
     @Volatile var preferDialog = false
+
+    /** Main language for "Auto": ZnaiKo's own; the other one is listened for too. */
+    @Volatile var autoLang: Lang = Lang.BG
+
+    /** Shown in the system dialog while it listens. */
+    @Volatile var prompt: String = "ZnaiKo слуша…"
 
     private var recognizer: SpeechRecognizer? = null
     private var onFinal: ((String) -> Unit)? = null
@@ -106,19 +113,20 @@ class VoiceInput(private val context: Context) {
     }
 
     fun dialogIntent(language: VoiceLanguage): Intent = recognizerIntent(language, inApp = false)
-        .putExtra(RecognizerIntent.EXTRA_PROMPT, "ZnaiKo слуша…")
+        .putExtra(RecognizerIntent.EXTRA_PROMPT, prompt)
 
     private fun recognizerIntent(language: VoiceLanguage, inApp: Boolean) = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+        val tag = if (language == VoiceLanguage.AUTO) autoLang.tag else language.tag
         putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-        putExtra(RecognizerIntent.EXTRA_LANGUAGE, language.tag)
-        putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, language.tag)
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE, tag)
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, tag)
         putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
         if (inApp) {
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
         }
-        // Understood by Google's recogniser: listen for English too while Bulgarian is primary.
-        if (language == VoiceLanguage.AUTO) putExtra(EXTRA_ADDITIONAL_LANGUAGES, arrayOf("en-US"))
+        // Understood by Google's recogniser: listen for the other language too.
+        if (language == VoiceLanguage.AUTO) putExtra(EXTRA_ADDITIONAL_LANGUAGES, arrayOf(autoLang.other.tag))
         // No EXTRA_PREFER_OFFLINE: without a downloaded language pack it makes the recogniser fail at once.
     }
 

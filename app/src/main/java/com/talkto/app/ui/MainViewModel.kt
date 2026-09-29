@@ -16,6 +16,8 @@ import com.talkto.app.apps.TalktoAccessibilityService
 import com.talkto.app.avatar.OutfitConfig
 import com.talkto.app.files.StorageAccess
 import com.talkto.app.games.GameController
+import com.talkto.app.learn.LearnData
+import com.talkto.app.learn.LessonController
 import com.talkto.core.avatar.AnimationCommand
 import com.talkto.core.avatar.AvatarStyle
 import com.talkto.core.avatar.Expression
@@ -30,6 +32,8 @@ import com.talkto.core.scene.MoodScene
 import com.talkto.core.memory.Habit
 import com.talkto.core.profile.Fact
 import com.talkto.core.games.GameKind
+import com.talkto.core.i18n.Lang
+import com.talkto.core.learn.Topic
 import com.talkto.core.pet.ZnaiKoUpdate
 import com.talkto.core.touch.BodyLocator
 import com.talkto.core.touch.Touch
@@ -76,7 +80,38 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val systemLine: StateFlow<SystemLine?> = _systemLine.asStateFlow()
 
     /** Board and card games against ZnaiKo. */
-    val games = GameController(c.pet, c.avatar, { c.settings.settings.value.voiceEnabled }, viewModelScope)
+    val games = GameController(c.pet, c.avatar, { c.settings.settings.value.voiceEnabled }, viewModelScope, lang = { c.language.current })
+
+    /** Language lessons with ZnaiKo. */
+    val lessons = LessonController(c.learning, c.pet, c.avatar, { c.settings.settings.value.voiceEnabled }, { c.language.current }, viewModelScope)
+
+    /** ZnaiKo's language; changing it rebuilds the screen in that language. */
+    val language: StateFlow<Lang> = c.language.lang
+    val learnData: StateFlow<LearnData> = c.learning.data
+    /** Chat practice in this language is on. */
+    val practice: StateFlow<Lang?> = c.agentSession.practice
+    /** "Научи ме на английски" said in the chat: open the lessons. */
+    val lessonRequests = c.agentSession.lessonRequests
+
+    fun setLanguage(lang: Lang) = c.language.set(lang)
+
+    fun setLearnTarget(lang: Lang) = c.learning.setTarget(lang)
+
+    fun learnTarget(): Lang = c.learning.target
+
+    fun startLesson(topic: Topic?, speaking: Boolean) = lessons.start(topic, speaking)
+
+    /** Listens for a "say it" answer in the language being learned. */
+    fun lessonListen(dialogOnly: Boolean = false) {
+        val target = lessons.state.value?.target ?: return
+        c.avatar.stopSpeaking()
+        if (dialogOnly) c.voice.preferDialog = true
+        c.voice.start(if (target == Lang.EN) VoiceLanguage.EN else VoiceLanguage.BG) { heard -> lessons.onHeard(heard) }
+    }
+
+    fun startPractice() = viewModelScope.launch { c.agentSession.beginPractice(c.learning.target) }
+
+    fun stopPractice() = c.agentSession.stopPractice()
 
     private val _pendingUpdates = MutableStateFlow<List<ZnaiKoUpdate>>(emptyList())
     /** Updates waiting to be shown, oldest first. */
@@ -107,7 +142,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             c.pet.updates.collect { u ->
                 _pendingUpdates.update { it + u }
-                val line = getApplication<Application>().getString(R.string.update_said, u.version, u.title)
+                val line = c.language.text(R.string.update_said, u.version, u.title(c.language.current))
                 _systemLine.value = SystemLine(0, System.currentTimeMillis(), text = line)
                 c.avatar.play(AnimationCommand(Expression.LOVE, Gesture.SPIN, holdMs = 3_000))
                 c.avatar.speak(line, voice = c.settings.settings.value.voiceEnabled)
@@ -124,7 +159,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             else -> Gesture.SHAKE
         }
         c.avatar.play(AnimationCommand(expression, gesture))
-        c.avatar.speak(getApplication<Application>().getString(res, *args), voice = c.settings.settings.value.voiceEnabled)
+        c.avatar.speak(c.language.text(res, *args), voice = c.settings.settings.value.voiceEnabled)
     }
 
     fun onVisible(visible: Boolean) {
@@ -257,7 +292,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val finished = wasSpeaking && !speaking
                 wasSpeaking = speaking
                 val s = c.settings.settings.value
-                if (finished && s.handsFree && lastInputWasVoice && !agent.value.busy) startListening()
+                val busyElsewhere = lessons.state.value != null || games.state.value != null
+                if (finished && s.handsFree && lastInputWasVoice && !agent.value.busy && !busyElsewhere) startListening()
             }
         }
     }
@@ -267,13 +303,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             c.voice.state.collect { v ->
                 v.error?.let { code ->
                     val line = when (code) {
-                        android.speech.SpeechRecognizer.ERROR_NETWORK, android.speech.SpeechRecognizer.ERROR_NETWORK_TIMEOUT ->
-                            "Нямам интернет за разпознаване на говор. Изтегли офлайн езиковия пакет в настройките на Google."
-                        android.speech.SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Трябва ми разрешение за микрофона."
-                        android.speech.SpeechRecognizer.ERROR_CLIENT -> "Няма услуга за разпознаване на говор на този телефон."
-                        else -> "Не те чух добре. Опитай пак."
+                        android.speech.SpeechRecognizer.ERROR_NETWORK, android.speech.SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> R.string.voice_err_network
+                        android.speech.SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> R.string.voice_err_permission
+                        android.speech.SpeechRecognizer.ERROR_CLIENT -> R.string.voice_err_client
+                        else -> R.string.voice_err_other
                     }
-                    _systemLine.value = SystemLine(0, System.currentTimeMillis(), text = line)
+                    _systemLine.value = SystemLine(line, System.currentTimeMillis())
                 }
             }
         }
@@ -308,21 +343,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun setVoicePreset(preset: VoicePreset) = viewModelScope.launch {
         c.settings.setVoicePreset(preset)
         c.speech.setVoice(preset, c.settings.settings.value.ttsVoice)
-        c.avatar.speak(preset.sample, voice = true)
+        c.avatar.speak(preset.sample(c.language.current), voice = true)
     }
 
     fun setTtsVoice(name: String?) = viewModelScope.launch {
         c.settings.setTtsVoice(name)
         val preset = c.settings.settings.value.voicePreset
         c.speech.setVoice(preset, name)
-        c.avatar.speak(preset.sample, voice = true)
+        c.avatar.speak(preset.sample(c.language.current), voice = true)
     }
 
     /** Plays a preset's sample without saving it. The saved voice returns on the next settings change. */
     fun previewVoice(preset: VoicePreset) = viewModelScope.launch {
         val s = c.settings.settings.value
         c.speech.setVoice(preset, s.ttsVoice)
-        c.avatar.speak(preset.sample, voice = true)
+        c.avatar.speak(preset.sample(c.language.current), voice = true)
         c.speech.setVoice(s.voicePreset, s.ttsVoice)
     }
 
@@ -351,7 +386,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun autoFillBackgrounds() = viewModelScope.launch {
         _curating.value = 0 to 0
         runCatching { c.backgrounds.autoFill { done, total -> _curating.value = done to total } }
-            .onSuccess { n -> _systemLine.value = SystemLine(0, System.currentTimeMillis(), text = if (n > 0) "Подбрах $n снимки от галерията за различните настроения." else "Не намерих подходящи снимки в галерията.") }
+            .onSuccess { n ->
+                _systemLine.value = if (n > 0) SystemLine(R.string.backgrounds_filled, System.currentTimeMillis(), listOf(n))
+                else SystemLine(R.string.backgrounds_none, System.currentTimeMillis())
+            }
             .onFailure { c.errors.report(it, "backgrounds") }
         _curating.value = null
     }
@@ -392,7 +430,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Shares the transcript as plain text through the Android share sheet. */
     fun shareHistory(context: Context) = viewModelScope.launch {
-        val text = runCatching { c.history.export() }.getOrDefault("")
+        val text = runCatching { c.history.export(lang = c.language.current) }.getOrDefault("")
         if (text.isBlank()) return@launch
         val send = Intent(Intent.ACTION_SEND).setType("text/plain")
             .putExtra(Intent.EXTRA_SUBJECT, "ZnaiKo")

@@ -23,6 +23,8 @@ import com.talkto.app.data.prefs.talktoDataStore
 import com.talkto.app.device.AndroidDeviceActions
 import com.talkto.app.error.GlobalErrorHandler
 import com.talkto.app.files.StorageAccess
+import com.talkto.app.i18n.LanguageRepository
+import com.talkto.app.learn.LearnRepository
 import com.talkto.app.pet.PetEngine
 import com.talkto.app.reminders.AndroidReminderScheduler
 import com.talkto.app.security.KeyCipher
@@ -32,6 +34,7 @@ import com.talkto.core.agent.ClaudeAgent
 import com.talkto.core.agent.OfflineAgent
 import com.talkto.core.agent.PetActions
 import com.talkto.core.agent.ToolDispatcher
+import com.talkto.core.i18n.Lang
 import com.talkto.core.avatar.AvatarGenerator
 import com.talkto.core.avatar.FileAvatarCache
 import com.talkto.core.avatar.StabilityImageApi
@@ -75,6 +78,9 @@ class AppContainer(private val context: Context) {
     /** Process-wide scope. SupervisorJob: one failed child never cancels the others. */
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default + errors.coroutineHandler)
 
+    /** ZnaiKo's language (screens, voice, replies). Read first: everything below speaks it. */
+    val language = LanguageRepository(context)
+
     private val dataStore = context.talktoDataStore
     val settings = SettingsRepository(dataStore, KeyCipher(), appScope)
     val petStore = PetStore(dataStore)
@@ -93,6 +99,7 @@ class AppContainer(private val context: Context) {
     private val generator = AvatarGenerator(imageApi, FileAvatarCache(context.filesDir.toPath().resolve("avatars")))
     val speech = SpeechEngine(context, appScope).also { engine ->
         appScope.launch { settings.settings.collect { engine.setVoice(it.voicePreset, it.ttsVoice) } }
+        appScope.launch { language.lang.collect { engine.defaultLang = it } }
     }
     val avatar = AvatarEngine(context, generator, FaceAnchorDetector(), speech, petStore, pathGuard, appScope)
 
@@ -105,10 +112,17 @@ class AppContainer(private val context: Context) {
     // ---- learning about the user, conversation log, touch temperament
     val profile = ProfileRepository(RoomProfileStore(database.profile()))
     val history = HistoryRepository(RoomHistoryStore(database.history()))
-    val temperament = Temperament()
+    val temperament = Temperament(lang = { language.current })
 
     // ---- voice in, mood backgrounds
-    val voice = VoiceInput(context)
+    val voice = VoiceInput(context).also { input ->
+        appScope.launch {
+            language.lang.collect { l ->
+                input.autoLang = l
+                input.prompt = LanguageRepository.localized(context, l).getString(R.string.voice_dialog_prompt)
+            }
+        }
+    }
     val backgrounds = BackgroundLibrary(context, petStore)
 
     // ---- agent
@@ -147,18 +161,22 @@ class AppContainer(private val context: Context) {
             override fun play() = pet.play()
             override fun sleep() = pet.setSleeping(true)
             override fun wake() = pet.setSleeping(false)
-            override fun status() = pet.state.value.feeling()
-            override fun progress() = pet.state.value.progressText()
+            override fun status() = pet.state.value.feeling(language.current)
+            override fun progress() = pet.state.value.progressText(language.current)
             override fun gameWon() = pet.gameWon()
         },
         profile = profile,
         history = history,
+        lang = { language.current },
     )
 
-    val agentSession = AgentSession(agent, offlineAgent, avatar, pet, settings, errors, profile, history)
+    val learning = LearnRepository(petStore, language, appScope)
+
+    val agentSession = AgentSession(agent, offlineAgent, avatar, pet, settings, errors, profile, history, language, learning)
 
     fun start() {
         pet.start()
+        learning.start()
         avatar.restore()
         appScope.launch { memory.prune() }
         appScope.launch { history.prune(); agentSession.restore() }
@@ -176,6 +194,7 @@ class AppContainer(private val context: Context) {
         val visual = avatar.visual.value
         return buildString {
             appendLine("now: ${now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm EEEE", Locale.ENGLISH))} (${now.zone})")
+            appendLine("speak_language: ${language.current.code}")
             appendLine("device_locale: ${Locale.getDefault().toLanguageTag()}")
             appendLine("pet: ${pet.state.value.describe()}")
             appendLine("all_files_access: ${if (StorageAccess.hasAllFilesAccess()) "granted" else "NOT granted - file tools will fail until the user enables it"}")
@@ -188,6 +207,23 @@ class AppContainer(private val context: Context) {
                 append("\ntoday_is_the_users_birthday: true")
             }
             runCatching { profile.promptBlock() }.getOrNull()?.takeIf { it.isNotEmpty() }?.let { append("\n").append(it) }
+            agentSession.practice.value?.let { target -> append("\n").append(practiceBlock(target, language.current)) }
         }
+    }
+
+    /** Tutor rules for chat practice; the learner's own language gives the hints. */
+    private fun practiceBlock(target: Lang, native: Lang): String {
+        val t = target.nameIn(Lang.EN)
+        val n = (if (native == target) target.other else native).nameIn(Lang.EN)
+        return """
+            <language_practice>
+            The user is practising $t with you; their own language is $n. They may be a child.
+            - Speak only simple $t (beginner level): short sentences, everyday words, one question at a time to keep the chat going.
+            - When the user makes a mistake, first say their sentence correctly in a friendly way, then carry on.
+            - If they seem stuck or write in $n, add a short $n hint in brackets, then continue in $t.
+            - Praise effort, suggest a new word now and then, and keep replies to one to three sentences.
+            - Use tools only when the user clearly asks for something on the phone.
+            </language_practice>
+        """.trimIndent()
     }
 }

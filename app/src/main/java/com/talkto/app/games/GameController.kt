@@ -15,6 +15,7 @@ import com.talkto.core.games.GameOutcome
 import com.talkto.core.games.Ludo
 import com.talkto.core.games.Memory
 import com.talkto.core.games.TicTacToe
+import com.talkto.core.i18n.Lang
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -81,6 +82,7 @@ class GameController(
     private val voice: () -> Boolean,
     private val scope: CoroutineScope,
     private val random: Random = Random.Default,
+    private val lang: () -> Lang = { Lang.BG },
 ) {
     private val _state = MutableStateFlow<GameUi?>(null)
     val state: StateFlow<GameUi?> = _state.asStateFlow()
@@ -108,7 +110,7 @@ class GameController(
         }
         pet.play()
         avatar.play(AnimationCommand(Expression.HAPPY, Gesture.BOUNCE, holdMs = 1_500))
-        publish(kind, line = pick(START_LINES) + " " + intro(kind))
+        publish(kind, line = pick(START_LINES, START_LINES_EN) + " " + intro(kind))
     }
 
     fun close() {
@@ -125,7 +127,7 @@ class GameController(
             delay(THINK_MS)
             g.petMove()
         }
-        finishOr(GameKind.TIC_TAC_TOE, g.outcome) { pick(PET_MOVED) }
+        finishOr(GameKind.TIC_TAC_TOE, g.outcome) { pick(PET_MOVED, PET_MOVED_EN) }
     }
 
     // ------------------------------------------------------------------ connect four
@@ -138,7 +140,7 @@ class GameController(
             delay(THINK_MS)
             g.petMove()
         }
-        finishOr(GameKind.CONNECT_FOUR, g.outcome) { pick(PET_MOVED) }
+        finishOr(GameKind.CONNECT_FOUR, g.outcome) { pick(PET_MOVED, PET_MOVED_EN) }
     }
 
     // ------------------------------------------------------------------ chess
@@ -151,12 +153,14 @@ class GameController(
         if (from != null && g.targets(from).any { it.to == sq }) {
             chessSelected = null
             g.play(from, sq)
-            publish(GameKind.CHESS, thinking = g.outcome == null, line = pick(CHESS_THINKING))
+            publish(GameKind.CHESS, thinking = g.outcome == null, line = pick(CHESS_THINKING, CHESS_THINKING_EN))
             if (g.outcome == null) {
                 delay(THINK_MS)
                 g.petMove()
             }
-            finishOr(GameKind.CHESS, g.outcome) { if (g.position.inCheck(true)) "Шах! Пази царя си." else pick(PET_MOVED) }
+            finishOr(GameKind.CHESS, g.outcome) {
+                if (g.position.inCheck(true)) tr("Шах! Пази царя си.", "Check! Look after your king.") else pick(PET_MOVED, PET_MOVED_EN)
+            }
         } else {
             chessSelected = sq.takeIf { g.position.piece(it) > 0 && g.targets(it).isNotEmpty() }
             publish(GameKind.CHESS)
@@ -174,14 +178,14 @@ class GameController(
         when {
             moves.isEmpty() -> {
                 val again = g.apply(null)
-                publish(GameKind.LUDO, line = if (again) "Хвърли пак!" else "Нямаш ход с $r. Мой ред.")
+                publish(GameKind.LUDO, line = if (again) tr("Хвърли пак!", "Roll again!") else tr("Нямаш ход с $r. Мой ред.", "No move with a $r. My turn."))
                 if (!again) botsPlay(g)
             }
             moves.size == 1 -> {
                 delay(350)
                 applyUserLudo(g, moves.single())
             }
-            else -> publish(GameKind.LUDO, line = "Хвърли $r. Избери пул.")
+            else -> publish(GameKind.LUDO, line = tr("Хвърли $r. Избери пул.", "You rolled a $r. Pick a piece."))
         }
     }
 
@@ -197,8 +201,8 @@ class GameController(
         val again = g.apply(move)
         if (g.winner != null) return finishOr(GameKind.LUDO, g.outcome) { null }
         publish(GameKind.LUDO, line = when {
-            captured -> pick(LUDO_CAPTURED_BY_USER)
-            again -> "Шестица! Хвърли пак."
+            captured -> pick(LUDO_CAPTURED_BY_USER, LUDO_CAPTURED_BY_USER_EN)
+            again -> tr("Шестица! Хвърли пак.", "A six! Roll again.")
             else -> null
         })
         if (!again) botsPlay(g)
@@ -214,9 +218,9 @@ class GameController(
             val move = g.chooseMove()
             val capturedUser = move?.captures?.seat == 0
             g.apply(move)
-            publish(GameKind.LUDO, thinking = true, line = if (capturedUser) pick(LUDO_CAPTURED_USER) else null)
+            publish(GameKind.LUDO, thinking = true, line = if (capturedUser) pick(LUDO_CAPTURED_USER, LUDO_CAPTURED_USER_EN) else null)
         }
-        finishOr(GameKind.LUDO, g.outcome) { "Твой ред! Хвърли зара." }
+        finishOr(GameKind.LUDO, g.outcome) { tr("Твой ред! Хвърли зара.", "Your turn! Roll the die.") }
     }
 
     // ------------------------------------------------------------------ memory
@@ -228,9 +232,9 @@ class GameController(
         if (g.open.size < 2) return@act
         delay(900)
         val match = g.resolve()
-        publish(GameKind.MEMORY, line = if (match) pick(MEMORY_USER_MATCH) else null)
+        publish(GameKind.MEMORY, line = if (match) pick(MEMORY_USER_MATCH, MEMORY_USER_MATCH_EN) else null)
         while (!g.userTurn && !g.over) {
-            publish(GameKind.MEMORY, thinking = true, line = "Мой ред...")
+            publish(GameKind.MEMORY, thinking = true, line = tr("Мой ред...", "My turn..."))
             delay(700)
             g.flip(g.petFirst())
             publish(GameKind.MEMORY, thinking = true)
@@ -239,9 +243,9 @@ class GameController(
             publish(GameKind.MEMORY, thinking = true)
             delay(1_000)
             val petMatch = g.resolve()
-            publish(GameKind.MEMORY, thinking = !g.userTurn, line = if (petMatch) "Чифт! Помня ги!" else null)
+            publish(GameKind.MEMORY, thinking = !g.userTurn, line = if (petMatch) tr("Чифт! Помня ги!", "A pair! I remembered them!") else null)
         }
-        finishOr(GameKind.MEMORY, g.outcome) { "Твой ред." }
+        finishOr(GameKind.MEMORY, g.outcome) { tr("Твой ред.", "Your turn.") }
     }
 
     // ------------------------------------------------------------------ shared
@@ -256,9 +260,9 @@ class GameController(
         finished = true
         pet.gameFinished(outcome)
         val (text, expression, gesture) = when (outcome) {
-            GameOutcome.USER_WON -> Triple(pick(USER_WON), Expression.SURPRISED, Gesture.NOD)
-            GameOutcome.PET_WON -> Triple(pick(PET_WON), Expression.HAPPY, Gesture.SPIN)
-            GameOutcome.DRAW -> Triple(pick(DRAW), Expression.HAPPY, Gesture.BOUNCE)
+            GameOutcome.USER_WON -> Triple(pick(USER_WON, USER_WON_EN), Expression.SURPRISED, Gesture.NOD)
+            GameOutcome.PET_WON -> Triple(pick(PET_WON, PET_WON_EN), Expression.HAPPY, Gesture.SPIN)
+            GameOutcome.DRAW -> Triple(pick(DRAW, DRAW_EN), Expression.HAPPY, Gesture.BOUNCE)
         }
         avatar.play(AnimationCommand(expression, gesture, holdMs = 2_500))
         publish(kind, line = text, outcome = outcome)
@@ -302,14 +306,16 @@ class GameController(
     }
 
     private fun intro(kind: GameKind) = when (kind) {
-        GameKind.TIC_TAC_TOE -> "Ти си X и започваш."
-        GameKind.CONNECT_FOUR -> "Ти си жълтите. Пусни пул в колона."
-        GameKind.CHESS -> "Ти си с белите. Докосни фигура, после поле."
-        GameKind.LUDO -> "Ти си жълтите. Хвърли зара."
-        GameKind.MEMORY -> "Обърни две карти."
+        GameKind.TIC_TAC_TOE -> tr("Ти си X и започваш.", "You are X and you start.")
+        GameKind.CONNECT_FOUR -> tr("Ти си жълтите. Пусни пул в колона.", "You are yellow. Drop a disc into a column.")
+        GameKind.CHESS -> tr("Ти си с белите. Докосни фигура, после поле.", "You play white. Tap a piece, then a square.")
+        GameKind.LUDO -> tr("Ти си жълтите. Хвърли зара.", "You are yellow. Roll the die.")
+        GameKind.MEMORY -> tr("Обърни две карти.", "Turn over two cards.")
     }
 
-    private fun pick(lines: List<String>) = lines[random.nextInt(lines.size)]
+    private fun tr(bg: String, en: String) = lang().pick(bg, en)
+
+    private fun pick(bg: List<String>, en: List<String>) = (if (lang() == Lang.BG) bg else en).let { it[random.nextInt(it.size)] }
 
     private companion object {
         const val THINK_MS = 550L
@@ -322,5 +328,15 @@ class GameController(
         val LUDO_CAPTURED_BY_USER = listOf("Ох, изпрати ме вкъщи!", "Не се сърдя, не се сърдя...", "Ех, почвам отначало!")
         val LUDO_CAPTURED_USER = listOf("Хоп, вкъщи! Не се сърди, човече!", "Изядох те! Хи-хи.", "Извинявай, но правилата са такива!")
         val MEMORY_USER_MATCH = listOf("Браво, чифт! Пак си на ход.", "Уау, каква памет!")
+
+        val START_LINES_EN = listOf("Hooray, let's play!", "I'm ready!", "Let's see who's cleverer!")
+        val PET_MOVED_EN = listOf("Your turn.", "There's my move. You!", "Hmm, I like that one. Your turn.", "Watch out now!")
+        val CHESS_THINKING_EN = listOf("Hmm, let me think...", "Interesting move...", "Thinking, thinking...")
+        val USER_WON_EN = listOf("Well done, you beat me! I learned something new.", "Oh, you won! I'll be cleverer next time.", "Victory for you! I'll remember that trick.")
+        val PET_WON_EN = listOf("Hooray, I won!", "Hee-hee, my turn to win!", "I won! Do you want a rematch?")
+        val DRAW_EN = listOf("It's a draw! Good game.", "A draw! We're both clever.")
+        val LUDO_CAPTURED_BY_USER_EN = listOf("Oh, you sent me home!", "I'm not cross, I'm not cross...", "Oh well, back to the start!")
+        val LUDO_CAPTURED_USER_EN = listOf("Back home you go! Don't be cross!", "Got you! Hee-hee.", "Sorry, those are the rules!")
+        val MEMORY_USER_MATCH_EN = listOf("Well done, a pair! Your turn again.", "Wow, what a memory!")
     }
 }

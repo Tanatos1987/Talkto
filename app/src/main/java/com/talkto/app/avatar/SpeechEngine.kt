@@ -6,6 +6,8 @@ import android.speech.tts.UtteranceProgressListener
 import com.talkto.core.avatar.Viseme
 import com.talkto.core.avatar.VisemeFrame
 import com.talkto.core.avatar.VisemePlanner
+import com.talkto.core.i18n.Lang
+import com.talkto.core.i18n.ScriptSegmenter
 import com.talkto.core.voice.VoicePreset
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -18,9 +20,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Text-to-speech with lip-sync.
+ * Text-to-speech with lip-sync, in Bulgarian and English.
+ *
+ * Mixed text ("Куче на английски е dog.") is cut by [ScriptSegmenter] into runs of one language; each run is
+ * queued as its own utterance with a voice for that language, so a Bulgarian voice never spells out English
+ * words and the other way round.
  *
  * Android TTS reports word boundaries through [UtteranceProgressListener.onRangeStart]; each word is
  * expanded into visemes by [VisemePlanner] and played on a coroutine, so the mouth moves in step with
@@ -39,6 +46,11 @@ class SpeechEngine(context: Context, private val scope: CoroutineScope) {
     private var fallback: Job? = null
     @Volatile private var gotRange = false
     @Volatile private var currentText = ""
+    /** Queued utterances of the current line: id -> text. The line is over when this empties. */
+    private val utterances = ConcurrentHashMap<String, String>()
+
+    /** Language for text without letters (numbers, emoji) and for the name ZnaiKo. */
+    @Volatile var defaultLang: Lang = Lang.BG
     @Volatile private var speechRate = VoicePreset.DEFAULT.rate
     @Volatile private var pitch = VoicePreset.DEFAULT.pitch
     @Volatile private var voiceName: String? = null
@@ -50,6 +62,7 @@ class SpeechEngine(context: Context, private val scope: CoroutineScope) {
     init {
         tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(utteranceId: String) {
+                currentText = utterances[utteranceId] ?: currentText
                 _speaking.value = true
                 gotRange = false
                 fallback = scope.launch {
@@ -65,14 +78,14 @@ class SpeechEngine(context: Context, private val scope: CoroutineScope) {
                 play(planner.planWord(word, speechRate))
             }
 
-            override fun onDone(utteranceId: String) = finish()
+            override fun onDone(utteranceId: String) = done(utteranceId)
 
             @Deprecated("Deprecated in Java")
-            override fun onError(utteranceId: String) = finish()
+            override fun onError(utteranceId: String) = done(utteranceId)
 
-            override fun onError(utteranceId: String, errorCode: Int) = finish()
+            override fun onError(utteranceId: String, errorCode: Int) = done(utteranceId)
 
-            override fun onStop(utteranceId: String, interrupted: Boolean) = finish()
+            override fun onStop(utteranceId: String, interrupted: Boolean) = done(utteranceId)
         })
     }
 
@@ -100,13 +113,34 @@ class SpeechEngine(context: Context, private val scope: CoroutineScope) {
         if (!ok) {
             mimeSilently(text); return false
         }
-        // Bulgarian voices read the Latin brand letter by letter; say the name the way it sounds.
-        val spoken = text.replace("ZnaiKo", if (isCyrillic(text)) "Знайко" else "Znayko")
-        configureLanguage(spoken)
-        currentText = spoken
+        // Say the name the way it sounds, in the language of the sentence around it.
+        val main = ScriptSegmenter.dominant(text, defaultLang)
+        val spoken = text.replace("ZnaiKo", if (main == Lang.BG) "Знайко" else "Znayko")
+        val parts = ScriptSegmenter.segments(spoken, defaultLang).filter { seg -> seg.text.any { it.isLetterOrDigit() } }
+        if (parts.isEmpty()) return true
+        utterances.clear()
         tts.setSpeechRate(speechRate)
         tts.setPitch(pitch)
-        return tts.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, UUID.randomUUID().toString()) == TextToSpeech.SUCCESS
+        var ok = true
+        parts.forEachIndexed { i, part ->
+            configureLanguage(part.lang)
+            val id = UUID.randomUUID().toString()
+            utterances[id] = part.text
+            if (i == 0) currentText = part.text
+            val mode = if (i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
+            ok = tts.speak(part.text, mode, null, id) == TextToSpeech.SUCCESS && ok
+        }
+        return ok
+    }
+
+    /** One run is over; the line is over when none is left. */
+    private fun done(utteranceId: String) {
+        utterances.remove(utteranceId)
+        if (utterances.isEmpty()) finish() else {
+            fallback?.cancel()
+            playback?.cancel()
+            _viseme.value = Viseme.REST
+        }
     }
 
     /** Mouth movement without sound, used when the voice is switched off. */
@@ -120,6 +154,7 @@ class SpeechEngine(context: Context, private val scope: CoroutineScope) {
     }
 
     fun stop() {
+        utterances.clear()
         tts.stop(); finish()
     }
 
@@ -150,8 +185,8 @@ class SpeechEngine(context: Context, private val scope: CoroutineScope) {
         _speaking.value = false
     }
 
-    private fun configureLanguage(text: String) {
-        val target = if (isCyrillic(text)) Locale.forLanguageTag("bg-BG") else Locale.getDefault()
+    private fun configureLanguage(lang: Lang) {
+        val target = Locale.forLanguageTag(lang.tag)
         // A chosen engine voice wins when it speaks the language of this text.
         val chosen = voiceName?.let { n -> runCatching { tts.voices?.firstOrNull { it.name == n } }.getOrNull() }
         if (chosen != null && chosen.locale.language == target.language) {
@@ -159,8 +194,10 @@ class SpeechEngine(context: Context, private val scope: CoroutineScope) {
             return
         }
         val result = tts.setLanguage(target)
-        if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) tts.setLanguage(Locale.getDefault())
+        if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+            // en-US missing: try British English, then whatever the phone speaks.
+            val second = if (lang == Lang.EN) tts.setLanguage(Locale.UK) else result
+            if (second == TextToSpeech.LANG_MISSING_DATA || second == TextToSpeech.LANG_NOT_SUPPORTED) tts.setLanguage(Locale.getDefault())
+        }
     }
-
-    private fun isCyrillic(text: String) = text.count { it in '\u0400'..'\u04FF' } > text.length / 4
 }

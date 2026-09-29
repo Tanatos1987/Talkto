@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import com.talkto.app.i18n.LanguageRepository
 import com.talkto.app.MainActivity
 import com.talkto.app.R
 import com.talkto.app.TalktoApp
@@ -52,7 +53,8 @@ class AndroidReminderScheduler(private val context: Context) : ReminderScheduler
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
-        fun notify(context: Context, reminder: Reminder) {
+        fun notify(base: Context, reminder: Reminder) {
+            val context = LanguageRepository.localized(base, LanguageRepository.read(base))
             val nm = context.getSystemService(NotificationManager::class.java)
             if (nm.getNotificationChannel(CHANNEL_ID) == null) {
                 nm.createNotificationChannel(

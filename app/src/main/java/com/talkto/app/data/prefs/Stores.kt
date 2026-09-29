@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.talkto.app.avatar.OutfitConfig
 import com.talkto.app.background.BackgroundConfig
+import com.talkto.app.learn.LearnData
 import com.talkto.app.pet.PetState
 import com.talkto.app.security.KeyCipher
 import com.talkto.core.avatar.AvatarStyle
@@ -134,10 +135,15 @@ class PetStore(private val store: DataStore<Preferences>) {
     }
     suspend fun savePet(s: PetState) = store.edit { it[PET] = json.encodeToString(PetState.serializer(), s) }
 
+    val learning: Flow<LearnData> = store.data.map { it.decode(LEARNING, LearnData.serializer(), LearnData()) }
+
+    suspend fun saveLearning(d: LearnData) = store.edit { it[LEARNING] = json.encodeToString(LearnData.serializer(), d) }
+
     private companion object {
         val OUTFIT = stringPreferencesKey("outfit_json")
         val AVATAR = stringPreferencesKey("avatar_json")
         val PET = stringPreferencesKey("pet_json")
         val BACKGROUND = stringPreferencesKey("background_json")
+        val LEARNING = stringPreferencesKey("learning_json")
     }
 }

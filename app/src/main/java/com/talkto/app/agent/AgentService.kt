@@ -15,6 +15,7 @@ import androidx.lifecycle.lifecycleScope
 import com.talkto.app.MainActivity
 import com.talkto.app.R
 import com.talkto.app.TalktoApp
+import com.talkto.app.i18n.LanguageRepository
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -29,6 +30,10 @@ class AgentService : LifecycleService() {
 
     private val running = AtomicInteger(0)
     private val container get() = (application as TalktoApp).container
+
+    override fun attachBaseContext(base: Context) {
+        super.attachBaseContext(LanguageRepository.localized(base, LanguageRepository.read(base)))
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -84,7 +89,8 @@ class AgentService : LifecycleService() {
             ContextCompat.startForegroundService(context, intent)
         }
 
-        fun ensureChannel(context: Context) {
+        fun ensureChannel(base: Context) {
+            val context = LanguageRepository.localized(base, LanguageRepository.read(base))
             val nm = context.getSystemService(NotificationManager::class.java)
             if (nm.getNotificationChannel(CHANNEL_ID) == null) {
                 nm.createNotificationChannel(
@@ -94,8 +100,9 @@ class AgentService : LifecycleService() {
         }
 
         /** Shown when a tool waits for a yes/no while ZnaiKo is not on screen. */
-        fun notifyConfirmationPending(context: Context) {
-            ensureChannel(context)
+        fun notifyConfirmationPending(base: Context) {
+            ensureChannel(base)
+            val context = LanguageRepository.localized(base, LanguageRepository.read(base))
             val n = NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_launcher_foreground)
                 .setContentTitle(context.getString(R.string.notif_confirm_title))

@@ -62,6 +62,7 @@ import com.talkto.app.R
 import com.talkto.app.games.Board
 import com.talkto.app.games.GameController
 import com.talkto.app.games.GameUi
+import com.talkto.app.i18n.screenLang
 import com.talkto.app.pet.PetState
 import com.talkto.app.ui.theme.TalktoColors
 import com.talkto.core.games.ConnectFour
@@ -84,6 +85,7 @@ private val PET_DISC = Color(0xFF4FA85E)
 @Composable
 fun GamesSheet(pet: PetState, onPick: (GameKind, Int) -> Unit, onQuickPlay: () -> Unit, onDismiss: () -> Unit) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        val lang = screenLang()
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp).verticalScroll(rememberScrollState())) {
             Text(stringResource(R.string.games_title), style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(4.dp))
@@ -92,14 +94,14 @@ fun GamesSheet(pet: PetState, onPick: (GameKind, Int) -> Unit, onQuickPlay: () -
                 style = MaterialTheme.typography.bodyMedium,
             )
             Spacer(Modifier.height(12.dp))
-            GameRow("❌⭕", GameKind.TIC_TAC_TOE.bg, stringResource(R.string.game_ttt_note)) { onPick(GameKind.TIC_TAC_TOE, 2) }
-            GameRow("🟡🟢", GameKind.CONNECT_FOUR.bg, stringResource(R.string.game_four_note)) { onPick(GameKind.CONNECT_FOUR, 2) }
-            GameRow("🎲", GameKind.LUDO.bg, stringResource(R.string.game_ludo_note)) { onPick(GameKind.LUDO, 2) }
+            GameRow("❌⭕", GameKind.TIC_TAC_TOE.label(lang), stringResource(R.string.game_ttt_note)) { onPick(GameKind.TIC_TAC_TOE, 2) }
+            GameRow("🟡🟢", GameKind.CONNECT_FOUR.label(lang), stringResource(R.string.game_four_note)) { onPick(GameKind.CONNECT_FOUR, 2) }
+            GameRow("🎲", GameKind.LUDO.label(lang), stringResource(R.string.game_ludo_note)) { onPick(GameKind.LUDO, 2) }
             Row(Modifier.padding(start = 56.dp, bottom = 6.dp)) {
                 OutlinedButton(onClick = { onPick(GameKind.LUDO, 4) }) { Text(stringResource(R.string.game_ludo_four)) }
             }
-            GameRow("♞", GameKind.CHESS.bg, stringResource(R.string.game_chess_note)) { onPick(GameKind.CHESS, 2) }
-            GameRow("🃏", GameKind.MEMORY.bg, stringResource(R.string.game_memory_note)) { onPick(GameKind.MEMORY, 2) }
+            GameRow("♞", GameKind.CHESS.label(lang), stringResource(R.string.game_chess_note)) { onPick(GameKind.CHESS, 2) }
+            GameRow("🃏", GameKind.MEMORY.label(lang), stringResource(R.string.game_memory_note)) { onPick(GameKind.MEMORY, 2) }
             GameRow("⚽", stringResource(R.string.game_quick), stringResource(R.string.game_quick_note), onQuickPlay)
         }
     }
@@ -133,7 +135,7 @@ fun GameDialog(ui: GameUi, games: GameController, onPlayAgain: () -> Unit) {
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(ui.kind.bg, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
+                    Text(ui.kind.label(screenLang()), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
                     IconButton(onClick = games::close) { Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.games_close)) }
                 }
                 CommentBubble(ui)
@@ -425,9 +427,10 @@ fun UpdateDialog(update: ZnaiKoUpdate, pet: PetState, onDismiss: () -> Unit) {
                 Text("✨🌱✨", fontSize = 40.sp)
                 Spacer(Modifier.height(8.dp))
                 Text(stringResource(R.string.update_title, update.version), style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
-                Text(update.title, style = MaterialTheme.typography.titleMedium, color = TalktoColors.Sunflower)
+                val lang = screenLang()
+                Text(update.title(lang), style = MaterialTheme.typography.titleMedium, color = TalktoColors.Sunflower)
                 Spacer(Modifier.height(12.dp))
-                update.news.forEach { line ->
+                update.news(lang).forEach { line ->
                     Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
                         Text("• ", style = MaterialTheme.typography.bodyLarge)
                         Text(line, style = MaterialTheme.typography.bodyLarge)

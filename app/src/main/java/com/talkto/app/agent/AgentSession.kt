@@ -5,6 +5,8 @@ import com.anthropic.client.okhttp.AnthropicOkHttpClient
 import com.talkto.app.avatar.AvatarEngine
 import com.talkto.app.data.prefs.SettingsRepository
 import com.talkto.app.error.GlobalErrorHandler
+import com.talkto.app.i18n.LanguageRepository
+import com.talkto.app.learn.LearnRepository
 import com.talkto.app.pet.PetEngine
 import com.talkto.core.agent.AgentEvent
 import com.talkto.core.agent.Assistant
@@ -16,6 +18,10 @@ import com.talkto.core.error.ErrorMapper
 import com.talkto.core.error.TalktoError
 import com.talkto.core.games.GameCommands
 import com.talkto.core.games.GameKind
+import com.talkto.core.i18n.Lang
+import com.talkto.core.learn.LearnCommand
+import com.talkto.core.learn.LearnCommands
+import com.talkto.core.learn.wordOfTheDay
 import com.talkto.core.history.HistoryRepository
 import com.talkto.core.history.Speaker
 import com.talkto.core.pet.KnowledgeSource
@@ -74,11 +80,25 @@ class AgentSession(
     private val errors: GlobalErrorHandler,
     private val profile: ProfileRepository,
     private val history: HistoryRepository,
+    private val language: LanguageRepository,
+    private val learning: LearnRepository,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
     private val _gameRequests = MutableSharedFlow<GameKind>(extraBufferCapacity = 2)
     /** Games asked for by voice or text; the screen opens them. */
     val gameRequests: SharedFlow<GameKind> = _gameRequests.asSharedFlow()
+
+    private val _lessonRequests = MutableSharedFlow<Lang?>(extraBufferCapacity = 2)
+    /** "Научи ме на английски": the screen opens the lessons (for this language, when one was named). */
+    val lessonRequests: SharedFlow<Lang?> = _lessonRequests.asSharedFlow()
+
+    private val _practice = MutableStateFlow<Lang?>(null)
+    /** Chat practice in this language is on (Claude then speaks it simply and corrects gently). */
+    val practice: StateFlow<Lang?> = _practice.asStateFlow()
+
+    fun stopPractice() {
+        _practice.value = null
+    }
 
     private val _state = MutableStateFlow(AgentUiState())
     val state: StateFlow<AgentUiState> = _state.asStateFlow()
@@ -108,15 +128,11 @@ class AgentSession(
         pet.learn(KnowledgeSource.FACT, facts.size)
         // "Да играем шах" opens the game in both modes; there is nothing for Claude to add.
         GameCommands.parse(command)?.let { kind ->
-            val reply = "Отварям „${kind.bg}“. Да видим кой ще спечели!"
-            runCatching { history.record(Speaker.USER, trimmed, "offline") }
-            runCatching { history.record(Speaker.TALKTO, reply, "offline") }
-            _state.update { it.copy(messages = it.messages + ChatMessage(true, trimmed, clock()) + ChatMessage(false, reply, clock())) }
             _gameRequests.tryEmit(kind)
-            avatar.play(AnimationCommand(Expression.HAPPY, Gesture.BOUNCE))
-            avatar.speak(reply, voice = cfg.voiceEnabled)
-            return
+            return localReply(trimmed, lang().pick("Отварям „${kind.bg}“. Да видим кой ще спечели!", "Opening ${kind.en}. Let's see who wins!"), cfg.voiceEnabled)
         }
+        // Language switches, lessons, chat practice and the word of the day are the app's own business.
+        LearnCommands.parse(command)?.let { cmd -> return localReply(trimmed, learn(cmd, online), cfg.voiceEnabled) }
         if (online && !claudeSeeded) {
             claudeSeeded = true
             runCatching { claude.seed(history.recent(SEED_LINES).map { (it.speaker == Speaker.USER) to it.text }) }
@@ -143,10 +159,11 @@ class AgentSession(
                     // Whatever stops Claude (no network, no credit, a bad key, an overloaded server), a command
                     // the offline brain knows is still carried out, and the reason is said once.
                     if (err.kind !in FALLBACK_KINDS || !offline.recognizes(command)) throw err
-                    offline.send(command, onEvent).let { it.copy(text = fallbackPrefix(err.kind) + it.text) }
+                    offline.send(command, onEvent).let { it.copy(text = fallbackPrefix(err.kind, lang()) + it.text) }
                 }
             }
             runCatching { history.record(Speaker.TALKTO, reply.text, if (online) "claude" else "offline") }
+            if (_practice.value != null && online) pet.learn(KnowledgeSource.LESSON_ANSWER)
             _state.update { it.copy(messages = it.messages + ChatMessage(false, reply.text, clock())) }
             pet.rewardTask(success = toolErrors == 0 && !reply.refused)
             if (reply.text.isNotBlank()) {
@@ -164,6 +181,72 @@ class AgentSession(
         }
     }
 
+    private fun lang(): Lang = language.current
+
+    /** A turn the app answers itself, without either brain. */
+    private suspend fun localReply(said: String, reply: String, voice: Boolean) {
+        runCatching { history.record(Speaker.USER, said, "offline") }
+        runCatching { history.record(Speaker.TALKTO, reply, "offline") }
+        _state.update { it.copy(messages = it.messages + ChatMessage(true, said, clock()) + ChatMessage(false, reply, clock())) }
+        avatar.play(AnimationCommand(Expression.HAPPY, Gesture.BOUNCE))
+        avatar.speak(reply, voice = voice)
+    }
+
+    private fun learn(cmd: LearnCommand, online: Boolean): String {
+        val l = lang()
+        return when (cmd) {
+            is LearnCommand.SwitchLanguage -> {
+                language.set(cmd.to)
+                cmd.to.pick("Добре! Вече говоря на български.", "OK! I'm speaking English now.")
+            }
+            is LearnCommand.OpenLessons -> {
+                cmd.target?.let(learning::setTarget)
+                _lessonRequests.tryEmit(cmd.target)
+                l.pick("Отварям уроците. Да учим заедно!", "Opening the lessons. Let's learn together!")
+            }
+            is LearnCommand.Practice -> if (online) {
+                startPractice(cmd.target)
+                cmd.target.pick(
+                    "Чудесно, да упражняваме български! Ще говоря просто и бавно. Как си днес?",
+                    "Great, let's practise English! I'll keep it simple. How are you today?",
+                )
+            } else {
+                learning.setTarget(cmd.target)
+                _lessonRequests.tryEmit(cmd.target)
+                l.pick(
+                    "За свободен разговор ми трябва Claude ключ. Дотогава да направим урок!",
+                    "Free conversation practice needs a Claude key. Until then, let's do a lesson!",
+                )
+            }
+            LearnCommand.StopPractice -> {
+                stopPractice()
+                l.pick("Край на упражнението. Браво!", "Practice over. Well done!")
+            }
+            LearnCommand.WordOfTheDay -> {
+                val target = learning.target
+                val w = wordOfTheDay(learning.today(), target)
+                val word = if (target == Lang.BG) "„${w.bg}“" else "\"${w.en}\""
+                val meaning = if (target == Lang.BG) "\"${w.en}\"" else "„${w.bg}“"
+                l.pick("Думата на деня е $word ${w.emoji}, тоест $meaning.", "The word of the day is $word ${w.emoji}, which means $meaning.")
+            }
+        }
+    }
+
+    /** Starts chat practice from the lessons screen: ZnaiKo greets in the practised language (or explains the key). */
+    suspend fun beginPractice(target: Lang) {
+        val cfg = settings.awaitLoaded()
+        val reply = learn(LearnCommand.Practice(target), cfg.hasClaudeKey)
+        _state.update { it.copy(messages = it.messages + ChatMessage(false, reply, clock())) }
+        runCatching { history.record(Speaker.TALKTO, reply, "offline") }
+        avatar.play(AnimationCommand(Expression.HAPPY, Gesture.BOUNCE))
+        avatar.speak(reply, voice = cfg.voiceEnabled)
+    }
+
+    fun startPractice(target: Lang) {
+        _practice.value = target
+        learning.setTarget(target)
+    }
+
     /** Starts a fresh chat on screen and for Claude. The recorded log is kept (clear it from Settings). */
     suspend fun newConversation() {
         claude.reset()
@@ -178,11 +261,11 @@ class AgentSession(
     }
 
     private companion object {
-        fun fallbackPrefix(kind: TalktoError.Kind) = when (kind) {
-            TalktoError.Kind.NETWORK -> "Нямам връзка с Claude, затова го направих сам. "
-            TalktoError.Kind.API_NO_CREDIT -> "В профила за Claude няма кредит, затова го направих сам. "
-            TalktoError.Kind.API_KEY_INVALID, TalktoError.Kind.API_KEY_MISSING -> "Ключът за Claude не става, затова го направих сам. "
-            else -> "Claude не ми отговори, затова го направих сам. "
+        fun fallbackPrefix(kind: TalktoError.Kind, lang: Lang) = when (kind) {
+            TalktoError.Kind.NETWORK -> lang.pick("Нямам връзка с Claude, затова го направих сам. ", "I can't reach Claude, so I did it myself. ")
+            TalktoError.Kind.API_NO_CREDIT -> lang.pick("В профила за Claude няма кредит, затова го направих сам. ", "The Claude account has no credit, so I did it myself. ")
+            TalktoError.Kind.API_KEY_INVALID, TalktoError.Kind.API_KEY_MISSING -> lang.pick("Ключът за Claude не става, затова го направих сам. ", "The Claude key doesn't work, so I did it myself. ")
+            else -> lang.pick("Claude не ми отговори, затова го направих сам. ", "Claude didn't answer, so I did it myself. ")
         }
         val FALLBACK_KINDS = setOf(
             TalktoError.Kind.NETWORK, TalktoError.Kind.RATE_LIMITED, TalktoError.Kind.API_REJECTED,
