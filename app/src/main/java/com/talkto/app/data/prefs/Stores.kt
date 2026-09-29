@@ -7,13 +7,16 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import com.talkto.app.avatar.OutfitConfig
 import com.talkto.app.background.BackgroundConfig
 import com.talkto.app.learn.LearnData
 import com.talkto.app.pet.PetState
+import com.talkto.app.quiz.QuizData
 import com.talkto.app.security.KeyCipher
 import com.talkto.core.avatar.AvatarStyle
 import com.talkto.core.avatar.FaceAnchors
+import com.talkto.core.look.CreatureLook
+import com.talkto.core.look.HouseLook
+import com.talkto.core.look.OutfitConfig
 import com.talkto.core.voice.VoicePreset
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
@@ -114,7 +117,7 @@ class SettingsRepository(private val store: DataStore<Preferences>, private val 
     }
 }
 
-/** Avatar image metadata, outfit and pet stats. Small JSON blobs, one key each. */
+/** Avatar image metadata, outfit, look, house and pet stats. Small JSON blobs, one key each. */
 class PetStore(private val store: DataStore<Preferences>) {
 
     val outfit: Flow<OutfitConfig> = store.data.map { it.decode(OUTFIT, OutfitConfig.serializer(), OutfitConfig()) }
@@ -139,11 +142,27 @@ class PetStore(private val store: DataStore<Preferences>) {
 
     suspend fun saveLearning(d: LearnData) = store.edit { it[LEARNING] = json.encodeToString(LearnData.serializer(), d) }
 
+    /** How this ZnaiKo looks, from the creator. */
+    val look: Flow<CreatureLook> = store.data.map { it.decode(LOOK, CreatureLook.serializer(), CreatureLook()) }
+
+    suspend fun saveLook(l: CreatureLook) = store.edit { it[LOOK] = json.encodeToString(CreatureLook.serializer(), l.clamped()) }
+
+    val house: Flow<HouseLook> = store.data.map { it.decode(HOUSE, HouseLook.serializer(), HouseLook()) }
+
+    suspend fun saveHouse(h: HouseLook) = store.edit { it[HOUSE] = json.encodeToString(HouseLook.serializer(), h) }
+
+    val quiz: Flow<QuizData> = store.data.map { it.decode(QUIZ, QuizData.serializer(), QuizData()) }
+
+    suspend fun saveQuiz(d: QuizData) = store.edit { it[QUIZ] = json.encodeToString(QuizData.serializer(), d) }
+
     private companion object {
         val OUTFIT = stringPreferencesKey("outfit_json")
         val AVATAR = stringPreferencesKey("avatar_json")
         val PET = stringPreferencesKey("pet_json")
         val BACKGROUND = stringPreferencesKey("background_json")
         val LEARNING = stringPreferencesKey("learning_json")
+        val LOOK = stringPreferencesKey("look_json")
+        val HOUSE = stringPreferencesKey("house_json")
+        val QUIZ = stringPreferencesKey("quiz_json")
     }
 }

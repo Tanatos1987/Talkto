@@ -66,7 +66,7 @@ class AndroidReminderScheduler(private val context: Context) : ReminderScheduler
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
             val n = NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_launcher_foreground)
+                .setSmallIcon(R.drawable.ic_stat_znaiko)
                 .setContentTitle(context.getString(R.string.notif_reminder_title))
                 .setContentText(reminder.text)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(reminder.text))

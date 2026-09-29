@@ -11,6 +11,10 @@ import com.talkto.core.pet.LifeStage
 import com.talkto.core.pet.Progression
 import com.talkto.core.pet.XpReason
 import com.talkto.core.pet.ZnaiKoUpdate
+import com.talkto.core.shop.CoinReason
+import com.talkto.core.shop.Shop
+import com.talkto.core.shop.ShopItem
+import com.talkto.core.shop.Wallet
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -47,7 +51,15 @@ data class PetState(
     val updates: Int = 0,
     /** When the egg appeared; 0 in old saves until the next start. */
     val bornAtMs: Long = 0,
+    /** Coins for the shop; every new ZnaiKo starts with a present. */
+    val coins: Int = Shop.STARTING_COINS,
+    /** Shop ids of everything bought. */
+    val owned: Set<String> = emptySet(),
+    /** ZnaiKo is inside its house. */
+    val atHome: Boolean = false,
 ) {
+    val wallet: Wallet get() = Wallet(coins, owned)
+
     val level: Int get() = Progression.levelFor(xp)
     val stage: LifeStage get() = Progression.stageFor(level)
     val levelProgress: Float get() = Progression.progress(xp)
@@ -125,6 +137,10 @@ class PetEngine(
     /** Emits each update as ZnaiKo installs it. */
     val updates: SharedFlow<ZnaiKoUpdate> = _updates.asSharedFlow()
 
+    private val _coinGains = MutableSharedFlow<Int>(extraBufferCapacity = 16)
+    /** Emits the amount each time coins are earned, for the little "+5" on screen. */
+    val coinGains: SharedFlow<Int> = _coinGains.asSharedFlow()
+
     fun start() {
         scope.launch {
             val saved = store.pet.first()
@@ -147,9 +163,32 @@ class PetEngine(
         else it.copy(happiness = (it.happiness + 18f).cap(), energy = (it.energy - 10f).cap(), satiety = (it.satiety - 5f).cap(), bond = (it.bond + 1f).cap())
     }
 
-    fun toggleSleep() = mutate { it.copy(sleeping = !it.sleeping) }
+    /** ZnaiKo sleeps in its house: going to bed walks it home, waking up brings it out. */
+    fun toggleSleep() = mutate { it.copy(sleeping = !it.sleeping, atHome = !it.sleeping) }
 
-    fun setSleeping(asleep: Boolean) = mutate { it.copy(sleeping = asleep) }
+    fun setSleeping(asleep: Boolean) = mutate { it.copy(sleeping = asleep, atHome = asleep || (it.atHome && !it.sleeping)) }
+
+    /** Into the house (awake) or out of it (and awake, since someone called). */
+    fun setHome(inside: Boolean) = mutate { if (inside) it.copy(atHome = true) else it.copy(atHome = false, sleeping = false) }
+
+    fun earn(reason: CoinReason, times: Int = 1) {
+        if (times <= 0) return
+        val amount = reason.coins * times
+        _state.update { it.copy(coins = it.coins + amount) }
+        _coinGains.tryEmit(amount)
+        scope.launch { persist() }
+    }
+
+    /** Buys [item] with coins; false when it is owned already or costs more than there is. */
+    fun buy(item: ShopItem): Boolean {
+        var bought = false
+        _state.update { s ->
+            val after = s.wallet.buy(item)
+            if (after == null) s else { bought = true; s.copy(coins = after.coins, owned = after.owned) }
+        }
+        if (bought) scope.launch { persist() }
+        return bought
+    }
 
     /** A touch changed how the pet feels. Kind touches still earn a little XP. */
     fun touched(happinessDelta: Float, bondDelta: Float) = mutate(if (happinessDelta > 0) XpReason.PET else null) {
@@ -166,12 +205,16 @@ class PetEngine(
             val k = s.knowledge + source.points * times
             s.copy(knowledge = k, updates = maxOf(s.updates, Knowledge.updatesFor(k)))
         }
-        Knowledge.between(before, _state.value.updates).forEach { _updates.tryEmit(it) }
+        val installed = Knowledge.between(before, _state.value.updates)
+        installed.forEach { _updates.tryEmit(it) }
+        earn(CoinReason.UPDATE, installed.size)
         scope.launch { persist() }
     }
 
     /** A board or card game ended. Winning cheers the user's side, losing teaches ZnaiKo. */
     fun gameFinished(outcome: GameOutcome) {
+        earn(CoinReason.GAME_PLAYED)
+        if (outcome == GameOutcome.USER_WON) earn(CoinReason.GAME_WON)
         when (outcome) {
             GameOutcome.USER_WON -> { gameWon(); learn(KnowledgeSource.GAME_LOST) }
             GameOutcome.PET_WON -> { mutate(XpReason.PLAY) { it.copy(happiness = (it.happiness + 12f).cap()) }; learn(KnowledgeSource.GAME) }
@@ -180,9 +223,12 @@ class PetEngine(
     }
 
     /** A task finished successfully: helping makes ZnaiKo happy and strengthens the bond. */
-    fun rewardTask(success: Boolean) = mutate(if (success) XpReason.TASK else null) {
-        if (success) it.copy(happiness = (it.happiness + 4f).cap(), bond = (it.bond + 1f).cap())
-        else it.copy(happiness = (it.happiness - 2f).cap())
+    fun rewardTask(success: Boolean) {
+        mutate(if (success) XpReason.TASK else null) {
+            if (success) it.copy(happiness = (it.happiness + 4f).cap(), bond = (it.bond + 1f).cap())
+            else it.copy(happiness = (it.happiness - 2f).cap())
+        }
+        if (success) earn(CoinReason.TASK)
     }
 
     private fun registerVisit() {
@@ -191,7 +237,10 @@ class PetEngine(
         val (streak, firstToday) = Progression.visit(s.lastVisitDay?.let(LocalDate::parse), s.streakDays, today)
         val bonus = if (firstToday) Progression.dailyBonus(streak) else 0
         grant(bonus) { it.copy(streakDays = streak, lastVisitDay = today.toString()) }
-        if (firstToday) learn(KnowledgeSource.DAY)
+        if (firstToday) {
+            learn(KnowledgeSource.DAY)
+            earn(CoinReason.DAILY_VISIT)
+        }
     }
 
     private fun mutate(reason: XpReason? = null, f: (PetState) -> PetState) {
@@ -203,7 +252,10 @@ class PetEngine(
         val before = _state.value.level
         _state.update { f(it).let { s -> s.copy(xp = s.xp + xp) } }
         val after = _state.value.level
-        if (after > before) _levelUps.tryEmit(after)
+        if (after > before) {
+            _levelUps.tryEmit(after)
+            earn(CoinReason.LEVEL_UP, after - before)
+        }
     }
 
     private fun advance(s: PetState): PetState {
@@ -215,8 +267,9 @@ class PetEngine(
             satiety = (s.satiety - 5f * hours).cap(),
             energy = (if (s.sleeping) s.energy + 14f * hours else s.energy - 4f * hours).cap(),
             happiness = (s.happiness - (if (hungry) 5f else 2.5f) * hours).cap(),
-            // Wakes up on its own when rested.
+            // Wakes up on its own when rested, and comes out of the house.
             sleeping = s.sleeping && (s.energy + 14f * hours) < 100f,
+            atHome = s.atHome && !(s.sleeping && (s.energy + 14f * hours) >= 100f),
             updatedAtMs = now,
         )
     }

@@ -21,6 +21,8 @@ import com.talkto.core.games.GameKind
 import com.talkto.core.i18n.Lang
 import com.talkto.core.learn.LearnCommand
 import com.talkto.core.learn.LearnCommands
+import com.talkto.core.commands.AppCommand
+import com.talkto.core.commands.AppCommands
 import com.talkto.core.learn.wordOfTheDay
 import com.talkto.core.history.HistoryRepository
 import com.talkto.core.history.Speaker
@@ -92,6 +94,10 @@ class AgentSession(
     /** "Научи ме на английски": the screen opens the lessons (for this language, when one was named). */
     val lessonRequests: SharedFlow<Lang?> = _lessonRequests.asSharedFlow()
 
+    private val _appRequests = MutableSharedFlow<AppCommand>(extraBufferCapacity = 4)
+    /** "Прибери се", "магазин", "тривия", "задачи за 3 клас": the screen does them. */
+    val appRequests: SharedFlow<AppCommand> = _appRequests.asSharedFlow()
+
     private val _practice = MutableStateFlow<Lang?>(null)
     /** Chat practice in this language is on (Claude then speaks it simply and corrects gently). */
     val practice: StateFlow<Lang?> = _practice.asStateFlow()
@@ -133,6 +139,11 @@ class AgentSession(
         }
         // Language switches, lessons, chat practice and the word of the day are the app's own business.
         LearnCommands.parse(command)?.let { cmd -> return localReply(trimmed, learn(cmd, online), cfg.voiceEnabled) }
+        // The house, the shop, the creator and the quizzes are the app's own places too.
+        AppCommands.parse(command)?.let { cmd ->
+            _appRequests.tryEmit(cmd)
+            return localReply(trimmed, appReply(cmd), cfg.voiceEnabled)
+        }
         if (online && !claudeSeeded) {
             claudeSeeded = true
             runCatching { claude.seed(history.recent(SEED_LINES).map { (it.speaker == Speaker.USER) to it.text }) }
@@ -190,6 +201,25 @@ class AgentSession(
         _state.update { it.copy(messages = it.messages + ChatMessage(true, said, clock()) + ChatMessage(false, reply, clock())) }
         avatar.play(AnimationCommand(Expression.HAPPY, Gesture.BOUNCE))
         avatar.speak(reply, voice = voice)
+    }
+
+    private fun appReply(cmd: AppCommand): String {
+        val l = lang()
+        return when (cmd) {
+            AppCommand.GoHome -> l.pick("Прибирам се в къщичката си.", "I'm going into my little house.")
+            AppCommand.ComeOut -> l.pick("Идвам!", "Coming!")
+            AppCommand.OpenHouse -> l.pick("Ето моята къщичка.", "Here is my little house.")
+            AppCommand.OpenShop -> l.pick("Да пазаруваме! Имам ${pet.state.value.coins} монети.", "Let's go shopping! I have ${pet.state.value.coins} coins.")
+            AppCommand.OpenCreator -> l.pick("Направи ме, какъвто искаш!", "Make me any way you like!")
+            AppCommand.AboutMe -> l.pick("Искам да те опозная! Ще те питам нещо.", "I'd like to get to know you! Let me ask you something.")
+            is AppCommand.Math -> when {
+                cmd.algebra -> l.pick("Да решаваме уравнения!", "Let's solve some equations!")
+                cmd.grade != null -> l.pick("Да смятаме! Задачи за ${cmd.grade} клас.", "Let's do maths! Tasks for year ${cmd.grade}.")
+                else -> l.pick("Да смятаме!", "Let's do maths!")
+            }
+            is AppCommand.Trivia -> cmd.category?.let { c -> l.pick("Викторина с въпроси на тема ${c.emoji} ${c.bg}!", "A quiz with ${c.emoji} ${c.en} questions!") }
+                ?: l.pick("Викторина! Ще ти задам десет въпроса.", "Quiz time! Ten questions for you.")
+        }
     }
 
     private fun learn(cmd: LearnCommand, online: Boolean): String {

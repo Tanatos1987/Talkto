@@ -1,23 +1,86 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- ZnaiKo blob: body, two eyes, smile. Safe zone is the centre 66dp of 108dp. -->
+<!-- ZnaiKo: a round green friend with big shiny eyes, a happy open smile, rosy cheeks, its sprout and a star.
+     Everything stays inside the 66dp safe zone of the 108dp canvas. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- soft shadow -->
     <path
-        android:fillColor="#FF7BD389"
-        android:pathData="M54,26c17,0 28,12 28,29c0,16 -11,27 -28,27s-28,-11 -28,-27c0,-17 11,-29 28,-29z" />
+        android:fillColor="#33000000"
+        android:pathData="M54,82m-17,0a17,3.2 0,1 1,34 0a17,3.2 0,1 1,-34 0" />
+    <!-- body -->
+    <path android:pathData="M54,37C67,37 76,46 76,59C76,72 67,80 54,80C41,80 32,72 32,59C32,46 41,37 54,37Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="radial"
+                android:centerX="46"
+                android:centerY="48"
+                android:gradientRadius="36">
+                <item android:offset="0" android:color="#FFB8F5C8" />
+                <item android:offset="0.45" android:color="#FF6FDC8C" />
+                <item android:offset="1" android:color="#FF2FAE63" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- belly -->
     <path
-        android:fillColor="#FF2D2A32"
-        android:pathData="M44,50m-4,0a4,5 0,1 1,8 0a4,5 0,1 1,-8 0" />
+        android:fillColor="#66FFFFFF"
+        android:pathData="M54,64C61,64 67,68 67,73C67,77 61,79 54,79C47,79 41,77 41,73C41,68 47,64 54,64Z" />
+    <!-- shine -->
     <path
-        android:fillColor="#FF2D2A32"
-        android:pathData="M64,50m-4,0a4,5 0,1 1,8 0a4,5 0,1 1,-8 0" />
+        android:fillColor="#80FFFFFF"
+        android:pathData="M41,47C42,43 46,40 50,40C51,41 48,44 45,47C43,49 41,49 41,47Z" />
+    <!-- sprout -->
     <path
         android:fillColor="#00000000"
-        android:strokeColor="#FF2D2A32"
-        android:strokeWidth="3"
+        android:strokeColor="#FF238A4C"
+        android:strokeWidth="2.4"
         android:strokeLineCap="round"
-        android:pathData="M46,64q8,7 16,0" />
+        android:pathData="M54,38C54,35 54.5,32 55,29.5" />
+    <path
+        android:fillColor="#FF34B866"
+        android:pathData="M55,29.5C50,23 45,24 44,27C47,31 51,31.5 55,29.5Z" />
+    <path
+        android:fillColor="#FF5BD884"
+        android:pathData="M55,29.5C59,22 65,23 66,26C63,30.5 59,31.5 55,29.5Z" />
+    <!-- star -->
+    <path
+        android:fillColor="#FFFFD166"
+        android:pathData="M71,31l1.6,3.3l3.6,0.5l-2.6,2.5l0.6,3.6l-3.2,-1.7l-3.2,1.7l0.6,-3.6l-2.6,-2.5l3.6,-0.5z" />
+    <!-- eyes -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M46,56m-7,0a7,7.4 0,1 1,14 0a7,7.4 0,1 1,-14 0" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M62,56m-7,0a7,7.4 0,1 1,14 0a7,7.4 0,1 1,-14 0" />
+    <path
+        android:fillColor="#FF2D2A32"
+        android:pathData="M47.2,57.2m-4,0a4,4.3 0,1 1,8 0a4,4.3 0,1 1,-8 0" />
+    <path
+        android:fillColor="#FF2D2A32"
+        android:pathData="M63.2,57.2m-4,0a4,4.3 0,1 1,8 0a4,4.3 0,1 1,-8 0" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M48.8,55.2m-1.6,0a1.6,1.6 0,1 1,3.2 0a1.6,1.6 0,1 1,-3.2 0" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M64.8,55.2m-1.6,0a1.6,1.6 0,1 1,3.2 0a1.6,1.6 0,1 1,-3.2 0" />
+    <!-- cheeks -->
+    <path
+        android:fillColor="#CCFF7A96"
+        android:pathData="M39.5,65m-3.6,0a3.6,2.4 0,1 1,7.2 0a3.6,2.4 0,1 1,-7.2 0" />
+    <path
+        android:fillColor="#CCFF7A96"
+        android:pathData="M68.5,65m-3.6,0a3.6,2.4 0,1 1,7.2 0a3.6,2.4 0,1 1,-7.2 0" />
+    <!-- open smile and tongue -->
+    <path
+        android:fillColor="#FF4A1F2A"
+        android:pathData="M47.5,65.5C49,72.5 59,72.5 60.5,65.5C56,66.8 52,66.8 47.5,65.5Z" />
+    <path
+        android:fillColor="#FFFF6F91"
+        android:pathData="M51,69.6C52.5,71.4 55.5,71.4 57,69.6C55.3,68.6 52.7,68.6 51,69.6Z" />
 </vector>

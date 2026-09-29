@@ -13,7 +13,17 @@ import com.talkto.app.TalktoApp
 import com.talkto.app.agent.AgentService
 import com.talkto.app.apps.ShizukuBridge
 import com.talkto.app.apps.TalktoAccessibilityService
-import com.talkto.app.avatar.OutfitConfig
+import com.talkto.core.look.CreatureLook
+import com.talkto.core.look.HouseLook
+import com.talkto.core.look.OutfitConfig
+import com.talkto.app.quiz.QuizController
+import com.talkto.core.commands.AppCommand
+import com.talkto.core.pet.KnowledgeSource
+import com.talkto.core.profile.AboutYou
+import com.talkto.core.shop.ShopItem
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import com.talkto.app.files.StorageAccess
 import com.talkto.app.games.GameController
 import com.talkto.app.learn.LearnData
@@ -68,6 +78,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val confirmation = c.confirmations.pending
     val settings = c.settings.settings
     val outfit: StateFlow<OutfitConfig> = c.petStore.outfit.stateIn(viewModelScope, SharingStarted.Eagerly, OutfitConfig())
+    /** How this ZnaiKo looks (the creator) and its house. */
+    val look: StateFlow<CreatureLook> = c.petStore.look.stateIn(viewModelScope, SharingStarted.Eagerly, CreatureLook())
+    val house: StateFlow<HouseLook> = c.petStore.house.stateIn(viewModelScope, SharingStarted.Eagerly, HouseLook())
+    /** Coins just earned, for the "+5" that floats up. */
+    val coinGains = c.pet.coinGains
 
     private val _permissions = MutableStateFlow(PermissionState())
     val permissions: StateFlow<PermissionState> = _permissions.asStateFlow()
@@ -84,6 +99,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Language lessons with ZnaiKo. */
     val lessons = LessonController(c.learning, c.pet, c.avatar, { c.settings.settings.value.voiceEnabled }, { c.language.current }, viewModelScope)
+
+    /** Maths tasks and trivia. */
+    val quiz = QuizController(c.petStore, c.pet, c.avatar, c.profile, { c.settings.settings.value.voiceEnabled }, { c.language.current }, viewModelScope)
+
+    private val _screens = MutableSharedFlow<AppCommand>(extraBufferCapacity = 4)
+    /** Places asked for by voice or text (house, shop, creator, "get to know me"); the screen opens them. */
+    val screens: SharedFlow<AppCommand> = _screens.asSharedFlow()
 
     /** ZnaiKo's language; changing it rebuilds the screen in that language. */
     val language: StateFlow<Lang> = c.language.lang
@@ -137,7 +159,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             c.pet.levelUps.collect { level -> say(R.string.level_up, Expression.LOVE, level) }
         }
         viewModelScope.launch {
-            c.agentSession.gameRequests.collect { kind -> games.start(kind) }
+            c.agentSession.gameRequests.collect { kind -> comeOut(); games.start(kind) }
+        }
+        viewModelScope.launch {
+            c.agentSession.appRequests.collect { cmd ->
+                when (cmd) {
+                    AppCommand.GoHome -> goHome()
+                    AppCommand.ComeOut -> comeOut()
+                    is AppCommand.Math -> { comeOut(); quiz.startMath(cmd.grade, cmd.algebra) }
+                    is AppCommand.Trivia -> { comeOut(); quiz.startTrivia(cmd.category) }
+                    else -> _screens.tryEmit(cmd)
+                }
+            }
         }
         viewModelScope.launch {
             c.pet.updates.collect { u ->
@@ -192,20 +225,79 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // -------------------------------------------------------------- tamagotchi
 
     fun feed() {
+        comeOut()
         c.pet.feed()
         c.avatar.play(AnimationCommand(Expression.HAPPY, Gesture.BOUNCE, holdMs = 1_500))
     }
 
     fun dismissUpdate() = _pendingUpdates.update { it.drop(1) }
 
-    fun startGame(kind: GameKind, players: Int = 2) = games.start(kind, players)
+    fun startGame(kind: GameKind, players: Int = 2) {
+        comeOut()
+        games.start(kind, players)
+    }
 
     fun play() {
+        comeOut()
         c.pet.play()
         c.avatar.play(AnimationCommand(Expression.HAPPY, Gesture.SPIN, holdMs = 1_500))
     }
 
     fun toggleSleep() = c.pet.toggleSleep()
+
+    // ------------------------------------------------------------- house, shop
+
+    /** ZnaiKo walks into its house. */
+    fun goHome() {
+        if (!c.pet.state.value.atHome) c.pet.setHome(true)
+    }
+
+    /** ZnaiKo comes out (and wakes up if it was sleeping inside). */
+    fun comeOut() {
+        if (c.pet.state.value.atHome) c.pet.setHome(false)
+    }
+
+    /** Buys [item] with coins. ZnaiKo says thank you, or how many coins are still missing. */
+    fun buy(item: ShopItem): Boolean {
+        val l = c.language.current
+        val ok = c.pet.buy(item)
+        val line = if (ok) l.pick("Благодаря! Купих ${item.label(l)}.", "Thank you! I bought the ${item.label(l).lowercase()}.")
+        else l.pick("Трябват ми още ${item.price - c.pet.state.value.coins} монети.", "I need ${item.price - c.pet.state.value.coins} more coins.")
+        _systemLine.value = SystemLine(0, System.currentTimeMillis(), text = line)
+        c.avatar.play(AnimationCommand(if (ok) Expression.LOVE else Expression.SAD, if (ok) Gesture.SPIN else Gesture.SHAKE, holdMs = 1_500))
+        viewModelScope.launch { c.avatar.speak(line, voice = c.settings.settings.value.voiceEnabled) }
+        return ok
+    }
+
+    fun saveLook(l: CreatureLook) = viewModelScope.launch { c.petStore.saveLook(l) }
+
+    fun saveHouse(h: HouseLook) = viewModelScope.launch { c.petStore.saveHouse(h) }
+
+    // -------------------------------------------------------------- quizzes
+
+    fun startMath(grade: Int? = null, algebra: Boolean = false) {
+        comeOut()
+        quiz.startMath(grade, algebra)
+    }
+
+    fun startTrivia(category: com.talkto.core.quiz.TriviaCategory? = null) {
+        comeOut()
+        quiz.startTrivia(category)
+    }
+
+    /** Listens for a quiz answer in ZnaiKo's language. */
+    fun quizListen(dialogOnly: Boolean = false) {
+        c.avatar.stopSpeaking()
+        if (dialogOnly) c.voice.preferDialog = true
+        c.voice.start(if (c.language.current == Lang.EN) VoiceLanguage.EN else VoiceLanguage.BG) { heard -> quiz.onHeard(heard) }
+    }
+
+    /** Listens once and hands over what was heard (answers in "get to know me"). */
+    fun listenOnce(dialogOnly: Boolean = false, onHeard: (String) -> Unit) {
+        c.avatar.stopSpeaking()
+        if (dialogOnly) c.voice.preferDialog = true
+        c.voice.start(if (c.language.current == Lang.EN) VoiceLanguage.EN else VoiceLanguage.BG) { heard -> onHeard(heard) }
+    }
 
     private val _lookAt = MutableStateFlow<Pair<Float, Float>?>(null)
     /** Where the finger last touched the pet, for the 3D eyes. */
@@ -292,7 +384,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val finished = wasSpeaking && !speaking
                 wasSpeaking = speaking
                 val s = c.settings.settings.value
-                val busyElsewhere = lessons.state.value != null || games.state.value != null
+                val busyElsewhere = lessons.state.value != null || games.state.value != null || quiz.state.value != null
                 if (finished && s.handsFree && lastInputWasVoice && !agent.value.busy && !busyElsewhere) startListening()
             }
         }
@@ -411,6 +503,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun forgetFact(key: String) = viewModelScope.launch {
         c.profile.forget(key)
         loadProfile()
+    }
+
+    /** Keeps an answer about the user; new facts teach ZnaiKo a little. */
+    fun rememberFact(key: String, answer: String) = viewModelScope.launch {
+        val value = AboutYou.normalize(key, answer) ?: return@launch
+        val known = runCatching { c.profile.get(key) }.getOrNull()
+        runCatching { c.profile.remember(key, value, source = "about") }
+        if (known == null) c.pet.learn(KnowledgeSource.FACT)
+        loadProfile()
+    }
+
+    /** ZnaiKo asks a question and waits for the answer (typed or said). */
+    fun ask(text: String) = viewModelScope.launch {
+        _systemLine.value = SystemLine(0, System.currentTimeMillis(), text = text)
+        c.avatar.play(AnimationCommand(Expression.HAPPY, Gesture.NOD, holdMs = 1_200))
+        c.avatar.speak(text, voice = c.settings.settings.value.voiceEnabled)
     }
 
     private val _historyItems = MutableStateFlow<List<Utterance>>(emptyList())

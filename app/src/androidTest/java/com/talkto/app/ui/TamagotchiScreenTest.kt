@@ -29,9 +29,14 @@ class TamagotchiScreenTest {
         rule.onNodeWithContentDescription(rule.activity.getString(R.string.action_feed)).assertIsDisplayed()
     }
 
-    @Test fun wardrobeOpens() {
+    @Test fun creatorOpens() {
         rule.onNodeWithContentDescription(rule.activity.getString(R.string.action_wardrobe)).performClick()
-        rule.onNodeWithText(rule.activity.getString(R.string.hat_crown)).assertIsDisplayed()
+        rule.onNodeWithText("🎲", substring = true).assertIsDisplayed()
+    }
+
+    @Test fun houseOpens() {
+        rule.onNodeWithContentDescription(rule.activity.getString(R.string.action_house)).performClick()
+        rule.onNodeWithText("🏡", substring = true).assertIsDisplayed()
     }
 
     @Test fun feedingDoesNotCrash() {

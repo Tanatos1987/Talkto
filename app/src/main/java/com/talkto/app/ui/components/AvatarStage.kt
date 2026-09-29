@@ -46,11 +46,14 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.sp
 import com.talkto.app.avatar.AvatarPose
 import com.talkto.app.avatar.AvatarVisual
-import com.talkto.app.avatar.Clothes
 import com.talkto.app.avatar.DEFAULT_CREATURE_ANCHORS
-import com.talkto.app.avatar.Glasses
-import com.talkto.app.avatar.Hat
-import com.talkto.app.avatar.OutfitConfig
+import com.talkto.core.look.Clothes
+import com.talkto.core.look.CreatureLook
+import com.talkto.core.look.Glasses
+import com.talkto.core.look.Hat
+import com.talkto.core.look.HouseLook
+import com.talkto.core.look.OutfitConfig
+import com.talkto.core.look.Pattern
 import com.talkto.core.avatar.Expression
 import com.talkto.core.avatar.FaceAnchors
 import com.talkto.core.avatar.Gesture
@@ -80,9 +83,12 @@ fun AvatarStage(
     stage: LifeStage = LifeStage.ADULT,
     modifier: Modifier = Modifier,
     description: String = "ZnaiKo",
+    look: CreatureLook = CreatureLook(),
+    house: HouseLook = HouseLook(),
+    atHome: Boolean = false,
 ) {
     val image: ImageBitmap? = remember(visual.bitmap) { visual.bitmap?.asImageBitmap() }
-    val palette = remember(visual.bitmap, visual.anchors) { samplePalette(visual.bitmap, visual.anchors) }
+    val palette = remember(visual.bitmap, visual.anchors, look.bodyColor) { samplePalette(visual.bitmap, visual.anchors, Color(look.bodyColor)) }
     val measurer = rememberTextMeasurer()
 
     val loop = rememberInfiniteTransition(label = "idle")
@@ -137,6 +143,10 @@ fun AvatarStage(
     ) {
         // Touches are handled by the caller (petTouches), shared with the 3D view.
         Canvas(Modifier.fillMaxSize()) {
+            if (atHome && image == null) {
+                drawHouse(fitFrame(size, null), house, sleeping, phase)
+                return@Canvas
+            }
             // The built-in creature grows with its life stage; every layer uses the same scaled frame.
             val frame = fitFrame(size, visual.bitmap).let { if (image == null) it.forStage(stage) else it }
             val a = visual.anchors
@@ -149,7 +159,7 @@ fun AvatarStage(
                     dstSize = IntSize(frame.width.toInt(), frame.height.toInt()),
                 )
             } else {
-                drawCreature(frame, pose.expression, stage)
+                drawCreature(frame, pose.expression, stage, look)
             }
 
             val lidClosure = when {
@@ -199,13 +209,11 @@ private fun fitFrame(canvas: Size, bitmap: Bitmap?): Frame {
 
 private data class Palette(val skin: Color, val lip: Color)
 
-private val CREATURE_BODY = Color(0xFF7BD389)
-private val CREATURE_BELLY = Color(0xFFB8EBC0)
 private val INK = Color(0xFF2D2A32)
 private val MOUTH_INSIDE = Color(0xFF4A1F2A)
 
-private fun samplePalette(bitmap: Bitmap?, a: FaceAnchors): Palette {
-    if (bitmap == null) return Palette(CREATURE_BODY, Color(0xFF3E8E4E))
+private fun samplePalette(bitmap: Bitmap?, a: FaceAnchors, body: Color): Palette {
+    if (bitmap == null) return Palette(body, body.darken(0.6f))
     fun at(nx: Float, ny: Float): Color {
         val x = (nx * bitmap.width).toInt().coerceIn(0, bitmap.width - 1)
         val y = (ny * bitmap.height).toInt().coerceIn(0, bitmap.height - 1)
@@ -235,8 +243,8 @@ private fun Frame.forStage(stage: LifeStage): Frame {
 }
 
 /** An egg still has its shell around the lower half. */
-private fun DrawScope.drawCreature(f: Frame, expression: Expression, stage: LifeStage) {
-    drawCreatureBody(f, expression)
+private fun DrawScope.drawCreature(f: Frame, expression: Expression, stage: LifeStage, look: CreatureLook) {
+    drawCreatureBody(f, expression, look)
     if (stage == LifeStage.EGG) {
         val shell = Path().apply {
             moveTo(f.x(0.12f), f.y(0.66f))
@@ -252,7 +260,8 @@ private fun DrawScope.drawCreature(f: Frame, expression: Expression, stage: Life
     }
 }
 
-private fun DrawScope.drawCreatureBody(f: Frame, expression: Expression) {
+private fun DrawScope.drawCreatureBody(f: Frame, expression: Expression, look: CreatureLook) {
+    val bodyColor = Color(look.bodyColor)
     val body = Path().apply {
         moveTo(f.x(0.5f), f.y(0.2f))
         cubicTo(f.x(0.86f), f.y(0.2f), f.x(0.9f), f.y(0.6f), f.x(0.84f), f.y(0.8f))
@@ -261,18 +270,26 @@ private fun DrawScope.drawCreatureBody(f: Frame, expression: Expression) {
         close()
     }
     drawOval(Color.Black.copy(alpha = 0.10f), Offset(f.x(0.22f), f.y(0.88f)), Size(f.width * 0.56f, f.height * 0.06f))
-    drawPath(body, CREATURE_BODY)
-    drawOval(CREATURE_BELLY, Offset(f.x(0.32f), f.y(0.62f)), Size(f.width * 0.36f, f.height * 0.24f))
+    drawPath(body, bodyColor)
+    if (look.pattern == Pattern.SPOTS || look.pattern == Pattern.STARS) {
+        val c = Color(look.patternColor)
+        listOf(0.24f to 0.42f, 0.78f to 0.36f, 0.2f to 0.66f, 0.8f to 0.62f, 0.66f to 0.24f).forEach { (x, y) ->
+            drawCircle(c, f.width * 0.035f, Offset(f.x(x), f.y(y)))
+        }
+    }
+    if (look.belly) drawOval(Color(look.bellyColor), Offset(f.x(0.32f), f.y(0.62f)), Size(f.width * 0.36f, f.height * 0.24f))
     // Feet
-    drawOval(CREATURE_BODY, Offset(f.x(0.28f), f.y(0.84f)), Size(f.width * 0.14f, f.height * 0.07f))
-    drawOval(CREATURE_BODY, Offset(f.x(0.58f), f.y(0.84f)), Size(f.width * 0.14f, f.height * 0.07f))
+    val feet = look.feetColor?.let { Color(it) } ?: bodyColor
+    drawOval(feet, Offset(f.x(0.28f), f.y(0.84f)), Size(f.width * 0.14f, f.height * 0.07f))
+    drawOval(feet, Offset(f.x(0.58f), f.y(0.84f)), Size(f.width * 0.14f, f.height * 0.07f))
 
     val a = DEFAULT_CREATURE_ANCHORS
     val eyeW = f.width * 0.075f
     val eyeH = f.height * 0.10f
     val lookUp = if (expression == Expression.THINKING) -f.height * 0.02f else 0f
+    val iris = Color(look.irisColor)
     listOf(a.leftEyeX, a.rightEyeX).forEach { ex ->
-        drawOval(INK, Offset(f.x(ex) - eyeW / 2, f.y(a.leftEyeY) - eyeH / 2 + lookUp), Size(eyeW, eyeH))
+        drawOval(iris, Offset(f.x(ex) - eyeW / 2, f.y(a.leftEyeY) - eyeH / 2 + lookUp), Size(eyeW, eyeH))
         drawCircle(Color.White, eyeW * 0.18f, Offset(f.x(ex) + eyeW * 0.15f, f.y(a.leftEyeY) - eyeH * 0.2f + lookUp))
     }
     if (expression == Expression.ANGRY || expression == Expression.CONFUSED) {
@@ -484,6 +501,31 @@ private fun DrawScope.drawOutfit(f: Frame, a: FaceAnchors, o: OutfitConfig) {
             }
             drawPath(body, clothColor)
         }
+        Clothes.CAPE -> {
+            drawRoundRect(clothColor, Offset(cx - faceW * 0.62f, bottom - d * 0.1f), Size(faceW * 1.24f, d * 0.26f), CornerRadius(d * 0.12f))
+            drawCircle(Color(0xFFFFC857), d * 0.1f, Offset(cx, bottom + d * 0.03f))
+        }
+        Clothes.TUTU -> {
+            val y = bottom + d * 0.7f
+            repeat(9) { i ->
+                val x = cx - faceW * 0.5f + faceW * i / 8f
+                drawOval(if (i % 2 == 0) clothColor else clothColor.copy(alpha = 0.7f), Offset(x - d * 0.16f, y), Size(d * 0.32f, d * 0.18f))
+            }
+        }
+        Clothes.BACKPACK -> listOf(-1f, 1f).forEach { side ->
+            drawRoundRect(clothColor.darken(), Offset(cx + side * faceW * 0.38f - d * 0.06f, bottom - d * 0.1f), Size(d * 0.12f, d * 0.8f), CornerRadius(d * 0.05f))
+        }
+        Clothes.NECKLACE -> repeat(9) { i ->
+            val t = i / 8f
+            val x = cx - faceW * 0.3f + faceW * 0.6f * t
+            val y = bottom + d * 0.12f + sin(t * PI.toFloat()) * d * 0.2f
+            drawCircle(if (i == 4) Color(0xFFFFC857) else clothColor, d * (if (i == 4) 0.08f else 0.05f), Offset(x, y))
+        }
+        Clothes.MEDAL -> {
+            drawLine(clothColor, Offset(cx - d * 0.25f, bottom), Offset(cx, bottom + d * 0.45f), strokeWidth = d * 0.09f)
+            drawLine(clothColor, Offset(cx + d * 0.25f, bottom), Offset(cx, bottom + d * 0.45f), strokeWidth = d * 0.09f)
+            drawCircle(Color(0xFFFFC857), d * 0.16f, Offset(cx, bottom + d * 0.55f))
+        }
     }
 
     val lens = d * 0.36f
@@ -512,6 +554,16 @@ private fun DrawScope.drawOutfit(f: Frame, a: FaceAnchors, o: OutfitConfig) {
         Glasses.MONOCLE -> {
             drawCircle(Color(0xFFD4A017), lens * 1.05f, Offset(rx, ly), style = Stroke(lens * 0.14f))
             drawLine(Color(0xFFD4A017), Offset(rx, ly + lens * 1.05f), Offset(rx + lens * 0.4f, f.y(a.mouthY) + lens * 1.5f), strokeWidth = lens * 0.06f)
+        }
+        Glasses.STAR -> listOf(lx, rx).forEach { x -> drawStar(Offset(x, ly), lens * 1.2f, Color(0xFFFFE066)) }
+        Glasses.SKI -> {
+            drawRoundRect(Color(0xE6FF9F1C), Offset(lx - lens * 1.3f, ly - lens * 0.7f), Size(rx - lx + lens * 2.6f, lens * 1.4f), CornerRadius(lens * 0.7f))
+            drawLine(Color.White.copy(alpha = 0.6f), Offset(lx - lens * 0.6f, ly - lens * 0.35f), Offset(lx + lens * 0.4f, ly - lens * 0.35f), strokeWidth = lens * 0.12f, cap = StrokeCap.Round)
+        }
+        Glasses.THREE_D -> {
+            drawRoundRect(Color.White, Offset(lx - lens * 1.2f, ly - lens * 0.8f), Size(rx - lx + lens * 2.4f, lens * 1.6f), CornerRadius(lens * 0.2f))
+            drawRoundRect(Color(0xFFE63946), Offset(lx - lens * 0.95f, ly - lens * 0.55f), Size(lens * 1.9f, lens * 1.1f), CornerRadius(lens * 0.15f))
+            drawRoundRect(Color(0xFF4CC9F0), Offset(rx - lens * 0.95f, ly - lens * 0.55f), Size(lens * 1.9f, lens * 1.1f), CornerRadius(lens * 0.15f))
         }
     }
 
@@ -551,7 +603,78 @@ private fun DrawScope.drawOutfit(f: Frame, a: FaceAnchors, o: OutfitConfig) {
             drawOval(hatColor.darken(), Offset(cx - hatW * 0.05f, top - d * 0.02f), Size(hatW * 0.62f, d * 0.2f))
             drawCircle(hatColor.darken(), d * 0.05f, Offset(cx, top - hatW * 0.26f))
         }
+        Hat.WIZARD -> {
+            val cone = Path().apply { moveTo(cx - hatW * 0.32f, top + d * 0.05f); lineTo(cx + hatW * 0.05f, top - hatW * 0.85f); lineTo(cx + hatW * 0.32f, top + d * 0.05f); close() }
+            drawOval(hatColor.darken(), Offset(cx - hatW * 0.5f, top - d * 0.05f), Size(hatW, d * 0.22f))
+            drawPath(cone, hatColor)
+            drawStar(Offset(cx, top - hatW * 0.35f), d * 0.14f, Color(0xFFFFC857))
+        }
+        Hat.FLOWER_CROWN -> repeat(7) { i ->
+            val x = cx - hatW * 0.42f + hatW * 0.84f * i / 6f
+            val y = top + d * 0.05f - sin(i / 6f * PI.toFloat()) * d * 0.18f
+            drawCircle(listOf(Color(0xFFFF8FA3), Color.White, Color(0xFFFFE066))[i % 3], d * 0.12f, Offset(x, y))
+            drawCircle(Color(0xFFFFC857), d * 0.045f, Offset(x, y))
+        }
+        Hat.COWBOY -> {
+            drawOval(hatColor.darken(), Offset(cx - hatW * 0.62f, top - d * 0.12f), Size(hatW * 1.24f, d * 0.3f))
+            drawRoundRect(hatColor, Offset(cx - hatW * 0.3f, top - hatW * 0.42f), Size(hatW * 0.6f, hatW * 0.4f), CornerRadius(d * 0.15f))
+            drawRect(hatColor.darken(0.55f), Offset(cx - hatW * 0.3f, top - hatW * 0.12f), Size(hatW * 0.6f, d * 0.1f))
+        }
+        Hat.HALO -> drawOval(Color(0xFFFFE066), Offset(cx - hatW * 0.3f, top - hatW * 0.3f), Size(hatW * 0.6f, d * 0.2f), style = Stroke(d * 0.07f))
+        Hat.CHEF -> {
+            drawRect(Color.White, Offset(cx - hatW * 0.26f, top - hatW * 0.3f), Size(hatW * 0.52f, hatW * 0.32f))
+            listOf(-0.2f, 0f, 0.2f).forEach { k -> drawCircle(Color.White, hatW * 0.17f, Offset(cx + hatW * k, top - hatW * 0.4f)) }
+        }
+        Hat.VIKING -> {
+            drawArc(Color(0xFF9AA5B1), 180f, 180f, true, Offset(cx - hatW * 0.46f, top - hatW * 0.3f), Size(hatW * 0.92f, hatW * 0.6f))
+            listOf(-1f, 1f).forEach { side ->
+                val horn = Path().apply {
+                    moveTo(cx + side * hatW * 0.38f, top - hatW * 0.05f); lineTo(cx + side * hatW * 0.62f, top - hatW * 0.5f); lineTo(cx + side * hatW * 0.46f, top - hatW * 0.02f); close()
+                }
+                drawPath(horn, Color(0xFFFFF1D6))
+            }
+        }
     }
 }
 
 private fun Color.darken(f: Float = 0.75f) = Color(red * f, green * f, blue * f, alpha)
+
+private fun DrawScope.drawStar(c: Offset, r: Float, color: Color) {
+    val p = Path()
+    for (i in 0 until 10) {
+        val rr = if (i % 2 == 0) r else r * 0.45f
+        val a = -PI.toFloat() / 2f + i * PI.toFloat() / 5f
+        val x = c.x + kotlin.math.cos(a) * rr
+        val y = c.y + sin(a) * rr
+        if (i == 0) p.moveTo(x, y) else p.lineTo(x, y)
+    }
+    p.close()
+    drawPath(p, color)
+}
+
+/** ZnaiKo is inside: its house, with the windows lit (and little z's when it sleeps). */
+private fun DrawScope.drawHouse(f: Frame, h: HouseLook, sleeping: Boolean, phase: Float) {
+    val wall = Color(h.wallColor)
+    val roof = Color(h.roofColor)
+    val left = f.x(0.18f)
+    val right = f.x(0.82f)
+    val floor = f.y(0.9f)
+    val eaves = f.y(0.48f)
+    drawOval(Color.Black.copy(alpha = 0.1f), Offset(f.x(0.12f), floor - f.height * 0.02f), Size(f.width * 0.76f, f.height * 0.05f))
+    drawRect(wall, Offset(left, eaves), Size(right - left, floor - eaves))
+    val roofPath = Path().apply { moveTo(f.x(0.12f), eaves); lineTo(f.x(0.5f), f.y(0.2f)); lineTo(f.x(0.88f), eaves); close() }
+    drawPath(roofPath, roof)
+    drawRect(wall.darken(0.7f), Offset(f.x(0.66f), f.y(0.24f)), Size(f.width * 0.07f, f.height * 0.14f))
+    drawRoundRect(Color(h.doorColor), Offset(f.x(0.42f), f.y(0.62f)), Size(f.width * 0.16f, floor - f.y(0.62f)), CornerRadius(f.width * 0.02f))
+    drawCircle(Color(0xFFFFC857), f.width * 0.01f, Offset(f.x(0.55f), f.y(0.77f)))
+    listOf(0.24f, 0.64f).forEach { x ->
+        drawRect(Color(0xFFFFD166), Offset(f.x(x), f.y(0.56f)), Size(f.width * 0.12f, f.width * 0.12f))
+        drawLine(wall.darken(0.6f), Offset(f.x(x + 0.06f), f.y(0.56f)), Offset(f.x(x + 0.06f), f.y(0.56f) + f.width * 0.12f), strokeWidth = f.width * 0.008f)
+    }
+    if (sleeping) {
+        repeat(3) { i ->
+            val t = (phase + i / 3f) % 1f
+            drawCircle(Color(0xFF9ED8F5).copy(alpha = 1f - t), f.width * (0.012f + 0.02f * t), Offset(f.x(0.76f) + t * f.width * 0.08f, f.y(0.52f) - t * f.height * 0.25f))
+        }
+    }
+}

@@ -8,3 +8,7 @@ import com.talkto.core.i18n.Lang
 /** The language the current screen is shown in (from its resources, so it always matches the other texts). */
 @Composable
 fun screenLang(): Lang = Lang.of(stringResource(R.string.lang_code))
+
+/** A short text in the screen's language, for the newer screens that keep both languages side by side. */
+@Composable
+fun tr(bg: String, en: String): String = screenLang().pick(bg, en)

@@ -112,11 +112,6 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.talkto.app.R
 import com.talkto.app.agent.PendingConfirmation
-import com.talkto.app.avatar.Clothes
-import com.talkto.app.avatar.Glasses
-import com.talkto.app.avatar.Hat
-import com.talkto.app.avatar.OUTFIT_PALETTE
-import com.talkto.app.avatar.OutfitConfig
 import com.talkto.app.files.StorageAccess
 import com.talkto.app.games.Board
 import com.talkto.app.pet.PetState
@@ -132,6 +127,16 @@ import com.talkto.app.ui.learn.LanguagePicker
 import com.talkto.app.ui.learn.LearnSheet
 import com.talkto.app.ui.learn.LessonDialog
 import com.talkto.app.ui.learn.PracticeChip
+import com.talkto.app.ui.house.HouseSheet
+import com.talkto.app.ui.look.CoinsPill
+import com.talkto.app.ui.look.CreatorSheet
+import com.talkto.app.ui.quiz.QuizDialog
+import com.talkto.app.ui.shop.ShopSheet
+import com.talkto.core.commands.AppCommand
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.unit.sp
 import com.talkto.app.i18n.screenLang
 import com.talkto.app.ui.theme.TalktoColors
 import com.talkto.app.voice.VoiceLanguage
@@ -149,7 +154,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
-private enum class Sheet { NONE, WARDROBE, AVATAR, SETTINGS, HISTORY, BACKGROUNDS, GAMES, LEARN }
+private enum class Sheet { NONE, CREATOR, AVATAR, SETTINGS, HISTORY, BACKGROUNDS, GAMES, LEARN, SHOP, HOUSE }
 
 @Composable
 fun TamagotchiScreen(vm: MainViewModel) {
@@ -163,7 +168,21 @@ fun TamagotchiScreen(vm: MainViewModel) {
     val confirmation by vm.confirmation.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     val lookAt by vm.lookAt.collectAsStateWithLifecycle()
+    val look by vm.look.collectAsStateWithLifecycle()
+    val house by vm.house.collectAsStateWithLifecycle()
     var sheet by rememberSaveable { mutableStateOf(Sheet.NONE) }
+    var aboutMe by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        vm.screens.collect { cmd ->
+            when (cmd) {
+                AppCommand.OpenHouse -> sheet = Sheet.HOUSE
+                AppCommand.OpenShop -> sheet = Sheet.SHOP
+                AppCommand.OpenCreator -> sheet = Sheet.CREATOR
+                AppCommand.AboutMe -> { aboutMe = true; sheet = Sheet.HOUSE }
+                else -> Unit
+            }
+        }
+    }
 
     val lastReply = agent.messages.lastOrNull { !it.fromUser }
     val bubbleText = when {
@@ -183,6 +202,11 @@ fun TamagotchiScreen(vm: MainViewModel) {
     ) {
         Header(
             online = settings.hasClaudeKey || !settings.loaded,
+            coins = pet.coins,
+            gains = vm.coinGains,
+            atHome = pet.atHome,
+            onCoins = { sheet = Sheet.SHOP },
+            onHouse = { sheet = Sheet.HOUSE },
             onSettings = { vm.loadHabits(); vm.loadProfile(); sheet = Sheet.SETTINGS },
         )
         StatsRow(pet)
@@ -210,15 +234,30 @@ fun TamagotchiScreen(vm: MainViewModel) {
                     twirl = vm.twirl,
                     growth = pet.stageGrowth,
                     updates = pet.updates,
+                    look = look,
+                    house = house,
+                    atHome = pet.atHome,
                 )
             } else {
-                AvatarStage(visual = visual, pose = pose, outfit = outfit, sleeping = pet.sleeping, stage = pet.stage, modifier = stageModifier)
+                AvatarStage(
+                    visual = visual, pose = pose, outfit = outfit, sleeping = pet.sleeping, stage = pet.stage, modifier = stageModifier,
+                    look = look, house = house, atHome = pet.atHome,
+                )
             }
-            // Transparent layer above either renderer: slaps, hits, pats and caresses.
+            // Transparent layer above either renderer: slaps, hits, pats and caresses. At home a tap opens the house.
             Box(
                 stageModifier.petTouches(
-                    body = vm.body, onDown = vm::onTouchDown, onTouch = vm::onTouch,
-                    onTwirl = vm.twirl::drag, onTwirlEnd = vm.twirl::release,
+                    body = vm.body,
+                    onDown = vm::onTouchDown,
+                    onTouch = { t ->
+                        if (pet.atHome) {
+                            sheet = Sheet.HOUSE
+                        } else {
+                            vm.onTouch(t)
+                        }
+                    },
+                    onTwirl = { if (!pet.atHome) vm.twirl.drag(it) },
+                    onTwirlEnd = vm.twirl::release,
                 ),
             )
             SpeechBubble(
@@ -247,7 +286,7 @@ fun TamagotchiScreen(vm: MainViewModel) {
             onFeed = vm::feed,
             onPlay = { sheet = Sheet.GAMES },
             onSleep = vm::toggleSleep,
-            onWardrobe = { sheet = Sheet.WARDROBE },
+            onWardrobe = { sheet = Sheet.CREATOR },
             onLearn = { sheet = Sheet.LEARN },
         )
         Spacer(Modifier.height(12.dp))
@@ -288,7 +327,9 @@ fun TamagotchiScreen(vm: MainViewModel) {
     }
 
     when (sheet) {
-        Sheet.WARDROBE -> WardrobeSheet(outfit, onChange = vm::saveOutfit, onAvatar = { sheet = Sheet.AVATAR }, onDismiss = { sheet = Sheet.NONE })
+        Sheet.CREATOR -> CreatorSheet(vm, onPhoto = { sheet = Sheet.AVATAR }, onShop = { sheet = Sheet.SHOP }, onDismiss = { sheet = Sheet.NONE })
+        Sheet.SHOP -> ShopSheet(vm, onDismiss = { sheet = Sheet.NONE })
+        Sheet.HOUSE -> HouseSheet(vm, askAboutMe = aboutMe, onShop = { aboutMe = false; sheet = Sheet.SHOP }, onDismiss = { aboutMe = false; sheet = Sheet.NONE })
         Sheet.LEARN -> LearnSheet(
             vm,
             onLesson = { topic, speaking -> sheet = Sheet.NONE; vm.startLesson(topic, speaking) },
@@ -307,6 +348,8 @@ fun TamagotchiScreen(vm: MainViewModel) {
             onPick = { kind, players -> sheet = Sheet.NONE; vm.startGame(kind, players) },
             onQuickPlay = { sheet = Sheet.NONE; vm.play() },
             onDismiss = { sheet = Sheet.NONE },
+            onMath = { sheet = Sheet.NONE; vm.startMath() },
+            onTrivia = { sheet = Sheet.NONE; vm.startTrivia() },
         )
         Sheet.NONE -> Unit
     }
@@ -317,6 +360,8 @@ fun TamagotchiScreen(vm: MainViewModel) {
     }
     val lesson by vm.lessons.state.collectAsStateWithLifecycle()
     lesson?.let { LessonDialog(it, vm) }
+    val quiz by vm.quiz.state.collectAsStateWithLifecycle()
+    quiz?.let { QuizDialog(it, vm) }
     val updates by vm.pendingUpdates.collectAsStateWithLifecycle()
     updates.firstOrNull()?.let { UpdateDialog(it, pet, onDismiss = vm::dismissUpdate) }
 
@@ -326,7 +371,15 @@ fun TamagotchiScreen(vm: MainViewModel) {
 // ----------------------------------------------------------------------- header & stats
 
 @Composable
-private fun Header(online: Boolean, onSettings: () -> Unit) {
+private fun Header(
+    online: Boolean,
+    coins: Int,
+    gains: kotlinx.coroutines.flow.Flow<Int>,
+    atHome: Boolean,
+    onCoins: () -> Unit,
+    onHouse: () -> Unit,
+    onSettings: () -> Unit,
+) {
     Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(
             "ZNAIKO",
@@ -347,6 +400,19 @@ private fun Header(online: Boolean, onSettings: () -> Unit) {
             )
         }
         Spacer(Modifier.weight(1f))
+        // Coins, with each new gain floating up from them.
+        Box(contentAlignment = Alignment.Center) {
+            CoinsPill(coins, onCoins)
+            CoinGain(gains, Modifier.align(Alignment.TopCenter))
+        }
+        Spacer(Modifier.width(8.dp))
+        IconButton(
+            onClick = onHouse,
+            modifier = Modifier.size(44.dp).clip(CircleShape).background(if (atHome) TalktoColors.Sunflower else TalktoColors.Mint),
+        ) {
+            Icon(Icons.Rounded.Home, contentDescription = stringResource(R.string.action_house), tint = TalktoColors.Ink, modifier = Modifier.size(26.dp))
+        }
+        Spacer(Modifier.width(8.dp))
         // A filled, high-contrast button: the gear must be easy to find on every mood background and theme.
         IconButton(
             onClick = onSettings,
@@ -354,6 +420,32 @@ private fun Header(online: Boolean, onSettings: () -> Unit) {
         ) {
             Icon(Icons.Rounded.Settings, contentDescription = stringResource(R.string.action_settings), tint = TalktoColors.Ink, modifier = Modifier.size(26.dp))
         }
+    }
+}
+
+/** "+5 🪙" rising and fading each time coins come in. */
+@Composable
+private fun CoinGain(gains: kotlinx.coroutines.flow.Flow<Int>, modifier: Modifier) {
+    var amount by remember { mutableStateOf(0) }
+    val rise = remember { Animatable(1f) }
+    LaunchedEffect(gains) {
+        gains.collect { n ->
+            amount = n
+            rise.snapTo(0f)
+            rise.animateTo(1f, tween(1_100))
+        }
+    }
+    if (rise.value < 1f && amount > 0) {
+        Text(
+            "+$amount",
+            color = TalktoColors.Sunflower,
+            fontWeight = FontWeight.Black,
+            fontSize = 18.sp,
+            modifier = modifier.graphicsLayer {
+                translationY = -rise.value * 70f
+                alpha = 1f - rise.value
+            },
+        )
     }
 }
 
@@ -644,63 +736,6 @@ private fun MicButton(listening: Boolean, level: Float, onClick: () -> Unit) {
 }
 
 // ----------------------------------------------------------------------- sheets
-
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
-@Composable
-private fun WardrobeSheet(outfit: OutfitConfig, onChange: (OutfitConfig) -> Unit, onAvatar: () -> Unit, onDismiss: () -> Unit) {
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp).verticalScroll(rememberScrollState())) {
-            Text(stringResource(R.string.wardrobe_title), style = MaterialTheme.typography.headlineSmall)
-            Spacer(Modifier.height(8.dp))
-            // The avatar from a photo lives here now; its place in the button row went to the lessons.
-            OutlinedButton(onClick = onAvatar, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Rounded.Face, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.wardrobe_avatar))
-            }
-            Spacer(Modifier.height(12.dp))
-
-            SectionLabel(stringResource(R.string.slot_hat))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Hat.entries.forEach { h ->
-                    FilterChip(selected = outfit.hat == h, onClick = { onChange(outfit.copy(hat = h)) }, label = { Text(hatLabel(h)) })
-                }
-            }
-            ColorRow(outfit.hatColor) { onChange(outfit.copy(hatColor = it)) }
-
-            SectionLabel(stringResource(R.string.slot_glasses))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Glasses.entries.forEach { g ->
-                    FilterChip(selected = outfit.glasses == g, onClick = { onChange(outfit.copy(glasses = g)) }, label = { Text(glassesLabel(g)) })
-                }
-            }
-
-            SectionLabel(stringResource(R.string.slot_outfit))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Clothes.entries.forEach { c ->
-                    FilterChip(selected = outfit.clothes == c, onClick = { onChange(outfit.copy(clothes = c)) }, label = { Text(clothesLabel(c)) })
-                }
-            }
-            ColorRow(outfit.clothesColor) { onChange(outfit.copy(clothesColor = it)) }
-        }
-    }
-}
-
-@Composable
-private fun ColorRow(selected: Long, onPick: (Long) -> Unit) {
-    Row(Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OUTFIT_PALETTE.forEach { c ->
-            Box(
-                Modifier
-                    .size(if (c == selected) 34.dp else 28.dp)
-                    .clip(CircleShape)
-                    .background(Color(c))
-                    .border(if (c == selected) 3.dp else 1.dp, MaterialTheme.colorScheme.onBackground, CircleShape)
-                    .clickable { onPick(c) },
-            )
-        }
-    }
-}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -1207,39 +1242,5 @@ private fun styleLabel(s: AvatarStyle) = stringResource(
         AvatarStyle.PIXEL_ART -> R.string.style_pixel_art
         AvatarStyle.CHIBI -> R.string.style_chibi
         AvatarStyle.WATERCOLOR -> R.string.style_watercolor
-    },
-)
-
-@Composable
-private fun hatLabel(h: Hat) = stringResource(
-    when (h) {
-        Hat.NONE -> R.string.none
-        Hat.PARTY -> R.string.hat_party
-        Hat.BEANIE -> R.string.hat_beanie
-        Hat.CROWN -> R.string.hat_crown
-        Hat.TOP_HAT -> R.string.hat_top_hat
-        Hat.CAP -> R.string.hat_cap
-    },
-)
-
-@Composable
-private fun glassesLabel(g: Glasses) = stringResource(
-    when (g) {
-        Glasses.NONE -> R.string.none
-        Glasses.ROUND -> R.string.glasses_round
-        Glasses.SUNGLASSES -> R.string.glasses_sunglasses
-        Glasses.HEART -> R.string.glasses_heart
-        Glasses.MONOCLE -> R.string.glasses_monocle
-    },
-)
-
-@Composable
-private fun clothesLabel(c: Clothes) = stringResource(
-    when (c) {
-        Clothes.NONE -> R.string.none
-        Clothes.SCARF -> R.string.clothes_scarf
-        Clothes.BOWTIE -> R.string.clothes_bowtie
-        Clothes.HOODIE -> R.string.clothes_hoodie
-        Clothes.TIE -> R.string.clothes_tie
     },
 )

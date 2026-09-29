@@ -14,6 +14,7 @@ import com.talkto.core.learn.Step
 import com.talkto.core.learn.Topic
 import com.talkto.core.learn.starsFor
 import com.talkto.core.pet.KnowledgeSource
+import com.talkto.core.shop.CoinReason
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -138,6 +139,7 @@ class LessonController(
         _state.update { s -> s?.let { it.copy(chosen = option, correct = ok, right = it.right + if (ok) 1 else 0, asked = it.asked + 1) } }
         if (ok) {
             pet.learn(KnowledgeSource.LESSON_ANSWER)
+            pet.earn(CoinReason.LESSON_ANSWER)
             avatar.play(AnimationCommand(Expression.HAPPY, Gesture.BOUNCE, holdMs = 1_200))
             say(pick(PRAISE, PRAISE_EN) + " " + answer)
         } else {
@@ -150,6 +152,7 @@ class LessonController(
         val stars = starsFor(ui.right, ui.asked)
         learning.update { it.finishLesson(stars, learning.today()) }
         pet.learn(KnowledgeSource.LESSON)
+        pet.earn(CoinReason.LESSON_DONE)
         val learned = learning.data.value.state.learned(ui.target)
         _state.value = ui.copy(done = true, stars = stars, learnedTotal = learned, chosen = null, correct = null)
         avatar.play(AnimationCommand(Expression.LOVE, Gesture.SPIN, holdMs = 2_500))

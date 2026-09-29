@@ -37,7 +37,19 @@ jobs:
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug
 
-      - name: Build signed release APK
+      - uses: actions/upload-artifact@v4
+        with:
+          name: talkto-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      # The Play Store takes an Android App Bundle. Without the signing secrets it is built unsigned
+      # (sign it before uploading); with them CI signs both the release APK and the bundle.
+      - name: Build release bundle (AAB)
+        if: env.HAS_KEYSTORE != 'true'
+        run: ./gradlew :app:bundleRelease
+
+      - name: Build signed release APK and bundle
         if: env.HAS_KEYSTORE == 'true'
         env:
           TALKTO_KEYSTORE_B64: ${{ secrets.TALKTO_KEYSTORE_B64 }}
@@ -46,12 +58,19 @@ jobs:
           TALKTO_KEY_PASSWORD: ${{ secrets.TALKTO_KEY_PASSWORD }}
         run: |
           echo "$TALKTO_KEYSTORE_B64" | base64 -d > release.jks
-          TALKTO_KEYSTORE=release.jks ./gradlew :app:assembleRelease
+          TALKTO_KEYSTORE=release.jks ./gradlew :app:assembleRelease :app:bundleRelease
 
       - uses: actions/upload-artifact@v4
         with:
-          name: talkto-apk
-          path: app/build/outputs/apk/**/*.apk
+          name: talkto-aab
+          path: app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: env.HAS_KEYSTORE == 'true'
+        with:
+          name: talkto-release-apk
+          path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
 
       - uses: actions/upload-artifact@v4
@@ -62,3 +81,4 @@ jobs:
             core/build/reports/tests
             app/build/reports/tests
             app/build/reports/lint-results-debug.html
+            app/build/outputs/mapping/release/missing_rules.txt

@@ -11,7 +11,8 @@
     <string name="action_play">Играй</string>
     <string name="action_sleep">Сън</string>
     <string name="action_wake">Събуди</string>
-    <string name="action_wardrobe">Гардероб</string>
+    <string name="action_wardrobe">Облик</string>
+    <string name="action_house">Къщичка</string>
     <string name="action_avatar">Аватар</string>
     <string name="action_settings">Настройки</string>
     <string name="stat_satiety">Ситост</string>
@@ -43,12 +44,7 @@
     <string name="style_watercolor">Акварел</string>
 
     <!-- Wardrobe -->
-    <string name="wardrobe_title">Гардероб</string>
-    <string name="slot_hat">Шапка</string>
-    <string name="slot_glasses">Очила</string>
-    <string name="slot_outfit">Дрехи</string>
     <string name="slot_color">Цвят</string>
-    <string name="none">Нищо</string>
 
     <!-- Settings -->
     <string name="settings_title">Настройки</string>
@@ -170,19 +166,6 @@
     <string name="err_unknown">Опа, нещо се обърка. Но съм тук!</string>
 
     <!-- Wardrobe items and tool names -->
-    <string name="hat_party">Парти</string>
-    <string name="hat_beanie">Зимна</string>
-    <string name="hat_crown">Корона</string>
-    <string name="hat_top_hat">Цилиндър</string>
-    <string name="hat_cap">С козирка</string>
-    <string name="glasses_round">Кръгли</string>
-    <string name="glasses_sunglasses">Слънчеви</string>
-    <string name="glasses_heart">Сърца</string>
-    <string name="glasses_monocle">Монокъл</string>
-    <string name="clothes_scarf">Шал</string>
-    <string name="clothes_bowtie">Папийонка</string>
-    <string name="clothes_hoodie">Суитшърт</string>
-    <string name="clothes_tie">Вратовръзка</string>
     <string name="tool_manage_file">файлове</string>
     <string name="tool_launch_app">отварям приложение</string>
     <string name="tool_terminate_app">затварям приложение</string>
@@ -230,7 +213,6 @@
     <string name="settings_language">Език на ZnaiKo</string>
     <string name="settings_language_note">Екраните, гласът и всичко, което ZnaiKo казва. Командите разбира и на двата езика.</string>
     <string name="action_learn">Учи</string>
-    <string name="wardrobe_avatar">Аватар от снимка</string>
     <string name="learn_title">Учим заедно</string>
     <string name="learn_target">Уча:</string>
     <string name="learn_stats">Научени думи: %1$d · За преговор днес: %2$d · Звезди: %3$d</string>

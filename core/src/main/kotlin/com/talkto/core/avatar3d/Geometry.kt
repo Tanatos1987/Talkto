@@ -102,6 +102,31 @@ object Primitives {
         return Mesh(pos.toFloatArray(), nor.toFloatArray(), idx.toShortArray())
     }
 
+    /** Cube from -0.5 to 0.5 on every axis with flat normals: walls, roofs, doors, fences, boxes. */
+    fun box(): Mesh {
+        val pos = ArrayList<Float>()
+        val nor = ArrayList<Float>()
+        val idx = ArrayList<Short>()
+        // Each face: its normal and two axes spanning it (u x v = normal, so the winding faces outwards).
+        val faces = listOf(
+            floatArrayOf(0f, 0f, 1f, 1f, 0f, 0f, 0f, 1f, 0f),
+            floatArrayOf(0f, 0f, -1f, -1f, 0f, 0f, 0f, 1f, 0f),
+            floatArrayOf(1f, 0f, 0f, 0f, 0f, -1f, 0f, 1f, 0f),
+            floatArrayOf(-1f, 0f, 0f, 0f, 0f, 1f, 0f, 1f, 0f),
+            floatArrayOf(0f, 1f, 0f, 1f, 0f, 0f, 0f, 0f, -1f),
+            floatArrayOf(0f, -1f, 0f, 1f, 0f, 0f, 0f, 0f, 1f),
+        )
+        for (f in faces) {
+            val base = pos.size / 3
+            for ((a, b) in listOf(-1f to -1f, 1f to -1f, 1f to 1f, -1f to 1f)) {
+                for (k in 0 until 3) pos += 0.5f * (f[k] + a * f[3 + k] + b * f[6 + k])
+                for (k in 0 until 3) nor += f[k]
+            }
+            idx += listOf(base, base + 1, base + 2, base, base + 2, base + 3).map { it.toShort() }
+        }
+        return Mesh(pos.toFloatArray(), nor.toFloatArray(), idx.toShortArray())
+    }
+
     /**
      * Torus in the XY plane (facing +Z), ring radius 1, tube radius [tube]. Used for glasses and scarves.
      * [sweep] < 2π gives an arc starting at [start]: the bottom half (start = π) is a smile, the top half a frown.

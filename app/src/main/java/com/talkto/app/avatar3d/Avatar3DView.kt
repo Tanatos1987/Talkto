@@ -11,7 +11,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.talkto.app.avatar.AvatarPose
-import com.talkto.app.avatar.OutfitConfig
+import com.talkto.core.look.CreatureLook
+import com.talkto.core.look.HouseLook
+import com.talkto.core.look.OutfitConfig
 import com.talkto.core.pet.LifeStage
 import com.talkto.core.touch.BodyLocator
 import com.talkto.core.touch.Touch
@@ -37,9 +39,17 @@ fun Avatar3DView(
     twirl: TwirlInput? = null,
     growth: Float = 0f,
     updates: Int = 0,
+    look: CreatureLook = CreatureLook(),
+    house: HouseLook = HouseLook(),
+    atHome: Boolean = false,
+    preview: Boolean = false,
 ) {
     val renderer = remember(body, twirl) { Creature3DRenderer(body, twirl) }
-    SideEffect { renderer.scene = SceneState(pose, outfit, stage, sleeping, growth = growth, updates = updates) }
+    SideEffect {
+        renderer.scene = SceneState(
+            pose, outfit, stage, sleeping, growth = growth, updates = updates, look = look, house = house, atHome = atHome, preview = preview,
+        )
+    }
     LaunchedEffect(lookAt) { lookAt?.let { (x, y) -> renderer.lookAt(x, y) } }
     LaunchedEffect(reactions) { reactions.collect { (r, t) -> renderer.react(r, t) } }
 

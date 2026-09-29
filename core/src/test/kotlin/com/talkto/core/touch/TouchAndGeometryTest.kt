@@ -147,6 +147,48 @@ class GeometryTest {
         }
     }
 
+    @Test fun `box faces point outwards`() {
+        val m = Primitives.box()
+        assertThat(m.vertexCount).isEqualTo(24)
+        assertThat(m.indexCount).isEqualTo(36)
+        for (i in 0 until m.vertexCount) {
+            val dot = m.positions[i * 3] * m.normals[i * 3] + m.positions[i * 3 + 1] * m.normals[i * 3 + 1] + m.positions[i * 3 + 2] * m.normals[i * 3 + 2]
+            assertThat(dot).isWithin(1e-5f).of(0.5f)
+            assertThat(m.positions.all { abs(it) <= 0.5f }).isTrue()
+        }
+        for (t in 0 until m.indexCount / 3) {
+            val (a, b, c) = (0 until 3).map { k -> m.indices[t * 3 + k].toInt() }
+            fun v(i: Int, k: Int) = m.positions[i * 3 + k]
+            val u = FloatArray(3) { v(b, it) - v(a, it) }
+            val w = FloatArray(3) { v(c, it) - v(a, it) }
+            val n = floatArrayOf(u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0])
+            assertThat(n[0] * m.normals[a * 3] + n[1] * m.normals[a * 3 + 1] + n[2] * m.normals[a * 3 + 2]).isGreaterThan(0f)
+        }
+    }
+
+    @Test fun `lathe bodies are smooth, closed and match their own surface`() {
+        for (lathe in listOf(com.talkto.core.avatar3d.Lathe.PEAR, com.talkto.core.avatar3d.Lathe.BEAN)) {
+            val m = lathe.mesh(40, 32)
+            assertThat(m.indices.all { it in 0 until m.vertexCount }).isTrue()
+            for (i in 0 until m.vertexCount) {
+                val px = m.positions[i * 3]; val py = m.positions[i * 3 + 1]; val pz = m.positions[i * 3 + 2]
+                val nx = m.normals[i * 3]; val ny = m.normals[i * 3 + 1]; val nz = m.normals[i * 3 + 2]
+                assertThat(sqrt(nx * nx + ny * ny + nz * nz)).isWithin(1e-3f).of(1f)
+                val cut = lathe.cut(py)
+                if (cut != null && cut.first > 0.05f) {
+                    // Normals point away from the axis.
+                    assertThat((px - cut.third) * nx + pz * nz).isGreaterThan(0f)
+                    if (abs(px - cut.third) < 1e-3f && pz > 0f) assertThat(lathe.surface(px, py, 1)!!).isWithin(2e-3f).of(pz)
+                }
+            }
+            assertThat(lathe.cut(lathe.top + 0.01f)).isNull()
+            assertThat(lathe.surface(0f, (lathe.top + lathe.bottom) / 2f, 1)!!).isGreaterThan(0.5f)
+        }
+        // A real waist: the pear is narrower between head and bottom than a straight line between them.
+        val p = com.talkto.core.avatar3d.Lathe.PEAR
+        assertThat(p.cut(0.2f)!!.first).isLessThan((p.cut(0.42f)!!.first + p.cut(-0.27f)!!.first) / 2f)
+    }
+
     @Test fun `matrices compose like OpenGL`() {
         val m = Mat4.multiply(Mat4.translation(1f, 2f, 3f), Mat4.scale(2f, 2f, 2f))
         assertThat(Mat4.transform(m, 1f, 1f, 1f).toList().take(3)).containsExactly(3f, 4f, 5f).inOrder()

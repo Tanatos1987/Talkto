@@ -69,7 +69,7 @@ class AgentService : LifecycleService() {
     }
 
     private fun buildNotification(): Notification = NotificationCompat.Builder(this, CHANNEL_ID)
-        .setSmallIcon(R.drawable.ic_launcher_foreground)
+        .setSmallIcon(R.drawable.ic_stat_znaiko)
         .setContentTitle(getString(R.string.notif_agent_title))
         .setOngoing(true)
         .setSilent(true)
@@ -104,7 +104,7 @@ class AgentService : LifecycleService() {
             ensureChannel(base)
             val context = LanguageRepository.localized(base, LanguageRepository.read(base))
             val n = NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_launcher_foreground)
+                .setSmallIcon(R.drawable.ic_stat_znaiko)
                 .setContentTitle(context.getString(R.string.notif_confirm_title))
                 .setContentText(context.getString(R.string.notif_confirm_body))
                 .setAutoCancel(true)

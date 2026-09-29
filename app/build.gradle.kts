@@ -23,8 +23,10 @@ android {
         applicationId = "com.talkto.app"
         minSdk = 30 // Android 11: MANAGE_EXTERNAL_STORAGE, StorageVolume.directory
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0"
+        // Every CI build gets a higher code, so each bundle can go to the Play Store as an update.
+        val build = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()
+        versionCode = build ?: 1
+        versionName = "1.1." + (build ?: 0)
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
     }

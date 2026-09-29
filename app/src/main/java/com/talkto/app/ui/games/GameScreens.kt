@@ -63,6 +63,7 @@ import com.talkto.app.games.Board
 import com.talkto.app.games.GameController
 import com.talkto.app.games.GameUi
 import com.talkto.app.i18n.screenLang
+import com.talkto.app.i18n.tr
 import com.talkto.app.pet.PetState
 import com.talkto.app.ui.theme.TalktoColors
 import com.talkto.core.games.ConnectFour
@@ -83,7 +84,14 @@ private val PET_DISC = Color(0xFF4FA85E)
 /** Picks a game. ZnaiKo's version and skill show how strong it plays now. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GamesSheet(pet: PetState, onPick: (GameKind, Int) -> Unit, onQuickPlay: () -> Unit, onDismiss: () -> Unit) {
+fun GamesSheet(
+    pet: PetState,
+    onPick: (GameKind, Int) -> Unit,
+    onQuickPlay: () -> Unit,
+    onDismiss: () -> Unit,
+    onMath: () -> Unit = {},
+    onTrivia: () -> Unit = {},
+) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         val lang = screenLang()
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp).verticalScroll(rememberScrollState())) {
@@ -102,6 +110,8 @@ fun GamesSheet(pet: PetState, onPick: (GameKind, Int) -> Unit, onQuickPlay: () -
             }
             GameRow("♞", GameKind.CHESS.label(lang), stringResource(R.string.game_chess_note)) { onPick(GameKind.CHESS, 2) }
             GameRow("🃏", GameKind.MEMORY.label(lang), stringResource(R.string.game_memory_note)) { onPick(GameKind.MEMORY, 2) }
+            GameRow("🔢", tr("Задачи по математика", "Maths tasks"), tr("От сметки до 20 до уравнения с x, за 1. до 7. клас. Отговаряй с цифри или на глас.", "From sums to 20 up to equations with x, years 1 to 7. Answer with the keypad or out loud."), onMath)
+            GameRow("❓", tr("Тривия", "Trivia"), tr("Въпроси от обща култура: животни, космос, България, история и още.", "General knowledge: animals, space, Bulgaria, history and more."), onTrivia)
             GameRow("⚽", stringResource(R.string.game_quick), stringResource(R.string.game_quick_note), onQuickPlay)
         }
     }

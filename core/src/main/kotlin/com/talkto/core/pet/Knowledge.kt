@@ -18,6 +18,10 @@ enum class KnowledgeSource(val points: Int) {
     LESSON_ANSWER(1),
     /** A finished lesson. */
     LESSON(5),
+    /** A right answer to a maths task or a trivia question. */
+    QUIZ_ANSWER(1),
+    /** A finished trivia round or ten maths tasks. */
+    QUIZ(4),
 }
 
 /** One update ZnaiKo installs when it has learned enough. */
