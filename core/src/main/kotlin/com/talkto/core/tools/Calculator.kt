@@ -1,5 +1,6 @@
 package com.talkto.core.tools
 
+import com.talkto.core.i18n.Lang
 import java.math.BigDecimal
 import java.math.MathContext
 import java.math.RoundingMode
@@ -53,12 +54,12 @@ object Calculator {
         return v
     }
 
-    /** Bulgarian formatting: decimal comma, at most 10 significant digits, no trailing zeros. */
-    fun format(v: Double): String {
+    /** At most 10 significant digits, no trailing zeros; decimal comma in Bulgarian, point in English. */
+    fun format(v: Double, lang: Lang = Lang.BG): String {
         if (v == 0.0) return "0"
         val bd = BigDecimal(v).round(MathContext(10, RoundingMode.HALF_UP)).stripTrailingZeros()
         val s = if (bd.scale() < 0) bd.setScale(0).toPlainString() else bd.toPlainString()
-        return s.replace('.', ',')
+        return if (lang == Lang.BG) s.replace('.', ',') else s
     }
 
     private class Parser(private val s: String) {

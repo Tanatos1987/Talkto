@@ -1,5 +1,6 @@
 package com.talkto.core.games
 
+import com.talkto.core.i18n.Lang
 import kotlin.random.Random
 
 /** How a finished game ended, from the user's side. */
@@ -12,6 +13,9 @@ enum class GameKind(val bg: String, val en: String) {
     LUDO("Не се сърди, човече", "Ludo"),
     CHESS("Шах", "Chess"),
     MEMORY("Мемори", "Memory"),
+    ;
+
+    fun label(lang: Lang) = lang.pick(bg, en)
 }
 
 /**

@@ -25,6 +25,7 @@ import com.talkto.core.notes.InMemoryReminderStore
 import com.talkto.core.notes.NotesRepository
 import com.talkto.core.notes.RecordingScheduler
 import com.talkto.core.reminders.RemindersRepository
+import com.talkto.core.i18n.Lang
 import kotlin.random.Random
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
@@ -46,6 +47,7 @@ class OfflineAgentTest {
     private val launched = mutableListOf<String>()
     private val petLog = mutableListOf<String>()
     private lateinit var agent: OfflineAgent
+    private var language = Lang.BG
 
     private val apps = object : AppController {
         val installed = listOf(AppInfo("com.spotify.music", "Spotify"), AppInfo("com.android.camera2", "Камера"))
@@ -115,7 +117,7 @@ class OfflineAgentTest {
         )
         agent = OfflineAgent(
             dispatcher, memory, pet, zone = { ZoneOffset.UTC }, clock = { nowMs }, random = Random(42),
-            profile = profile, history = history,
+            profile = profile, history = history, lang = { language },
         )
     }
 
@@ -319,5 +321,34 @@ class OfflineAgentTest {
 
     @Test fun `tongue`() = runTest {
         assertThat(say("плезни се").text).isEqualTo("Бе-е-е!")
+    }
+
+    // --------------------------------------------------------------- languages
+
+    @Test fun `offline dictionary in both directions`() = runTest {
+        assertThat(say("Как е куче на английски?").text).isEqualTo("„куче“ на английски е \"dog\" 🐶.")
+        assertThat(say("котката на английски").text).isEqualTo("„котка“ на английски е \"cat\" 🐱.")
+        assertThat(say("какво значи rainbow").text).isEqualTo("„rainbow“ на български е „дъга“ 🌈.")
+        assertThat(say("как е ксилофон на английски").text).startsWith("Думата „ксилофон“ още не я знам.")
+        language = Lang.EN
+        assertThat(say("how do you say dog in Bulgarian").text).isEqualTo("\"dog\" in Bulgarian is „куче“ 🐶.")
+        assertThat(say("what is ябълка in English").text).isEqualTo("\"ябълка\" in English is \"apple\" 🍎.")
+        assertThat(say("orange in bulgarian").text).isEqualTo("\"orange\" in Bulgarian is „оранжев“ 🟠 (colours) or „портокал“ 🍊 (fruit and vegetables).")
+        assertThat(agent.recognizes("how do you say cat in bulgarian")).isTrue()
+    }
+
+    @Test fun `ZnaiKo answers in English when it speaks English`() = runTest {
+        language = Lang.EN
+        assertThat(say("open camera").text).isEqualTo("Opening Камера.")
+        assertThat(say("what time is it").text).isEqualTo("It's 14:10, Monday, 28 September.")
+        assertThat(say("stick your tongue out").text).isEqualTo("Bleh!")
+        assertThat(say("help").text).startsWith("Without an API key I can:")
+        assertThat(say("guess the number").text).startsWith("I'm thinking of a number")
+        assertThat(say("50").text).matches("^(Higher|Lower|You got it).*")
+        assertThat(say("stop").text).startsWith("OK, the number was")
+        assertThat(say("5 km in miles").text).isEqualTo("5 km = 3.106855961 miles.")
+        assertThat(say("blah blah").text).startsWith("Without an API key I only understand")
+        // Commands in Bulgarian still work; the answer follows ZnaiKo's language.
+        assertThat(say("отвори камера").text).isEqualTo("Opening Камера.")
     }
 }

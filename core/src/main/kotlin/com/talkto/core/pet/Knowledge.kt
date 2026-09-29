@@ -1,5 +1,7 @@
 package com.talkto.core.pet
 
+import com.talkto.core.i18n.Lang
+
 /** What taught ZnaiKo something, and how much it counts. */
 enum class KnowledgeSource(val points: Int) {
     /** Each message the user writes or says. */
@@ -12,6 +14,10 @@ enum class KnowledgeSource(val points: Int) {
     GAME_LOST(5),
     /** A new day lived. */
     DAY(4),
+    /** A right answer in a language lesson: ZnaiKo learns together with the user. */
+    LESSON_ANSWER(1),
+    /** A finished lesson. */
+    LESSON(5),
 }
 
 /** One update ZnaiKo installs when it has learned enough. */
@@ -20,8 +26,13 @@ data class ZnaiKoUpdate(
     val number: Int,
     val title: String,
     val news: List<String>,
+    val titleEn: String = title,
+    val newsEn: List<String> = news,
 ) {
     val version: String get() = Knowledge.versionName(number)
+
+    fun title(lang: Lang) = if (lang == Lang.BG) title else titleEn
+    fun news(lang: Lang) = if (lang == Lang.BG) news else newsEn
 }
 
 /**
@@ -66,15 +77,45 @@ object Knowledge {
     )
 
     val UPDATES = listOf(
-        ZnaiKoUpdate(1, "Първото обновление", listOf("Играя по-внимателно: по-рядко правя глупави ходове.", "Листенцето ми порасна.")),
-        ZnaiKoUpdate(2, "Малкият стратег", listOf("Мисля с един ход напред в шаха.", "На „Четири в редица“ вече пазя средата.")),
-        ZnaiKoUpdate(3, "Паметливко", listOf("В Мемори помня повече карти.", "Поникна ми трето листенце.")),
-        ZnaiKoUpdate(4, "Цветенце", listOf("На главата ми цъфна цвете!", "В „Не се сърди, човече“ бягам от опасност.")),
-        ZnaiKoUpdate(5, "Хитрецът", listOf("На морски шах почти не греша.", "Търся по-дълбоко в шаха.")),
-        ZnaiKoUpdate(6, "Четири листа", listOf("Имам четири листенца, като детелина за късмет.", "По-рядко забравям какво съм видял.")),
-        ZnaiKoUpdate(7, "Шахматистът", listOf("Виждам три хода напред в шаха.", "Пазя фигурите си по-добре.")),
-        ZnaiKoUpdate(8, "Звездичка", listOf("Над цветето ми светна звездичка.", "В Мемори помня почти всичко.")),
-        ZnaiKoUpdate(9, "Мъдрецът", listOf("Играя почти без грешки.", "Още по-силен съм на „Четири в редица“.")),
-        ZnaiKoUpdate(10, "Гросмайсторът", listOf("Това е най-силната ми версия: играя с пълна сила.", "Благодаря, че ме научи на толкова неща!")),
+        ZnaiKoUpdate(
+            1, "Първото обновление", listOf("Играя по-внимателно: по-рядко правя глупави ходове.", "Листенцето ми порасна."),
+            "The first update", listOf("I play more carefully and make fewer silly moves.", "My little leaf has grown."),
+        ),
+        ZnaiKoUpdate(
+            2, "Малкият стратег", listOf("Мисля с един ход напред в шаха.", "На „Четири в редица“ вече пазя средата."),
+            "The little strategist", listOf("I think one move ahead in chess.", "In Connect Four I now guard the middle."),
+        ),
+        ZnaiKoUpdate(
+            3, "Паметливко", listOf("В Мемори помня повече карти.", "Поникна ми трето листенце."),
+            "Good memory", listOf("I remember more cards in Memory.", "A third leaf has sprouted."),
+        ),
+        ZnaiKoUpdate(
+            4, "Цветенце", listOf("На главата ми цъфна цвете!", "В „Не се сърди, човече“ бягам от опасност."),
+            "Little flower", listOf("A flower has bloomed on my head!", "In Ludo I run away from danger."),
+        ),
+        ZnaiKoUpdate(
+            5, "Хитрецът", listOf("На морски шах почти не греша.", "Търся по-дълбоко в шаха."),
+            "The clever one", listOf("I hardly ever make mistakes at tic-tac-toe.", "I look deeper in chess."),
+        ),
+        ZnaiKoUpdate(
+            6, "Четири листа", listOf("Имам четири листенца, като детелина за късмет.", "По-рядко забравям какво съм видял."),
+            "Four leaves", listOf("I have four leaves, like a lucky clover.", "I forget less of what I have seen."),
+        ),
+        ZnaiKoUpdate(
+            7, "Шахматистът", listOf("Виждам три хода напред в шаха.", "Пазя фигурите си по-добре."),
+            "The chess player", listOf("I see three moves ahead in chess.", "I look after my pieces better."),
+        ),
+        ZnaiKoUpdate(
+            8, "Звездичка", listOf("Над цветето ми светна звездичка.", "В Мемори помня почти всичко."),
+            "Little star", listOf("A little star lights up above my flower.", "In Memory I remember almost everything."),
+        ),
+        ZnaiKoUpdate(
+            9, "Мъдрецът", listOf("Играя почти без грешки.", "Още по-силен съм на „Четири в редица“."),
+            "The wise one", listOf("I play almost without mistakes.", "I am even stronger at Connect Four."),
+        ),
+        ZnaiKoUpdate(
+            10, "Гросмайсторът", listOf("Това е най-силната ми версия: играя с пълна сила.", "Благодаря, че ме научи на толкова неща!"),
+            "The grandmaster", listOf("This is my strongest version: I play at full strength.", "Thank you for teaching me so many things!"),
+        ),
     )
 }

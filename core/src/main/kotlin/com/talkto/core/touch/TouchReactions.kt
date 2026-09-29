@@ -2,6 +2,7 @@ package com.talkto.core.touch
 
 import com.talkto.core.avatar.Expression
 import com.talkto.core.avatar.Gesture
+import com.talkto.core.i18n.Lang
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.max
@@ -183,7 +184,11 @@ data class TouchReaction(
  * repeated ones make it sad and wary, and gentle touches win it back. Where it is touched matters: the belly
  * tickles, the eye hurts, the feet make it hop, the head likes a stroke. Lines never repeat twice in a row.
  */
-class Temperament(private val clock: () -> Long = System::currentTimeMillis, private val random: () -> Float = { Math.random().toFloat() }) {
+class Temperament(
+    private val clock: () -> Long = System::currentTimeMillis,
+    private val random: () -> Float = { Math.random().toFloat() },
+    private val lang: () -> Lang = { Lang.BG },
+) {
 
     private var grievance = 0f // 0 = relaxed .. 1 = very upset
     private var lastMs = clock()
@@ -269,8 +274,9 @@ class Temperament(private val clock: () -> Long = System::currentTimeMillis, pri
 
     private fun pickSometimes(lines: List<String>, chance: Float): String? = if (random() < chance) pick(lines) else null
 
-    /** A random line, never the same one twice in a row for the same situation. */
-    private fun pick(lines: List<String>): String {
+    /** A random line in ZnaiKo's language, never the same one twice in a row for the same situation. */
+    private fun pick(bgLines: List<String>): String {
+        val lines = if (lang() == Lang.EN) EN.getValue(bgLines) else bgLines
         var i = (random() * lines.size).toInt().coerceIn(0, lines.size - 1)
         if (lines.size > 1 && lines[i] == lastLine[lines]) i = (i + 1) % lines.size
         return lines[i].also { lastLine[lines] = it }
@@ -303,6 +309,36 @@ class Temperament(private val clock: () -> Long = System::currentTimeMillis, pri
         val POKE_SIDE = listOf("Хей, не ме бутай!", "Ехо, ще падна!", "Щипе ме отстрани!")
         val POKE_WARY = listOf("Какво пак?", "Внимавай...", "Хм.")
         val MISS = listOf("Какво има там?", "Тук съм, до мен!", "Търсиш ли ме?")
+
+        /** English lines for each Bulgarian set, same situations. */
+        private val EN: Map<List<String>, List<String>> = mapOf(
+            SLAP_FIRST to listOf("Hey! Why did you slap me?", "Ouch! That wasn't nice.", "Hey, careful with those hands!"),
+            SLAP_REPEATED to listOf("Stop it... It really hurts.", "I'll hide if you keep doing that.", "Why are you so rough with me?"),
+            HIT_FIRST to listOf("Ow! That hurts!", "Oof! What did I do?", "Ouch, gently!"),
+            HIT_HEAD to listOf("Ow, my little head!", "Bonk! I'm seeing stars!", "Ouch, right on top?"),
+            HIT_EYE to listOf("My eye! That really hurts!", "Ow, I can't see a thing!", "Not in the eye, please!"),
+            HIT_BELLY to listOf("Oof, right in the tummy!", "Ooh, that knocked the air out of me!", "Ow, my tummy!"),
+            HIT_REPEATED to listOf("Please stop...", "I thought we were friends.", "I'm going to cry."),
+            GENTLE to listOf("Mmm, that's so nice.", "I love it when you stroke me.", "A little more, please."),
+            GENTLE_HEAD to listOf("Purr, head strokes are the best.", "Ooh, I could fall asleep.", "More, on the top!"),
+            GENTLE_BELLY to listOf("Mmm, my tummy is so relaxed.", "Aaah, that's warm.", "You stroke me just like mum does."),
+            FORGIVE to listOf("All right... I forgive you.", "That's better.", "Thank you for saying sorry."),
+            PAT to listOf("Hee-hee, that tickles!", "More, more!", "Hooray, pats!"),
+            PAT_HEAD to listOf("Pat-pat on my head!", "Hee-hee, I'm like a drum!", "Am I being good?"),
+            PAT_BELLY to listOf("Boom-boom, my tummy!", "Ha-ha-ha, stop, it tickles!", "Hee-hee-hee, my belly button!"),
+            TONGUE to listOf("Bleh!", "Hee-hee, bleh!", "Here's a tongue for you!"),
+            TWIRL to listOf("Wheee!", "Merry-go-round!", "One more spin!", "Here's my back!"),
+            DIZZY to listOf("My head is spinning...", "Oof, everything is going round!", "Stop, I'm going to fall over!"),
+            POKE_EYE to listOf("Oh, my eye!", "Ow, no poking my eyes!", "I blinked in surprise!"),
+            POKE_MOUTH to listOf("Chomp! I'll bite you!", "Yum-yum, a tasty finger!", "Bleh, you caught me!"),
+            POKE_NOSE to listOf("Beep! That's my nose.", "Achoo! That tickles.", "Beep-beep!"),
+            POKE_BELLY to listOf("Hee-hee, that tickles!", "Ha-ha, my tummy!", "Tee-hee, not there!"),
+            POKE_FEET to listOf("Oh, my little toes!", "Hop! I jumped!", "You're tickling my feet!"),
+            POKE_HEAD to listOf("Knock! Hello to you too.", "Who's knocking on my head?", "Hey, I'm here!"),
+            POKE_SIDE to listOf("Hey, don't push me!", "Whoa, I'll fall over!", "That pinches on the side!"),
+            POKE_WARY to listOf("What now?", "Careful...", "Hmm."),
+            MISS to listOf("What's over there?", "I'm here, next to me!", "Are you looking for me?"),
+        )
     }
 }
 

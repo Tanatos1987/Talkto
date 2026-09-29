@@ -9,16 +9,16 @@ import java.util.Locale
  * a night sky when it is sleepy, a storm when it is angry, a sunset with hearts when it is in love.
  */
 @Serializable
-enum class MoodScene(val bg: String, val keywords: Set<String>) {
-    BEACH("Плаж", setOf("beach", "sea", "sand", "swimwear", "surfboard", "summer", "pool", "palm tree", "sun", "lake", "coast", "shore", "vacation")),
-    MEADOW("Поляна", setOf("grass", "field", "garden", "tree", "plant", "forest", "park", "mountain", "hill", "meadow", "leaf", "nature", "countryside")),
-    SUNSET("Залез", setOf("sunset", "dusk", "flower", "rose", "petal", "heart", "wedding", "bride", "couple", "romance", "sunrise")),
-    RAIN("Дъжд", setOf("rain", "umbrella", "puddle", "cloud", "overcast", "wet", "drizzle", "window")),
-    STORM("Буря", setOf("storm", "lightning", "thunder", "fire", "flame", "volcano", "tornado", "wave")),
-    NIGHT("Нощ", setOf("night", "moon", "darkness", "candle", "lamp", "bedroom", "bed", "sleep", "lights")),
-    SPACE("Космос", setOf("space", "planet", "galaxy", "astronomy", "star", "universe", "telescope", "book", "library")),
-    FOG("Мъгла", setOf("fog", "mist", "smoke", "haze", "cloud")),
-    FIREWORKS("Фойерверки", setOf("fireworks", "party", "balloon", "festival", "concert", "celebration", "cake", "confetti")),
+enum class MoodScene(val bg: String, val keywords: Set<String>, val en: String) {
+    BEACH("Плаж", setOf("beach", "sea", "sand", "swimwear", "surfboard", "summer", "pool", "palm tree", "sun", "lake", "coast", "shore", "vacation"), "Beach"),
+    MEADOW("Поляна", setOf("grass", "field", "garden", "tree", "plant", "forest", "park", "mountain", "hill", "meadow", "leaf", "nature", "countryside"), "Meadow"),
+    SUNSET("Залез", setOf("sunset", "dusk", "flower", "rose", "petal", "heart", "wedding", "bride", "couple", "romance", "sunrise"), "Sunset"),
+    RAIN("Дъжд", setOf("rain", "umbrella", "puddle", "cloud", "overcast", "wet", "drizzle", "window"), "Rain"),
+    STORM("Буря", setOf("storm", "lightning", "thunder", "fire", "flame", "volcano", "tornado", "wave"), "Storm"),
+    NIGHT("Нощ", setOf("night", "moon", "darkness", "candle", "lamp", "bedroom", "bed", "sleep", "lights"), "Night"),
+    SPACE("Космос", setOf("space", "planet", "galaxy", "astronomy", "star", "universe", "telescope", "book", "library"), "Space"),
+    FOG("Мъгла", setOf("fog", "mist", "smoke", "haze", "cloud"), "Fog"),
+    FIREWORKS("Фойерверки", setOf("fireworks", "party", "balloon", "festival", "concert", "celebration", "cake", "confetti"), "Fireworks"),
     ;
 
     companion object {

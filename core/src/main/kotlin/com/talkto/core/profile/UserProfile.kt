@@ -1,6 +1,7 @@
 package com.talkto.core.profile
 
 import com.talkto.core.error.TalktoError
+import com.talkto.core.i18n.Lang
 import kotlinx.serialization.Serializable
 import java.util.Locale
 
@@ -81,28 +82,49 @@ class ProfileRepository(private val store: ProfileStore, private val clock: () -
         return d == day && mon == month
     }
 
-    /** Human-readable summary in Bulgarian for "какво знаеш за мен". */
-    suspend fun describe(): String {
+    /** Human-readable summary for "какво знаеш за мен" / "what do you know about me". */
+    suspend fun describe(lang: Lang = Lang.BG): String {
         val facts = all()
-        if (facts.isEmpty()) return "Още не знам нищо за теб. Разкажи ми: „казвам се …“, „обичам …“, „запомни, че …“."
-        return facts.take(15).joinToString("\n") { "• " + label(it) }
+        if (facts.isEmpty()) {
+            return lang.pick(
+                "Още не знам нищо за теб. Разкажи ми: „казвам се …“, „обичам …“, „запомни, че …“.",
+                "I don't know anything about you yet. Tell me: \"my name is …\", \"I like …\", \"remember that …\".",
+            )
+        }
+        return facts.take(15).joinToString("\n") { "• " + label(it, lang) }
     }
 
     companion object {
         private val MONTHS = listOf("яну", "фев", "мар", "апр", "май", "юни", "юли", "авг", "сеп", "окт", "ное", "дек")
 
-        fun label(f: Fact): String = when {
-            f.key == "name" -> "Казваш се ${f.value}"
-            f.key == "birthday" -> "Рожденият ти ден е на ${f.value}"
-            f.key == "city" -> "Живееш в ${f.value}"
-            f.key == "job" -> "Работиш като ${f.value}"
-            f.key == "age" -> "На ${f.value} години си"
-            f.key.startsWith("favourite:") -> "Любим(а) ${f.key.removePrefix("favourite:")}: ${f.value}"
-            f.key.startsWith("likes:") -> "Обичаш ${f.value}"
-            f.key.startsWith("dislikes:") -> "Не обичаш ${f.value}"
-            f.key.startsWith("alias:") -> "Когато кажеш „${f.key.removePrefix("alias:")}“, правя „${f.value}“"
-            f.key.startsWith("note:") -> f.value
-            else -> "${f.key}: ${f.value}"
+        fun label(f: Fact, lang: Lang = Lang.BG): String = if (lang == Lang.BG) {
+            when {
+                f.key == "name" -> "Казваш се ${f.value}"
+                f.key == "birthday" -> "Рожденият ти ден е на ${f.value}"
+                f.key == "city" -> "Живееш в ${f.value}"
+                f.key == "job" -> "Работиш като ${f.value}"
+                f.key == "age" -> "На ${f.value} години си"
+                f.key.startsWith("favourite:") -> "Любим(а) ${f.key.removePrefix("favourite:")}: ${f.value}"
+                f.key.startsWith("likes:") -> "Обичаш ${f.value}"
+                f.key.startsWith("dislikes:") -> "Не обичаш ${f.value}"
+                f.key.startsWith("alias:") -> "Когато кажеш „${f.key.removePrefix("alias:")}“, правя „${f.value}“"
+                f.key.startsWith("note:") -> f.value
+                else -> "${f.key}: ${f.value}"
+            }
+        } else {
+            when {
+                f.key == "name" -> "Your name is ${f.value}"
+                f.key == "birthday" -> "Your birthday is on ${f.value}"
+                f.key == "city" -> "You live in ${f.value}"
+                f.key == "job" -> "You work as ${f.value}"
+                f.key == "age" -> "You are ${f.value} years old"
+                f.key.startsWith("favourite:") -> "Favourite ${f.key.removePrefix("favourite:")}: ${f.value}"
+                f.key.startsWith("likes:") -> "You like ${f.value}"
+                f.key.startsWith("dislikes:") -> "You don't like ${f.value}"
+                f.key.startsWith("alias:") -> "When you say \"${f.key.removePrefix("alias:")}\", I do \"${f.value}\""
+                f.key.startsWith("note:") -> f.value
+                else -> "${f.key}: ${f.value}"
+            }
         }
     }
 }

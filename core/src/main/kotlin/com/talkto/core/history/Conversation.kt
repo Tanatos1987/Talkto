@@ -1,5 +1,6 @@
 package com.talkto.core.history
 
+import com.talkto.core.i18n.Lang
 import kotlinx.serialization.Serializable
 import java.time.Instant
 import java.time.ZoneId
@@ -59,10 +60,10 @@ class HistoryRepository(
     suspend fun prune(): Int = store.deleteOlderThan(clock() - retentionDays * 86_400_000L)
 
     /** Plain-text transcript for sharing, oldest first. */
-    suspend fun export(zone: ZoneId = ZoneId.systemDefault(), limit: Int = 5_000): String {
+    suspend fun export(zone: ZoneId = ZoneId.systemDefault(), limit: Int = 5_000, lang: Lang = Lang.BG): String {
         val fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm", Locale.ROOT).withZone(zone)
         return store.recent(limit).joinToString("\n") { u ->
-            val who = if (u.speaker == Speaker.USER) "Аз" else "ZnaiKo"
+            val who = if (u.speaker == Speaker.USER) lang.pick("Аз", "Me") else "ZnaiKo"
             "[${fmt.format(Instant.ofEpochMilli(u.atMs))}] $who: ${u.text}"
         }
     }

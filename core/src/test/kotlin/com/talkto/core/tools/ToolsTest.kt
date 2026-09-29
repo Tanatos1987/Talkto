@@ -135,4 +135,13 @@ class FunPackTest {
             assertThat(verdict).isEqualTo(expected)
         }
     }
+
+    @Test fun `English jokes, coins and verdicts`() {
+        val en = FunPack(Random(5)) { com.talkto.core.i18n.Lang.EN }
+        assertThat(FunPack.JOKES_EN).contains(en.joke())
+        assertThat(en.coin()).isAnyOf("Heads", "Tails")
+        val r = en.rps(FunPack.Hand.PAPER)
+        assertThat(r.verdict).isAnyOf("It's a draw!", "You win!", "I win!")
+        assertThat(r.userWon).isEqualTo(r.pet == FunPack.Hand.ROCK)
+    }
 }

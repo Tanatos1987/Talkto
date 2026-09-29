@@ -4,12 +4,12 @@ import java.time.LocalDate
 import kotlin.math.floor
 import kotlin.math.sqrt
 
-enum class LifeStage(val minLevel: Int, val bg: String) {
-    EGG(1, "Яйце"),
-    BABY(2, "Бебе"),
-    CHILD(5, "Дете"),
-    TEEN(10, "Тийнейджър"),
-    ADULT(20, "Възрастен"),
+enum class LifeStage(val minLevel: Int, val bg: String, val en: String) {
+    EGG(1, "Яйце", "Egg"),
+    BABY(2, "Бебе", "Baby"),
+    CHILD(5, "Дете", "Child"),
+    TEEN(10, "Тийнейджър", "Teenager"),
+    ADULT(20, "Възрастен", "Grown-up"),
 }
 
 /** Why XP was earned; the amounts live here so balancing is one table. */

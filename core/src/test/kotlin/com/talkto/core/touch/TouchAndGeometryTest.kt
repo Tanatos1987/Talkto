@@ -103,6 +103,12 @@ class TemperamentTest {
         assertThat(setOf(eye.line, belly.line, feet.line)).hasSize(3)
     }
 
+    @Test fun `touch lines follow ZnaiKo's language`() {
+        val en = Temperament(clock = { now }, random = { dice }, lang = { com.talkto.core.i18n.Lang.EN })
+        val line = en.react(touch(TouchKind.POKE, zone = TouchZone.FEET), true).line
+        assertThat(line).isIn(listOf("Oh, my little toes!", "Hop! I jumped!", "You're tickling my feet!"))
+    }
+
     @Test fun `lines do not repeat twice in a row`() {
         val a = t.react(touch(TouchKind.POKE, zone = TouchZone.BELLY), true).line
         val b = t.react(touch(TouchKind.POKE, zone = TouchZone.BELLY), true).line
