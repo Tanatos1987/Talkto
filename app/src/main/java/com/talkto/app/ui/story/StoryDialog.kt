@@ -66,7 +66,8 @@ fun StoryDialog(vm: MainViewModel) {
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(tr("📖 Историята на Знайко", "📖 The story of ZnaiKo"), style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                    Text("📖", fontSize = 26.sp)
+                    com.talkto.app.ui.components.ZnaiKoLogo(Modifier.weight(1f), size = 30.sp)
                     if (!last) TextButton(onClick = vm::closeStory) { Text(tr("Пропусни", "Skip")) }
                 }
                 AnimatedContent(

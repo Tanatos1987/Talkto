@@ -17,9 +17,13 @@ sealed interface AppCommand {
     /** "Запознай се с мен": ZnaiKo asks about the user. */
     data object AboutMe : AppCommand
     /** Maths tasks for [grade] (null: the saved one), or equations when [algebra]. */
-    data class Math(val grade: Int?, val algebra: Boolean = false) : AppCommand
+    data class Math(val grade: Int?, val algebra: Boolean = false, val geometry: Boolean = false) : AppCommand
     /** A trivia round, about [category] when one was named. */
     data class Trivia(val category: TriviaCategory?) : AppCommand
+    /** 3D Tetris. */
+    data object Tetris : AppCommand
+    /** The sweets game (three in a row). */
+    data object Sweets : AppCommand
 }
 
 object AppCommands {
@@ -50,11 +54,15 @@ object AppCommands {
     private val ABOUT_ME = Regex(
         "^(?:хайде )?(?:запознай се с мен|опознай ме|да се запознаем|питай ме за мен|попитай ме за мен)$|^(?:get to know me|ask (?:me )?about me|let'?s get to know each other)$",
     )
+    private val ARCADE_ASK = Regex("^(?:хайде |нека )?(?:да )?(?:играем|поиграем|играй|пусни|отвори)|^(?:let'?s )?(?:play|start|open)|^(?:тетрис|бонбонки|tetris|sweets)", RegexOption.IGNORE_CASE)
+    private val TETRIS = Regex("тетрис|tetris|кубчета", RegexOption.IGNORE_CASE)
+    private val SWEETS = Regex("бонбон|candy|sweets|три в редица|match.?3", RegexOption.IGNORE_CASE)
     private val ALGEBRA = Regex("(?<![\\p{L}])(?:алгебра|уравнени[ея]|algebra|equations?)(?![\\p{L}])")
+    private val GEOMETRY = Regex("(?<![\\p{L}])(?:геометри[яи]|геометрията|фигури|geometry|shapes)(?![\\p{L}])")
     private val MATH = Regex(
         "(?<![\\p{L}])(?:задач(?:а|и|ка|ки)(?: по математика)?|математика|математиката|смятане|да смятаме|смятай|сметки|maths?|sums|arithmetic)(?![\\p{L}])",
     )
-    private val MATH_ASK = Regex("^(?:(?:дай|задай|кажи)(?: ми)?|искам|хайде|да|реши|нека|give me|i want|let'?s do|let'?s|do|some|ask me)(?=\\s|$)|^(?:задач|математик|смятане|сметки|алгебра|уравнени|maths?|sums|algebra|equations?)")
+    private val MATH_ASK = Regex("^(?:(?:дай|задай|кажи)(?: ми)?|искам|хайде|да|реши|нека|give me|i want|let'?s do|let'?s|do|some|ask me)(?=\\s|$)|^(?:задач|математик|смятане|сметки|алгебра|уравнени|геометри|maths?|sums|algebra|equations?|geometry)")
     private val TRIVIA = Regex(
         "(?<![\\p{L}])(?:тривия|викторин(?:а|ата)|обща култура|въпрос(?:и|че|чета)? от обща култура|trivia|quiz|general knowledge)(?![\\p{L}])" +
             "|^(?:задай|задавай|кажи)(?: ми)? (?:въпрос|въпроси|въпросче|въпросчета)(?: за .+)?$|^ask me (?:a )?(?:question|questions)(?: about .+)?$",
@@ -85,11 +93,16 @@ object AppCommands {
         if (SHOP.matches(t)) return AppCommand.OpenShop
         if (CREATOR.matches(t)) return AppCommand.OpenCreator
         if (ABOUT_ME.matches(t)) return AppCommand.AboutMe
+        if (t.split(' ').size <= 6 && ARCADE_ASK.containsMatchIn(t)) {
+            if (TETRIS.containsMatchIn(t)) return AppCommand.Tetris
+            if (SWEETS.containsMatchIn(t)) return AppCommand.Sweets
+        }
         // Only short requests: "a task about my maths homework" is a question for Claude, not a quiz.
         if (t.split(' ').size <= 8) {
             if (TRIVIA.containsMatchIn(t)) return AppCommand.Trivia(category(t))
             val algebra = ALGEBRA.containsMatchIn(t)
-            if ((algebra || MATH.containsMatchIn(t)) && MATH_ASK.containsMatchIn(t)) return AppCommand.Math(grade(t), algebra)
+            val geometry = GEOMETRY.containsMatchIn(t)
+            if ((algebra || geometry || MATH.containsMatchIn(t)) && MATH_ASK.containsMatchIn(t)) return AppCommand.Math(grade(t), algebra && !geometry, geometry)
         }
         return null
     }

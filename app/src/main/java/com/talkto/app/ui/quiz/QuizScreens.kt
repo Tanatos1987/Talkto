@@ -51,6 +51,7 @@ import com.talkto.app.quiz.QuizUi
 import com.talkto.app.ui.MainViewModel
 import com.talkto.app.ui.theme.TalktoColors
 import com.talkto.core.quiz.MathTasks
+import com.talkto.core.quiz.MathTopic
 import com.talkto.core.quiz.TriviaCategory
 
 /** The running maths or trivia round, full screen. */
@@ -90,10 +91,14 @@ fun QuizDialog(ui: QuizUi, vm: MainViewModel) {
 @Composable
 private fun MathScreen(ui: QuizUi.Math, quiz: QuizController, listen: () -> Unit) = Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        (1..MathTasks.MAX_GRADE).forEach { g ->
-            FilterChip(selected = !ui.algebra && ui.grade == g, onClick = { if (ui.algebra) quiz.setAlgebra(false); quiz.setGrade(g) }, label = { Text(MathTasks.gradeLabel(g, screenLang())) })
+        MathTopic.entries.forEach { t ->
+            FilterChip(selected = ui.topic == t, onClick = { quiz.setTopic(t) }, label = { Text(t.label(screenLang()), fontWeight = FontWeight.Bold) })
         }
-        FilterChip(selected = ui.algebra, onClick = { quiz.setAlgebra(!ui.algebra) }, label = { Text(tr("𝑥 Алгебра", "𝑥 Algebra")) })
+    }
+    Row(Modifier.horizontalScroll(rememberScrollState()).padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        (1..MathTasks.MAX_GRADE).forEach { g ->
+            FilterChip(selected = ui.grade == g, onClick = { quiz.setGrade(g) }, label = { Text(MathTasks.gradeLabel(g, screenLang())) })
+        }
     }
     Spacer(Modifier.height(12.dp))
     Surface(
@@ -102,10 +107,11 @@ private fun MathScreen(ui: QuizUi.Math, quiz: QuizController, listen: () -> Unit
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            ui.task.figure?.let { FigureView(it, Modifier.padding(bottom = 10.dp)) }
             Text(
                 ui.task.display,
-                fontSize = if (ui.task.story) 20.sp else 34.sp,
-                fontWeight = if (ui.task.story) FontWeight.Medium else FontWeight.Black,
+                fontSize = if (ui.task.wordy) 20.sp else 34.sp,
+                fontWeight = if (ui.task.wordy) FontWeight.Bold else FontWeight.Black,
                 textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(10.dp))

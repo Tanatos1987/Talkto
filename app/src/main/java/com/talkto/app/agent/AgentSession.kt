@@ -213,10 +213,13 @@ class AgentSession(
             AppCommand.OpenCreator -> l.pick("Направи ме, какъвто искаш!", "Make me any way you like!")
             AppCommand.AboutMe -> l.pick("Искам да те опозная! Ще те питам нещо.", "I'd like to get to know you! Let me ask you something.")
             is AppCommand.Math -> when {
-                cmd.algebra -> l.pick("Да решаваме уравнения!", "Let's solve some equations!")
+                cmd.geometry -> l.pick("Да мерим и чертаем! Геометрия!", "Let's measure and draw! Geometry!")
+                cmd.algebra -> l.pick("Да решаваме задачи с букви!", "Let's solve some algebra!")
                 cmd.grade != null -> l.pick("Да смятаме! Задачи за ${cmd.grade} клас.", "Let's do maths! Tasks for year ${cmd.grade}.")
                 else -> l.pick("Да смятаме!", "Let's do maths!")
             }
+            AppCommand.Tetris -> l.pick("Да редим кубчета! 3D Тетрис!", "Let's stack some cubes! 3D Tetris!")
+            AppCommand.Sweets -> l.pick("Бонбонки! Нареди три еднакви!", "Sweets! Line up three of a kind!")
             is AppCommand.Trivia -> cmd.category?.let { c -> l.pick("Викторина с въпроси на тема ${c.emoji} ${c.bg}!", "A quiz with ${c.emoji} ${c.en} questions!") }
                 ?: l.pick("Викторина! Ще ти задам десет въпроса.", "Quiz time! Ten questions for you.")
         }

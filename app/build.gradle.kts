@@ -27,6 +27,9 @@ android {
         val build = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()
         versionCode = build ?: 1
         versionName = "1.1." + (build ?: 0)
+        // Where "Обратна връзка" sends its e-mail: the TALKTO_FEEDBACK_EMAIL secret in CI, empty means "pick an app".
+        val feedback = (System.getenv("TALKTO_FEEDBACK_EMAIL") ?: providers.gradleProperty("talkto.feedbackEmail").orNull ?: "").replace("\"", "")
+        buildConfigField("String", "FEEDBACK_EMAIL", "\"$feedback\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
     }

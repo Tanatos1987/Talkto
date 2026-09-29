@@ -166,8 +166,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 when (cmd) {
                     AppCommand.GoHome -> goHome()
                     AppCommand.ComeOut -> comeOut()
-                    is AppCommand.Math -> { comeOut(); quiz.startMath(cmd.grade, cmd.algebra) }
+                    is AppCommand.Math -> {
+                        comeOut()
+                        quiz.startMath(
+                            cmd.grade,
+                            topic = when {
+                                cmd.geometry -> com.talkto.core.quiz.MathTopic.GEOMETRY
+                                cmd.algebra -> com.talkto.core.quiz.MathTopic.ALGEBRA
+                                else -> com.talkto.core.quiz.MathTopic.MIXED
+                            },
+                        )
+                    }
                     is AppCommand.Trivia -> { comeOut(); quiz.startTrivia(cmd.category) }
+                    AppCommand.Tetris -> openArcade(Arcade.TETRIS)
+                    AppCommand.Sweets -> openArcade(Arcade.SWEETS)
                     else -> _screens.tryEmit(cmd)
                 }
             }
@@ -232,6 +244,37 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun dismissUpdate() = _pendingUpdates.update { it.drop(1) }
 
+    // -------------------------------------------------------------- arcade: 3D Tetris and sweets
+
+    enum class Arcade { TETRIS, SWEETS }
+
+    private val _arcade = MutableStateFlow<Arcade?>(null)
+    /** The arcade game on screen, or null. */
+    val arcade: StateFlow<Arcade?> = _arcade
+
+    fun openArcade(game: Arcade) {
+        comeOut()
+        _arcade.value = game
+    }
+
+    fun closeArcade() { _arcade.value = null }
+
+    /** A round is over: coins for playing, more for lines or a won level, and ZnaiKo is happy about it. */
+    fun arcadeFinished(game: Arcade, points: Int, lines: Int = 0, won: Boolean = false) = viewModelScope.launch {
+        c.pet.play()
+        c.pet.earn(com.talkto.core.shop.CoinReason.GAME_PLAYED)
+        if (lines > 0) c.pet.earn(com.talkto.core.shop.CoinReason.TASK, lines.coerceAtMost(20))
+        if (won) { c.pet.earn(com.talkto.core.shop.CoinReason.GAME_WON); c.pet.gameWon() }
+        val l = c.language.current
+        val line = when {
+            won -> l.pick("Браво! Мина нивото с $points точки!", "Well done! You passed the level with $points points!")
+            game == Arcade.TETRIS -> l.pick("Край! $points точки и $lines реда. Хайде пак?", "Game over! $points points and $lines lines. Again?")
+            else -> l.pick("Ходовете свършиха. $points точки! Опитай пак.", "Out of moves. $points points! Try again.")
+        }
+        c.avatar.play(AnimationCommand(if (won) Expression.HAPPY else Expression.THINKING, Gesture.BOUNCE, holdMs = 1_200))
+        c.avatar.speak(line, voice = c.settings.settings.value.voiceEnabled)
+    }
+
     fun startGame(kind: GameKind, players: Int = 2) {
         comeOut()
         games.start(kind, players)
@@ -275,9 +318,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // -------------------------------------------------------------- quizzes
 
-    fun startMath(grade: Int? = null, algebra: Boolean = false) {
+    fun startMath(grade: Int? = null, algebra: Boolean = false, topic: com.talkto.core.quiz.MathTopic? = null) {
         comeOut()
-        quiz.startMath(grade, algebra)
+        quiz.startMath(grade, algebra, topic ?: if (algebra) com.talkto.core.quiz.MathTopic.ALGEBRA else com.talkto.core.quiz.MathTopic.MIXED)
     }
 
     fun startTrivia(category: com.talkto.core.quiz.TriviaCategory? = null) {

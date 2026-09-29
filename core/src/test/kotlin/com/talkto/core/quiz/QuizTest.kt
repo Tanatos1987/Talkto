@@ -51,7 +51,7 @@ class MathTasksTest {
             assertTrue(gen.next(3, Lang.BG).answer in 0..999)
         }
         val six = List(300) { gen.next(6, Lang.BG) }
-        assertTrue(six.all { it.algebra })
+        assertTrue(six.all { it.algebra || it.geometry })
         assertTrue(List(300) { gen.next(4, Lang.BG) }.none { it.algebra })
         assertTrue(List(300) { gen.next(2, Lang.BG) }.any { it.story })
     }
@@ -102,6 +102,10 @@ class MathTasksTest {
 
     private fun verify(t: MathTask) {
         when {
+            t.geometry -> {
+                assertTrue(t.figure != null, t.display)
+                assertTrue(t.explanation.contains(t.answer.toString()), t.explanation)
+            }
             t.algebra -> {
                 val eq = t.display.substringBefore(", x > 0")
                 val (left, right) = eq.split(" = ").also { if (it.size != 2) fail("not an equation: ${t.display}") }

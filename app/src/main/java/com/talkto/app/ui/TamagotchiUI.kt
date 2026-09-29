@@ -345,6 +345,8 @@ fun TamagotchiScreen(vm: MainViewModel) {
             onDismiss = { sheet = Sheet.NONE },
             onMath = { sheet = Sheet.NONE; vm.startMath() },
             onTrivia = { sheet = Sheet.NONE; vm.startTrivia() },
+            onTetris = { sheet = Sheet.NONE; vm.openArcade(MainViewModel.Arcade.TETRIS) },
+            onSweets = { sheet = Sheet.NONE; vm.openArcade(MainViewModel.Arcade.SWEETS) },
         )
         Sheet.NONE -> Unit
     }
@@ -361,6 +363,12 @@ fun TamagotchiScreen(vm: MainViewModel) {
     updates.firstOrNull()?.let { UpdateDialog(it, pet, onDismiss = vm::dismissUpdate) }
 
     confirmation?.let { ConfirmationDialog(it, onAnswer = vm::answerConfirmation) }
+    val arcade by vm.arcade.collectAsStateWithLifecycle()
+    when (arcade) {
+        MainViewModel.Arcade.TETRIS -> com.talkto.app.ui.games.TetrisDialog(onClose = vm::closeArcade, onFinish = { p, l -> vm.arcadeFinished(MainViewModel.Arcade.TETRIS, p, lines = l) })
+        MainViewModel.Arcade.SWEETS -> com.talkto.app.ui.games.SweetsDialog(onClose = vm::closeArcade, onFinish = { p, w -> vm.arcadeFinished(MainViewModel.Arcade.SWEETS, p, won = w) })
+        null -> Unit
+    }
     // The story of ZnaiKo and the friends: once at the first start, and again from Settings.
     val storyReplay by vm.storyReplay.collectAsStateWithLifecycle()
     if ((settings.loaded && !settings.storySeen) || storyReplay) com.talkto.app.ui.story.StoryDialog(vm)
@@ -379,12 +387,7 @@ private fun Header(
     onSettings: () -> Unit,
 ) {
     Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            "ZNAIKO",
-            style = MaterialTheme.typography.headlineSmall,
-            color = MaterialTheme.colorScheme.onBackground,
-            maxLines = 1,
-        )
+        com.talkto.app.ui.components.ZnaiKoLogo(size = 26.sp)
         Spacer(Modifier.width(8.dp))
         // Mode badge: tapping it opens Settings, where the key can be added.
         Surface(
@@ -971,6 +974,11 @@ private fun SettingsSheet(
             OutlinedButton(onClick = { onDismiss(); vm.openStory() }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
                 Text(com.talkto.app.i18n.tr("📖 Историята на Знайко", "📖 The story of ZnaiKo"))
             }
+            var feedback by remember { mutableStateOf(false) }
+            OutlinedButton(onClick = { feedback = true }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                Text(com.talkto.app.i18n.tr("💌 Обратна връзка", "💌 Send feedback"))
+            }
+            if (feedback) com.talkto.app.ui.feedback.FeedbackDialog(onDismiss = { feedback = false })
             OutlinedButton(onClick = onBackgrounds, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                 Text(stringResource(R.string.backgrounds_title))
             }

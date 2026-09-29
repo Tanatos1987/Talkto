@@ -35,7 +35,7 @@ class TamagotchiScreenTest {
     }
 
     @Test fun screenShowsPetAndControls() {
-        rule.onNodeWithText("ZNAIKO").assertIsDisplayed()
+        rule.onNodeWithContentDescription("ZnaiKo logo").assertIsDisplayed()
         rule.onNodeWithContentDescription("ZnaiKo").assertIsDisplayed()
         rule.onNodeWithContentDescription(rule.activity.getString(R.string.action_feed)).assertIsDisplayed()
     }
@@ -52,6 +52,6 @@ class TamagotchiScreenTest {
 
     @Test fun feedingDoesNotCrash() {
         rule.onNodeWithContentDescription(rule.activity.getString(R.string.action_feed)).performClick()
-        rule.onNodeWithText("ZNAIKO").assertIsDisplayed()
+        rule.onNodeWithContentDescription("ZnaiKo logo").assertIsDisplayed()
     }
 }

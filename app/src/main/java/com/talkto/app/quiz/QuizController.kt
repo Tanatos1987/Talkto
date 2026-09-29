@@ -11,6 +11,7 @@ import com.talkto.core.pet.KnowledgeSource
 import com.talkto.core.profile.ProfileRepository
 import com.talkto.core.quiz.MathTask
 import com.talkto.core.quiz.MathTasks
+import com.talkto.core.quiz.MathTopic
 import com.talkto.core.quiz.QuizScore
 import com.talkto.core.quiz.Trivia
 import com.talkto.core.quiz.TriviaCard
@@ -47,7 +48,7 @@ sealed interface QuizUi {
     data class Math(
         val task: MathTask,
         val grade: Int,
-        val algebra: Boolean,
+        val topic: MathTopic,
         val input: String = "",
         val result: Boolean? = null,
         val tries: Int = 0,
@@ -100,7 +101,7 @@ class QuizController(
     // ------------------------------------------------------------------ maths
 
     /** Starts maths for [grade]; null takes the saved year, or the one the child told ZnaiKo. */
-    fun startMath(grade: Int? = null, algebra: Boolean = false) {
+    fun startMath(grade: Int? = null, algebra: Boolean = false, topic: MathTopic = if (algebra) MathTopic.ALGEBRA else MathTopic.MIXED) {
         scope.launch {
             val saved = store.quiz.first()
             val g = grade ?: saved.grade ?: MathTasks.gradeFor(
@@ -108,7 +109,7 @@ class QuizController(
                 profile.get("age")?.filter(Char::isDigit)?.toIntOrNull(),
             )
             if (grade != null && grade != saved.grade) save { it.copy(grade = grade) }
-            _state.value = QuizUi.Math(math.next(g, lang(), algebra), g, algebra)
+            _state.value = QuizUi.Math(math.next(g, lang(), topic), g, topic)
             avatar.play(AnimationCommand(Expression.THINKING, Gesture.NOD, holdMs = 1_200))
             announce()
         }
@@ -117,13 +118,13 @@ class QuizController(
     fun setGrade(grade: Int) {
         val ui = _state.value as? QuizUi.Math ?: return
         save { it.copy(grade = grade) }
-        _state.value = ui.copy(task = math.next(grade, lang(), ui.algebra), grade = grade, input = "", result = null, tries = 0, heard = null)
+        _state.value = ui.copy(task = math.next(grade, lang(), ui.topic), grade = grade, input = "", result = null, tries = 0, heard = null)
         announce()
     }
 
-    fun setAlgebra(on: Boolean) {
+    fun setTopic(topic: MathTopic) {
         val ui = _state.value as? QuizUi.Math ?: return
-        _state.value = ui.copy(task = math.next(ui.grade, lang(), on), algebra = on, input = "", result = null, tries = 0, heard = null)
+        _state.value = ui.copy(task = math.next(ui.grade, lang(), topic), topic = topic, input = "", result = null, tries = 0, heard = null)
         announce()
     }
 
@@ -179,7 +180,7 @@ class QuizController(
 
     fun nextMath() {
         val ui = _state.value as? QuizUi.Math ?: return
-        _state.value = ui.copy(task = math.next(ui.grade, lang(), ui.algebra), input = "", result = null, tries = 0, heard = null)
+        _state.value = ui.copy(task = math.next(ui.grade, lang(), ui.topic), input = "", result = null, tries = 0, heard = null)
         announce()
     }
 
@@ -298,6 +299,17 @@ class QuizController(
             .replace("²", l.pick(" на квадрат", " squared"))
             .replace("³", l.pick(" на куб", " cubed"))
             .replace("x", l.pick("хикс", "x"))
+            .replace("y", l.pick("игрек", "y"))
+            // Geometry: the letters of the formulas as words.
+            .replace(Regex("(?<![\\p{L}])([PSVd])(?= е | is )")) { m ->
+                when (m.value) {
+                    "P" -> l.pick("обиколката", "the perimeter")
+                    "S" -> l.pick("лицето", "the area")
+                    "V" -> l.pick("обемът", "the volume")
+                    else -> l.pick("диаметърът", "the diameter")
+                }
+            }
+            .let { if (l == Lang.BG) it.replace(Regex("(?<![\\p{L}])([abc])(?![\\p{L}])")) { m -> mapOf("a" to "а", "b" to "бе", "c" to "це").getValue(m.value) } else it }
         return words.replace(Regex("\\s+"), " ")
     }
 

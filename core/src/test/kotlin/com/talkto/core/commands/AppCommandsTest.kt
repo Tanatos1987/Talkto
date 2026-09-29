@@ -46,4 +46,17 @@ class AppCommandsTest {
             "къде е магазинът за хляб", "научи ме на английски", "да играем шах", "how are you", "my house is big", "излязох навън",
         ).forEach { assertThat(AppCommands.parse(it)).isNull() }
     }
+
+    @Test fun `geometry tasks`() {
+        assertThat(AppCommands.parse("Дай ми задачи по геометрия")).isEqualTo(AppCommand.Math(null, geometry = true))
+        assertThat(AppCommands.parse("геометрия за 5 клас")).isEqualTo(AppCommand.Math(5, geometry = true))
+        assertThat(AppCommands.parse("let's do geometry")).isEqualTo(AppCommand.Math(null, geometry = true))
+    }
+
+    @Test fun `arcade games`() {
+        assertThat(AppCommands.parse("Хайде да играем тетрис")).isEqualTo(AppCommand.Tetris)
+        assertThat(AppCommands.parse("пусни бонбонки")).isEqualTo(AppCommand.Sweets)
+        assertThat(AppCommands.parse("let's play tetris")).isEqualTo(AppCommand.Tetris)
+        assertThat(AppCommands.parse("обичам бонбони")).isNull()
+    }
 }

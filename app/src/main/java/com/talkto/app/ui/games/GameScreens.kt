@@ -91,6 +91,8 @@ fun GamesSheet(
     onDismiss: () -> Unit,
     onMath: () -> Unit = {},
     onTrivia: () -> Unit = {},
+    onTetris: () -> Unit = {},
+    onSweets: () -> Unit = {},
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         val lang = screenLang()
@@ -102,6 +104,8 @@ fun GamesSheet(
                 style = MaterialTheme.typography.bodyMedium,
             )
             Spacer(Modifier.height(12.dp))
+            GameRow("🧊", tr("3D Тетрис", "3D Tetris"), tr("Нареди падащите кубчета в пълни редове. Плъзгай, докосни, за да завъртиш.", "Fit the falling cubes into full rows. Swipe, tap to turn.")) { onTetris() }
+            GameRow("🍬", tr("Бонбонки", "Sweets"), tr("Размени две бонбонки и нареди три еднакви. Нива, комбота и звезди!", "Swap two sweets to line up three. Levels, combos and stars!")) { onSweets() }
             GameRow("❌⭕", GameKind.TIC_TAC_TOE.label(lang), stringResource(R.string.game_ttt_note)) { onPick(GameKind.TIC_TAC_TOE, 2) }
             GameRow("🟡🟢", GameKind.CONNECT_FOUR.label(lang), stringResource(R.string.game_four_note)) { onPick(GameKind.CONNECT_FOUR, 2) }
             GameRow("🎲", GameKind.LUDO.label(lang), stringResource(R.string.game_ludo_note)) { onPick(GameKind.LUDO, 2) }
@@ -110,7 +114,7 @@ fun GamesSheet(
             }
             GameRow("♞", GameKind.CHESS.label(lang), stringResource(R.string.game_chess_note)) { onPick(GameKind.CHESS, 2) }
             GameRow("🃏", GameKind.MEMORY.label(lang), stringResource(R.string.game_memory_note)) { onPick(GameKind.MEMORY, 2) }
-            GameRow("🔢", tr("Задачи по математика", "Maths tasks"), tr("От сметки до 20 до уравнения с x, за 1. до 7. клас. Отговаряй с цифри или на глас.", "From sums to 20 up to equations with x, years 1 to 7. Answer with the keypad or out loud."), onMath)
+            GameRow("🔢", tr("Математика, алгебра и геометрия", "Maths, algebra and geometry"), tr("Сметки, уравнения и фигури за 1. до 7. клас. Отговаряй с цифри или на глас.", "Sums, equations and shapes for years 1 to 7. Answer with the keypad or out loud."), onMath)
             GameRow("❓", tr("Тривия", "Trivia"), tr("Въпроси от обща култура: животни, космос, България, история и още.", "General knowledge: animals, space, Bulgaria, history and more."), onTrivia)
             GameRow("⚽", stringResource(R.string.game_quick), stringResource(R.string.game_quick_note), onQuickPlay)
         }
@@ -118,10 +122,15 @@ fun GamesSheet(
 }
 
 @Composable
+private val ROW_COLOURS = listOf(Color(0xFFFFE3EF), Color(0xFFE3F2FF), Color(0xFFFFF4D6), Color(0xFFE6F9E8), Color(0xFFEFE6FF), Color(0xFFFFE8DC))
+
+@Composable
 private fun GameRow(icon: String, title: String, note: String, onClick: () -> Unit) {
+    // Each game gets its own bright colour, picked from its name so it stays the same.
+    val tint = ROW_COLOURS[(title.hashCode() and 0x7fffffff) % ROW_COLOURS.size]
     Surface(
         shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
+        color = if (androidx.compose.foundation.isSystemInDarkTheme()) MaterialTheme.colorScheme.surfaceVariant else tint,
         modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp).clip(RoundedCornerShape(16.dp)).clickable(onClick = onClick),
     ) {
         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {

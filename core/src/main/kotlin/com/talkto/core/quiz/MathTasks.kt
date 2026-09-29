@@ -17,7 +17,13 @@ data class MathTask(
     val grade: Int,
     val algebra: Boolean = false,
     val story: Boolean = false,
+    val geometry: Boolean = false,
+    /** The shape drawn for a geometry task. */
+    val figure: Figure? = null,
 ) {
+    /** The screen shows a sentence, not a short sum. */
+    val wordy: Boolean get() = story || geometry || display.length > 22
+
     /** True or false for an answer that holds a number ("12", "минус 3", "twenty one"), null when it holds none. */
     fun check(input: String): Boolean? = NumberWords.parse(input)?.let { it == answer }
 }
@@ -31,11 +37,25 @@ data class MathTask(
  */
 class MathTasks(private val random: Random = Random.Default) {
 
-    /** A task for [grade]; [algebraOnly] asks for an equation whatever the year (years 6 and 7 level). */
+    private val geometry = GeometryTasks(random)
+
+    /** A task for [grade]; [algebraOnly] asks for algebra whatever the year. */
     fun next(grade: Int, lang: Lang, algebraOnly: Boolean = false): MathTask {
+        if (!algebraOnly) return next(grade, lang, MathTopic.MIXED)
         val g = grade.coerceIn(1, MAX_GRADE)
         val w = Words(lang)
-        if (algebraOnly) return if (g >= 7 && random.nextBoolean()) equation2(g, w) else equation1(maxOf(g, 6), w)
+        return if (g >= 7 && random.nextBoolean()) equation2(g, w) else equation1(maxOf(g, 6), w)
+    }
+
+    /** A task for [grade] on [topic]. Algebra starts at year 4 level (letters for numbers), geometry fits every year. */
+    fun next(grade: Int, lang: Lang, topic: MathTopic): MathTask {
+        val g = grade.coerceIn(1, MAX_GRADE)
+        val w = Words(lang)
+        when (topic) {
+            MathTopic.ALGEBRA -> return algebra(g, w)
+            MathTopic.GEOMETRY -> return geometry.next(g, lang)
+            MathTopic.MIXED -> if (g >= 3 && random.nextFloat() < GEOMETRY_SHARE) return geometry.next(g, lang)
+        }
         if (g <= 4 && random.nextFloat() < STORY_SHARE) return story(g, w)
         return when (g) {
             1 -> if (random.nextBoolean()) add(rng(1, 10), rng(1, 10), g, w) else sub(20, g, w)
@@ -144,6 +164,100 @@ class MathTasks(private val random: Random = Random.Default) {
 
     // ------------------------------------------------------------------ algebra
 
+    private fun algebra(g: Int, w: Words): MathTask = when {
+        g <= 5 -> if (random.nextBoolean()) substitute(g, w) else equation1(maxOf(g, 6), w)
+        g == 6 -> when (random.nextInt(4)) {
+            0 -> likeTerms(g, w)
+            1 -> inequality(g, w)
+            2 -> substitute(g, w)
+            else -> equation1(g, w)
+        }
+        else -> when (random.nextInt(6)) {
+            0 -> expand(g, w)
+            1 -> system(g, w)
+            2 -> binomial(g, w)
+            3 -> power(g, w)
+            4 -> equation1(g, w)
+            else -> equation2(g, w)
+        }
+    }
+
+    /** "2a + 3 при a = 4" */
+    private fun substitute(g: Int, w: Words): MathTask {
+        val a = rng(2, 9); val k = rng(2, 6); val b = rng(1, 12)
+        return MathTask(
+            w.t("${k}a + $b = ?\na = $a", "${k}a + $b = ?\na = $a"), w.howMuch,
+            w.t("Колко е $k по а плюс $b, ако а е равно на $a?", "What is $k a plus $b, when a is $a?"),
+            k * a + b, "$k × $a + $b = ${k * a} + $b = ${k * a + b}", g, algebra = true,
+        )
+    }
+
+    /** "3x + 5x = ?x" */
+    private fun likeTerms(g: Int, w: Words): MathTask {
+        val a = rng(2, 9); val b = rng(2, 9); val minus = random.nextBoolean() && a != b
+        val big = maxOf(a, b); val small = minOf(a, b)
+        val display = if (minus) "${big}x − ${small}x = ?x" else "${a}x + ${b}x = ?x"
+        val answer = if (minus) big - small else a + b
+        val spoken = if (minus) w.t("$big хикс минус $small хикс е равно на колко хикс?", "$big x minus $small x equals how many x?")
+        else w.t("$a хикс плюс $b хикс е равно на колко хикс?", "$a x plus $b x equals how many x?")
+        return MathTask(display, "? =", spoken, answer, display.replace("?x", "${answer}x"), g, algebra = true)
+    }
+
+    /** "x + 3 < 10: the biggest whole x" */
+    private fun inequality(g: Int, w: Words): MathTask {
+        val a = rng(1, 9); val c = a + rng(2, 12)
+        return MathTask(
+            "x + $a < $c", w.t("Най-голямото цяло x:", "The biggest whole x:"),
+            w.t("Кое е най-голямото цяло число хикс, за което хикс плюс $a е по-малко от $c?", "What is the biggest whole number x with x plus $a less than $c?"),
+            c - a - 1, "x < $c − $a = ${c - a}, x = ${c - a - 1}", g, algebra = true,
+        )
+    }
+
+    /** "2(x + 3) = 2x + ?" */
+    private fun expand(g: Int, w: Words): MathTask {
+        val k = rng(2, 9); val b = rng(1, 9)
+        return MathTask(
+            "$k(x + $b) = ${k}x + ?", "? =",
+            w.t("$k по, скоба, хикс плюс $b, е равно на $k хикс плюс колко?", "$k times, bracket, x plus $b, equals $k x plus what?"),
+            k * b, "$k × x + $k × $b = ${k}x + ${k * b}", g, algebra = true,
+        )
+    }
+
+    /** "x + y = 10, x − y = 2" */
+    private fun system(g: Int, w: Words): MathTask {
+        val y = rng(1, 9); val x = y + rng(1, 9)
+        return MathTask(
+            "x + y = ${x + y}\nx − y = ${x - y}", "x =",
+            w.t("Хикс плюс игрек е ${x + y}, а хикс минус игрек е ${x - y}. Колко е хикс?", "x plus y is ${x + y}, and x minus y is ${x - y}. What is x?"),
+            x, w.t("Събери двете: 2x = ${2 * x}, x = $x, y = $y", "Add them: 2x = ${2 * x}, x = $x, y = $y"), g, algebra = true,
+        )
+    }
+
+    /** "(x + 3)² = x² + ?x + 9" */
+    private fun binomial(g: Int, w: Words): MathTask {
+        val b = rng(2, 9)
+        return MathTask(
+            "(x + $b)² = x² + ?x + ${b * b}", "? =",
+            w.t("Скоба хикс плюс $b на квадрат е хикс на квадрат плюс колко хикс плюс ${b * b}?", "x plus $b, squared, is x squared plus how many x plus ${b * b}?"),
+            2 * b, "(x + $b)² = x² + 2 × $b × x + ${b * b}, 2 × $b = ${2 * b}", g, algebra = true,
+        )
+    }
+
+    /** "2⁵", "(−3)²" */
+    private fun power(g: Int, w: Words): MathTask {
+        if (random.nextBoolean()) {
+            val base = rng(2, 3); val e = if (base == 2) rng(3, 6) else rng(2, 4)
+            var r = 1; repeat(e) { r *= base }
+            val sup = "⁰¹²³⁴⁵⁶⁷⁸⁹"[e]
+            return MathTask("$base$sup = ?", w.howMuch, w.t("Колко е $base на степен $e?", "What is $base to the power $e?"), r, List(e) { "$base" }.joinToString(" × ") + " = $r", g, algebra = true)
+        }
+        val x = rng(2, 9)
+        return MathTask(
+            "x² = ?\nx = −$x", w.howMuch, w.t("Колко е хикс на квадрат, ако хикс е минус $x?", "What is x squared when x is minus $x?"),
+            x * x, "(−$x) × (−$x) = ${x * x}", g, algebra = true,
+        )
+    }
+
     private fun equation1(g: Int, w: Words): MathTask {
         val x = rng(1, 15)
         val a = rng(2, 9)
@@ -221,7 +335,7 @@ class MathTasks(private val random: Random = Random.Default) {
 
     /** Text of the task in one language. */
     private class Words(val lang: Lang) {
-        private fun t(bg: String, en: String) = lang.pick(bg, en)
+        fun t(bg: String, en: String) = lang.pick(bg, en)
         val plus = t("плюс", "plus")
         val minus = t("минус", "minus")
         val times = t("по", "times")
@@ -276,6 +390,7 @@ class MathTasks(private val random: Random = Random.Default) {
     companion object {
         const val MAX_GRADE = 7
         private const val STORY_SHARE = 0.3f
+        private const val GEOMETRY_SHARE = 0.15f
 
         /** (Bulgarian form after a number, English plural). */
         private val OBJECTS = listOf(
