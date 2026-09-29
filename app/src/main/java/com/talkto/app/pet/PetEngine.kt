@@ -2,9 +2,14 @@ package com.talkto.app.pet
 
 import com.talkto.app.data.prefs.PetStore
 import com.talkto.core.avatar.Expression
+import com.talkto.core.games.GameOutcome
+import com.talkto.core.games.Skill
+import com.talkto.core.pet.Knowledge
+import com.talkto.core.pet.KnowledgeSource
 import com.talkto.core.pet.LifeStage
 import com.talkto.core.pet.Progression
 import com.talkto.core.pet.XpReason
+import com.talkto.core.pet.ZnaiKoUpdate
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -35,10 +40,27 @@ data class PetState(
     val streakDays: Int = 0,
     /** ISO date of the last day the app was opened, for the streak. */
     val lastVisitDay: String? = null,
+    /** What ZnaiKo has learned from talking and playing; unlocks [updates]. */
+    val knowledge: Int = 0,
+    /** Installed updates (version 1.[updates]); also its game skill. */
+    val updates: Int = 0,
+    /** When the egg appeared; 0 in old saves until the next start. */
+    val bornAtMs: Long = 0,
 ) {
     val level: Int get() = Progression.levelFor(xp)
     val stage: LifeStage get() = Progression.stageFor(level)
     val levelProgress: Float get() = Progression.progress(xp)
+    /** 0..1 through the current life stage, so ZnaiKo grows a little with every level, not only at stage changes. */
+    val stageGrowth: Float
+        get() {
+            val next = LifeStage.entries.getOrNull(stage.ordinal + 1) ?: return 1f
+            return ((level - stage.minLevel + levelProgress) / (next.minLevel - stage.minLevel)).coerceIn(0f, 1f)
+        }
+    val version: String get() = Knowledge.versionName(updates)
+    val knowledgeProgress: Float get() = Knowledge.progress(knowledge)
+    val skill: Skill get() = Skill(updates)
+
+    fun ageDays(nowMs: Long): Int = if (bornAtMs <= 0) 0 else ((nowMs - bornAtMs) / 86_400_000L).toInt().coerceAtLeast(0)
 
     val mood: Expression
         get() = when {
@@ -62,12 +84,15 @@ data class PetState(
     fun progressText(): String {
         val toNext = Progression.xpForLevel(level + 1) - xp
         val streak = if (streakDays > 1) " Идваш $streakDays дни подред!" else ""
-        return "Ниво $level (${stage.bg}), $xp опит. До следващото ниво: $toNext.$streak"
+        val nextUpdate = Knowledge.needed(updates + 1) - knowledge
+        val learning = if (updates >= Knowledge.UPDATES.size) " Всички обновления са инсталирани." else " До следващото обновление ми трябват още $nextUpdate знания."
+        return "Ниво $level (${stage.bg}), $xp опит. До следващото ниво: $toNext. Версия $version, $knowledge знания.$learning$streak"
     }
 
     fun describe(): String =
         "satiety=${satiety.roundToInt()} energy=${energy.roundToInt()} happiness=${happiness.roundToInt()} bond=${bond.roundToInt()} " +
-            "sleeping=$sleeping mood=${mood.name.lowercase()} level=$level stage=${stage.name.lowercase()} streak_days=$streakDays"
+            "sleeping=$sleeping mood=${mood.name.lowercase()} level=$level stage=${stage.name.lowercase()} streak_days=$streakDays " +
+            "version=$version knowledge=$knowledge game_skill=${skill.value}/${Skill.MAX}"
 }
 
 /**
@@ -88,10 +113,15 @@ class PetEngine(
     /** Emits the new level each time the pet levels up. */
     val levelUps: SharedFlow<Int> = _levelUps.asSharedFlow()
 
+    private val _updates = MutableSharedFlow<ZnaiKoUpdate>(extraBufferCapacity = 8)
+    /** Emits each update as ZnaiKo installs it. */
+    val updates: SharedFlow<ZnaiKoUpdate> = _updates.asSharedFlow()
+
     fun start() {
         scope.launch {
             val saved = store.pet.first()
             _state.value = (saved ?: PetState(updatedAtMs = clock())).let(::advance)
+                .let { if (it.bornAtMs <= 0) it.copy(bornAtMs = clock()) else it }
             registerVisit()
             persist()
             while (isActive) {
@@ -120,6 +150,27 @@ class PetEngine(
 
     fun gameWon() = mutate(XpReason.GAME_WON) { it.copy(happiness = (it.happiness + 10f).cap(), bond = (it.bond + 1f).cap()) }
 
+    /** ZnaiKo learned something. Enough knowledge installs the next update(s). */
+    fun learn(source: KnowledgeSource, times: Int = 1) {
+        if (times <= 0) return
+        val before = _state.value.updates
+        _state.update { s ->
+            val k = s.knowledge + source.points * times
+            s.copy(knowledge = k, updates = maxOf(s.updates, Knowledge.updatesFor(k)))
+        }
+        Knowledge.between(before, _state.value.updates).forEach { _updates.tryEmit(it) }
+        scope.launch { persist() }
+    }
+
+    /** A board or card game ended. Winning cheers the user's side, losing teaches ZnaiKo. */
+    fun gameFinished(outcome: GameOutcome) {
+        when (outcome) {
+            GameOutcome.USER_WON -> { gameWon(); learn(KnowledgeSource.GAME_LOST) }
+            GameOutcome.PET_WON -> { mutate(XpReason.PLAY) { it.copy(happiness = (it.happiness + 12f).cap()) }; learn(KnowledgeSource.GAME) }
+            GameOutcome.DRAW -> { mutate(XpReason.PLAY) { it.copy(happiness = (it.happiness + 6f).cap(), bond = (it.bond + 1f).cap()) }; learn(KnowledgeSource.GAME) }
+        }
+    }
+
     /** A task finished successfully: helping makes ZnaiKo happy and strengthens the bond. */
     fun rewardTask(success: Boolean) = mutate(if (success) XpReason.TASK else null) {
         if (success) it.copy(happiness = (it.happiness + 4f).cap(), bond = (it.bond + 1f).cap())
@@ -132,6 +183,7 @@ class PetEngine(
         val (streak, firstToday) = Progression.visit(s.lastVisitDay?.let(LocalDate::parse), s.streakDays, today)
         val bonus = if (firstToday) Progression.dailyBonus(streak) else 0
         grant(bonus) { it.copy(streakDays = streak, lastVisitDay = today.toString()) }
+        if (firstToday) learn(KnowledgeSource.DAY)
     }
 
     private fun mutate(reason: XpReason? = null, f: (PetState) -> PetState) {

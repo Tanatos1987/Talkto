@@ -14,6 +14,7 @@ import com.talkto.core.avatar3d.Mat4
 import com.talkto.core.avatar3d.Mesh
 import com.talkto.core.avatar3d.Primitives
 import com.talkto.core.avatar3d.Spring
+import com.talkto.core.pet.Knowledge
 import com.talkto.core.pet.LifeStage
 import com.talkto.core.touch.BodyBox
 import com.talkto.core.touch.BodyLocator
@@ -42,6 +43,10 @@ data class SceneState(
     val sleeping: Boolean = false,
     /** Clear colour; alpha 0 lets the mood background behind the view show through. */
     val background: Int = 0x00000000,
+    /** 0..1 through the life stage: the body grows smoothly towards the next stage's size. */
+    val growth: Float = 0f,
+    /** Installed knowledge updates: the sprout grows, flowers and gets a star. */
+    val updates: Int = 0,
 )
 
 /**
@@ -316,13 +321,10 @@ class Creature3DRenderer(
     // --------------------------------------------------------------------- drawing
 
     private fun drawCreature(s: SceneState) {
-        val stageScale = when (s.stage) {
-            LifeStage.EGG -> 0.62f
-            LifeStage.BABY -> 0.72f
-            LifeStage.CHILD -> 0.84f
-            LifeStage.TEEN -> 0.93f
-            LifeStage.ADULT -> 1f
-        }
+        val next = LifeStage.entries.getOrNull(s.stage.ordinal + 1)
+        val base = scaleOf(s.stage)
+        // Grows most of the way within a stage; the rest comes as a visible jump when the stage changes.
+        val stageScale = if (next == null) base else base + (scaleOf(next) - base) * s.growth.coerceIn(0f, 1f) * 0.7f
         updateCamera(stageScale)
         val breath = sin(time * if (s.sleeping) 1.4f else 2.1f) * 0.018f
         val sq = squash.value.coerceIn(-0.4f, 0.6f)
@@ -352,11 +354,19 @@ class Creature3DRenderer(
             t = floatArrayOf(0f, 0.12f, 0f), sc = floatArrayOf(0.15f, 0.3f, 0.15f))
 
         drawFace(root, e, s, ink)
-        drawOutfit(root, s.outfit, ink)
+        drawOutfit(root, s.outfit, ink, Knowledge.look(s.updates))
 
         if (s.stage == LifeStage.EGG) {
             part(lowerHemisphere, root, rgb(0xFFF4DC), t = floatArrayOf(0f, -0.3f, 0f), sc = floatArrayOf(1.08f, 0.78f, 1.04f), shine = 0.5f, rim = 0.3f)
         }
+    }
+
+    private fun scaleOf(stage: LifeStage) = when (stage) {
+        LifeStage.EGG -> 0.62f
+        LifeStage.BABY -> 0.72f
+        LifeStage.CHILD -> 0.84f
+        LifeStage.TEEN -> 0.93f
+        LifeStage.ADULT -> 1f
     }
 
     /** Projects the body centre and its radii to the view (0..1), for touch zones. Rotation does not move them. */
@@ -434,20 +444,40 @@ class Creature3DRenderer(
         }
     }
 
-    private fun drawOutfit(root: FloatArray, o: OutfitConfig, ink: FloatArray) {
+    private fun drawOutfit(root: FloatArray, o: OutfitConfig, ink: FloatArray, look: Knowledge.Look) {
         val hat = argb(o.hatColor)
         val cloth = argb(o.clothesColor)
         val gold = rgb(0xFFC857)
         when (o.hat) {
-            // No hat: a little sprout, ZnaiKo's trademark, sways as it moves.
+            // No hat: a little sprout, ZnaiKo's trademark. It sways as it moves and grows with every update.
             Hat.NONE -> {
                 val sway = sin(time * 1.7f) * 8f + roll.value * 0.6f
-                val stem = Mat4.multiply(root, Mat4.multiply(Mat4.translation(0f, 0.9f, 0f), Mat4.rotationZ(sway)))
+                val stem = Mat4.multiply(
+                    root,
+                    Mat4.multiply(Mat4.translation(0f, 0.9f, 0f), Mat4.multiply(Mat4.rotationZ(sway), Mat4.scale(look.sproutScale, look.sproutScale, look.sproutScale))),
+                )
                 val leaf = rgb(0x4FA85E)
                 part(tube, stem, leaf, t = floatArrayOf(0f, 0.12f, 0f), sc = floatArrayOf(0.035f, 0.26f, 0.035f), shine = 0.2f)
-                for (side in listOf(-1f, 1f)) {
-                    val m = Mat4.multiply(stem, Mat4.multiply(Mat4.translation(0.12f * side, 0.27f, 0f), Mat4.rotationZ(-50f * side)))
+                for (k in 0 until look.leaves) {
+                    val side = if (k % 2 == 0) -1f else 1f
+                    val y = 0.27f - (k / 2) * 0.1f
+                    val m = Mat4.multiply(stem, Mat4.multiply(Mat4.translation(0.12f * side, y, (k / 2) * 0.05f), Mat4.rotationZ(-50f * side)))
                     part(sphere, m, leaf, sc = floatArrayOf(0.16f, 0.07f, 0.1f), shine = 0.5f, rim = 0.5f)
+                }
+                if (look.flower) {
+                    val petal = rgb(0xFF8FA3)
+                    for (k in 0 until 5) {
+                        val a = 2 * PI * k / 5 + time * 0.3
+                        part(sphere, stem, petal, t = floatArrayOf((0.07 * cos(a)).toFloat(), 0.3f, (0.07 * sin(a)).toFloat()),
+                            sc = floatArrayOf(0.065f, 0.035f, 0.065f), shine = 0.4f, rim = 0.4f)
+                    }
+                    part(sphere, stem, rgb(0xFFC857), t = floatArrayOf(0f, 0.31f, 0f), sc = floatArrayOf(0.04f, 0.035f, 0.04f), shine = 0.8f)
+                }
+                if (look.star) {
+                    val bob = sin(time * 2.2f) * 0.03f
+                    val m = Mat4.multiply(stem, Mat4.multiply(Mat4.translation(0f, 0.47f + bob, 0f), Mat4.rotationY(time * 90f)))
+                    part(cone, m, rgb(0xFFE066), sc = floatArrayOf(0.06f, 0.07f, 0.06f), shine = 1.2f, rim = 0.8f)
+                    part(cone, Mat4.multiply(m, Mat4.rotationX(180f)), rgb(0xFFE066), sc = floatArrayOf(0.06f, 0.07f, 0.06f), shine = 1.2f, rim = 0.8f)
                 }
             }
             Hat.PARTY -> {

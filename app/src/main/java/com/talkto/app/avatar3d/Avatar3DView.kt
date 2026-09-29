@@ -35,9 +35,11 @@ fun Avatar3DView(
     modifier: Modifier = Modifier,
     body: BodyLocator? = null,
     twirl: TwirlInput? = null,
+    growth: Float = 0f,
+    updates: Int = 0,
 ) {
     val renderer = remember(body, twirl) { Creature3DRenderer(body, twirl) }
-    SideEffect { renderer.scene = SceneState(pose, outfit, stage, sleeping) }
+    SideEffect { renderer.scene = SceneState(pose, outfit, stage, sleeping, growth = growth, updates = updates) }
     LaunchedEffect(lookAt) { lookAt?.let { (x, y) -> renderer.lookAt(x, y) } }
     LaunchedEffect(reactions) { reactions.collect { (r, t) -> renderer.react(r, t) } }
 

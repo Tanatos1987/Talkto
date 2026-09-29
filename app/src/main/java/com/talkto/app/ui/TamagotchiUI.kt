@@ -117,12 +117,16 @@ import com.talkto.app.avatar.Hat
 import com.talkto.app.avatar.OUTFIT_PALETTE
 import com.talkto.app.avatar.OutfitConfig
 import com.talkto.app.files.StorageAccess
+import com.talkto.app.games.Board
 import com.talkto.app.pet.PetState
 import com.talkto.app.avatar3d.Avatar3DView
 import com.talkto.app.background.BackgroundLibrary
 import com.talkto.app.background.MoodBackdrop
 import com.talkto.app.ui.components.AvatarStage
 import com.talkto.app.ui.components.petTouches
+import com.talkto.app.ui.games.GameDialog
+import com.talkto.app.ui.games.GamesSheet
+import com.talkto.app.ui.games.UpdateDialog
 import com.talkto.app.ui.theme.TalktoColors
 import com.talkto.app.voice.VoiceLanguage
 import com.talkto.core.voice.VoicePreset
@@ -139,7 +143,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
-private enum class Sheet { NONE, WARDROBE, AVATAR, SETTINGS, HISTORY, BACKGROUNDS }
+private enum class Sheet { NONE, WARDROBE, AVATAR, SETTINGS, HISTORY, BACKGROUNDS, GAMES }
 
 @Composable
 fun TamagotchiScreen(vm: MainViewModel) {
@@ -198,6 +202,8 @@ fun TamagotchiScreen(vm: MainViewModel) {
                     modifier = stageModifier,
                     body = vm.body,
                     twirl = vm.twirl,
+                    growth = pet.stageGrowth,
+                    updates = pet.updates,
                 )
             } else {
                 AvatarStage(visual = visual, pose = pose, outfit = outfit, sleeping = pet.sleeping, stage = pet.stage, modifier = stageModifier)
@@ -233,7 +239,7 @@ fun TamagotchiScreen(vm: MainViewModel) {
         ActionRow(
             sleeping = pet.sleeping,
             onFeed = vm::feed,
-            onPlay = vm::play,
+            onPlay = { sheet = Sheet.GAMES },
             onSleep = vm::toggleSleep,
             onWardrobe = { sheet = Sheet.WARDROBE },
             onAvatar = { sheet = Sheet.AVATAR },
@@ -281,8 +287,21 @@ fun TamagotchiScreen(vm: MainViewModel) {
         )
         Sheet.BACKGROUNDS -> BackgroundsSheet(vm, onDismiss = { sheet = Sheet.NONE })
         Sheet.HISTORY -> HistorySheet(vm, onDismiss = { sheet = Sheet.NONE })
+        Sheet.GAMES -> GamesSheet(
+            pet,
+            onPick = { kind, players -> sheet = Sheet.NONE; vm.startGame(kind, players) },
+            onQuickPlay = { sheet = Sheet.NONE; vm.play() },
+            onDismiss = { sheet = Sheet.NONE },
+        )
         Sheet.NONE -> Unit
     }
+
+    val game by vm.games.state.collectAsStateWithLifecycle()
+    game?.let { g ->
+        GameDialog(g, vm.games, onPlayAgain = { vm.startGame(g.kind, (g.board as? Board.LudoBoard)?.players ?: 2) })
+    }
+    val updates by vm.pendingUpdates.collectAsStateWithLifecycle()
+    updates.firstOrNull()?.let { UpdateDialog(it, pet, onDismiss = vm::dismissUpdate) }
 
     confirmation?.let { ConfirmationDialog(it, onAnswer = vm::answerConfirmation) }
 }
@@ -352,6 +371,29 @@ private fun LevelRow(pet: PetState) {
         if (pet.streakDays > 1) {
             Spacer(Modifier.width(8.dp))
             Text(stringResource(R.string.streak_short, pet.streakDays), style = MaterialTheme.typography.labelSmall)
+        }
+    }
+    KnowledgeRow(pet)
+}
+
+/** Version, knowledge towards the next update, and age. */
+@Composable
+private fun KnowledgeRow(pet: PetState) {
+    val progress by animateFloatAsState(pet.knowledgeProgress, label = "knowledge")
+    Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(stringResource(R.string.knowledge_short, pet.version), style = MaterialTheme.typography.labelSmall)
+        Spacer(Modifier.width(8.dp))
+        LinearProgressIndicator(
+            progress = { progress },
+            modifier = Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(3.dp)),
+            color = TalktoColors.Sunflower,
+            trackColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.1f),
+            drawStopIndicator = {},
+        )
+        val age = pet.ageDays(System.currentTimeMillis())
+        if (age > 0) {
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.age_days, age), style = MaterialTheme.typography.labelSmall)
         }
     }
 }

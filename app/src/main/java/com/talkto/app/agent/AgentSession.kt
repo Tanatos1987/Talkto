@@ -14,11 +14,17 @@ import com.talkto.core.avatar.Expression
 import com.talkto.core.avatar.Gesture
 import com.talkto.core.error.ErrorMapper
 import com.talkto.core.error.TalktoError
+import com.talkto.core.games.GameCommands
+import com.talkto.core.games.GameKind
 import com.talkto.core.history.HistoryRepository
 import com.talkto.core.history.Speaker
+import com.talkto.core.pet.KnowledgeSource
 import com.talkto.core.profile.ProfileRepository
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import java.time.Duration
@@ -70,6 +76,10 @@ class AgentSession(
     private val history: HistoryRepository,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
+    private val _gameRequests = MutableSharedFlow<GameKind>(extraBufferCapacity = 2)
+    /** Games asked for by voice or text; the screen opens them. */
+    val gameRequests: SharedFlow<GameKind> = _gameRequests.asSharedFlow()
+
     private val _state = MutableStateFlow(AgentUiState())
     val state: StateFlow<AgentUiState> = _state.asStateFlow()
 
@@ -92,7 +102,21 @@ class AgentSession(
         val online = cfg.hasClaudeKey
         // Personal shortcuts ("кино" -> "тихо") and learning happen before routing, so both brains benefit.
         val command = runCatching { profile.expandAlias(trimmed) }.getOrNull() ?: trimmed
-        runCatching { profile.learnFrom(trimmed) }
+        val facts = runCatching { profile.learnFrom(trimmed) }.getOrDefault(emptyList())
+        // Every conversation teaches ZnaiKo a little; learning something about the user teaches it more.
+        pet.learn(KnowledgeSource.CHAT)
+        pet.learn(KnowledgeSource.FACT, facts.size)
+        // "Да играем шах" opens the game in both modes; there is nothing for Claude to add.
+        GameCommands.parse(command)?.let { kind ->
+            val reply = "Отварям „${kind.bg}“. Да видим кой ще спечели!"
+            runCatching { history.record(Speaker.USER, trimmed, "offline") }
+            runCatching { history.record(Speaker.TALKTO, reply, "offline") }
+            _state.update { it.copy(messages = it.messages + ChatMessage(true, trimmed, clock()) + ChatMessage(false, reply, clock())) }
+            _gameRequests.tryEmit(kind)
+            avatar.play(AnimationCommand(Expression.HAPPY, Gesture.BOUNCE))
+            avatar.speak(reply, voice = cfg.voiceEnabled)
+            return
+        }
         if (online && !claudeSeeded) {
             claudeSeeded = true
             runCatching { claude.seed(history.recent(SEED_LINES).map { (it.speaker == Speaker.USER) to it.text }) }

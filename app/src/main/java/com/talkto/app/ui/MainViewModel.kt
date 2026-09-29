@@ -15,6 +15,7 @@ import com.talkto.app.apps.ShizukuBridge
 import com.talkto.app.apps.TalktoAccessibilityService
 import com.talkto.app.avatar.OutfitConfig
 import com.talkto.app.files.StorageAccess
+import com.talkto.app.games.GameController
 import com.talkto.core.avatar.AnimationCommand
 import com.talkto.core.avatar.AvatarStyle
 import com.talkto.core.avatar.Expression
@@ -28,6 +29,8 @@ import com.talkto.core.history.Utterance
 import com.talkto.core.scene.MoodScene
 import com.talkto.core.memory.Habit
 import com.talkto.core.profile.Fact
+import com.talkto.core.games.GameKind
+import com.talkto.core.pet.ZnaiKoUpdate
 import com.talkto.core.touch.BodyLocator
 import com.talkto.core.touch.Touch
 import com.talkto.core.touch.TouchKind
@@ -37,6 +40,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /** A line for the speech bubble that does not come from the assistant: a string resource, or ready [text]. */
@@ -71,6 +75,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _systemLine = MutableStateFlow<SystemLine?>(null)
     val systemLine: StateFlow<SystemLine?> = _systemLine.asStateFlow()
 
+    /** Board and card games against ZnaiKo. */
+    val games = GameController(c.pet, c.avatar, { c.settings.settings.value.voiceEnabled }, viewModelScope)
+
+    private val _pendingUpdates = MutableStateFlow<List<ZnaiKoUpdate>>(emptyList())
+    /** Updates waiting to be shown, oldest first. */
+    val pendingUpdates: StateFlow<List<ZnaiKoUpdate>> = _pendingUpdates.asStateFlow()
+
     init {
         val crashed = c.errors.consumeCrashMarker()
         viewModelScope.launch {
@@ -89,6 +100,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         viewModelScope.launch {
             c.pet.levelUps.collect { level -> say(R.string.level_up, Expression.LOVE, level) }
+        }
+        viewModelScope.launch {
+            c.agentSession.gameRequests.collect { kind -> games.start(kind) }
+        }
+        viewModelScope.launch {
+            c.pet.updates.collect { u ->
+                _pendingUpdates.update { it + u }
+                val line = getApplication<Application>().getString(R.string.update_said, u.version, u.title)
+                _systemLine.value = SystemLine(0, System.currentTimeMillis(), text = line)
+                c.avatar.play(AnimationCommand(Expression.LOVE, Gesture.SPIN, holdMs = 3_000))
+                c.avatar.speak(line, voice = c.settings.settings.value.voiceEnabled)
+            }
         }
         refreshPermissions()
     }
@@ -137,6 +160,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         c.pet.feed()
         c.avatar.play(AnimationCommand(Expression.HAPPY, Gesture.BOUNCE, holdMs = 1_500))
     }
+
+    fun dismissUpdate() = _pendingUpdates.update { it.drop(1) }
+
+    fun startGame(kind: GameKind, players: Int = 2) = games.start(kind, players)
 
     fun play() {
         c.pet.play()
