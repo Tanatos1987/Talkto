@@ -22,7 +22,7 @@
     <string name="tool_running">Working: %1$s</string>
     <string name="greeting">Hi! I\'m ZnaiKo. What shall we do today?</string>
     <string name="greeting_offline">Hi! I work without an API key too: say \"help\" for the commands. With a Claude key I can do much more.</string>
-    <string name="mode_offline">Offline mode</string>
+    <string name="mode_offline">Offline</string>
     <string name="mode_online">Claude</string>
     <string name="crashed_last_time">Oops, last time I tripped and closed. I\'m fine now!</string>
     <string name="avatar_title">Create your avatar</string>

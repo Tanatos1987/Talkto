@@ -385,8 +385,9 @@ private fun Header(
             "ZNAIKO",
             style = MaterialTheme.typography.headlineSmall,
             color = MaterialTheme.colorScheme.onBackground,
+            maxLines = 1,
         )
-        Spacer(Modifier.width(10.dp))
+        Spacer(Modifier.width(8.dp))
         // Mode badge: tapping it opens Settings, where the key can be added.
         Surface(
             shape = RoundedCornerShape(50),
@@ -405,18 +406,18 @@ private fun Header(
             CoinsPill(coins, onCoins)
             CoinGain(gains, Modifier.align(Alignment.TopCenter))
         }
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(6.dp))
         IconButton(
             onClick = onHouse,
-            modifier = Modifier.size(44.dp).clip(CircleShape).background(if (atHome) TalktoColors.Sunflower else TalktoColors.Mint),
+            modifier = Modifier.size(40.dp).clip(CircleShape).background(if (atHome) TalktoColors.Sunflower else TalktoColors.Mint),
         ) {
-            Icon(Icons.Rounded.Home, contentDescription = stringResource(R.string.action_house), tint = TalktoColors.Ink, modifier = Modifier.size(26.dp))
+            Icon(Icons.Rounded.Home, contentDescription = stringResource(R.string.action_house), tint = TalktoColors.Ink, modifier = Modifier.size(24.dp))
         }
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(6.dp))
         // A filled, high-contrast button: the gear must be easy to find on every mood background and theme.
         IconButton(
             onClick = onSettings,
-            modifier = Modifier.size(44.dp).clip(CircleShape).background(TalktoColors.Sunflower),
+            modifier = Modifier.size(40.dp).clip(CircleShape).background(TalktoColors.Sunflower),
         ) {
             Icon(Icons.Rounded.Settings, contentDescription = stringResource(R.string.action_settings), tint = TalktoColors.Ink, modifier = Modifier.size(26.dp))
         }

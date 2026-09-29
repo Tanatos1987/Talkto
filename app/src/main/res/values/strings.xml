@@ -23,7 +23,7 @@
     <string name="tool_running">Работя: %1$s</string>
     <string name="greeting">Здрасти! Аз съм ZnaiKo. Какво да направим днес?</string>
     <string name="greeting_offline">Здрасти! Работя и без API ключ: кажи „помощ“ за командите. С Claude ключ мога много повече.</string>
-    <string name="mode_offline">Офлайн режим</string>
+    <string name="mode_offline">Офлайн</string>
     <string name="mode_online">Claude</string>
     <string name="crashed_last_time">Ох, миналия път се спънах и затворих. Вече съм добре!</string>
 
