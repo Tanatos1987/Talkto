@@ -81,4 +81,4 @@ jobs:
             core/build/reports/tests
             app/build/reports/tests
             app/build/reports/lint-results-debug.html
-            app/build/outputs/mapping/release/missing_rules.txt
+            app/build/intermediates/mapping/release/minifyReleaseWithR8/missing_rules.txt

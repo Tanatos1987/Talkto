@@ -30,3 +30,11 @@
 
 # --- Accessibility service referenced from XML ----------------------------------------------------
 -keep class com.talkto.app.apps.TalktoAccessibilityService { *; }
+
+# --- Structured outputs in the Anthropic SDK build JSON schemas through java.lang.reflect.Annotated*,
+#     which Android does not have. ZnaiKo never takes that path (its tool schemas are written by hand).
+-dontwarn java.lang.reflect.AnnotatedType
+-dontwarn java.lang.reflect.AnnotatedParameterizedType
+-dontwarn java.lang.reflect.AnnotatedArrayType
+-dontwarn java.lang.reflect.AnnotatedWildcardType
+-dontwarn java.lang.reflect.AnnotatedTypeVariable

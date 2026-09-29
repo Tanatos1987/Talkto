@@ -4,10 +4,15 @@ import com.anthropic.core.JsonValue
 import com.anthropic.models.messages.Tool
 
 /**
- * The five tools ZnaiKo exposes to Claude. Schemas are strict (additionalProperties = false),
- * so the model's arguments are guaranteed to match; the dispatcher still validates semantics.
+ * The tools ZnaiKo exposes to Claude. Every schema is closed (additionalProperties = false) and the dispatcher
+ * validates every argument. Strict mode (arguments guaranteed to match the schema) has a budget: the API refuses a
+ * request whose strict tools have more than [STRICT_OPTIONAL_LIMIT] optional parameters in total. The tools with
+ * the fewest optional parameters are made strict first; the big ones (files, device) stay non-strict.
  */
 object ToolProtocol {
+    /** The API's limit on optional parameters across all strict tools. */
+    const val STRICT_OPTIONAL_LIMIT = 24
+
     const val MANAGE_FILE = "manage_file"
     const val LAUNCH_APP = "launch_app"
     const val TERMINATE_APP = "terminate_app"
@@ -19,12 +24,30 @@ object ToolProtocol {
     const val USER_PROFILE = "user_profile"
     const val CONVERSATION_HISTORY = "conversation_history"
 
-    val all: List<Tool> by lazy {
+    /** One tool before it is built: what the strict budget needs to know. */
+    class Spec(val name: String, val description: String, val properties: Map<String, Any>, val required: List<String>) {
+        val optional: Int get() = properties.size - required.size
+    }
+
+    private val specs: List<Spec> by lazy {
         listOf(
             manageFile(), launchApp(), terminateApp(), generateAvatar(), animateAvatar(), device(), notes(), reminders(),
             userProfile(), conversationHistory(),
         )
     }
+
+    /** Names of the tools sent in strict mode: the smallest first, while the optional parameters fit the budget. */
+    val strictNames: Set<String> by lazy {
+        var budget = STRICT_OPTIONAL_LIMIT
+        specs.sortedBy { it.optional }.mapNotNull { spec ->
+            if (spec.optional <= budget) { budget -= spec.optional; spec.name } else null
+        }.toSet()
+    }
+
+    val all: List<Tool> by lazy { specs.map { build(it, strict = it.name in strictNames) } }
+
+    /** Optional parameters of [name], for tests and diagnostics. */
+    fun optionalCount(name: String): Int = specs.first { it.name == name }.optional
 
     private fun manageFile() = tool(
         name = MANAGE_FILE,
@@ -200,18 +223,21 @@ object ToolProtocol {
 
     // ----------------------------------------------------------------- builders
 
-    private fun tool(name: String, description: String, properties: Map<String, Any>, required: List<String>): Tool {
+    private fun tool(name: String, description: String, properties: Map<String, Any>, required: List<String>) =
+        Spec(name, description, properties, required)
+
+    private fun build(spec: Spec, strict: Boolean): Tool {
         val props = Tool.InputSchema.Properties.builder().apply {
-            properties.forEach { (k, v) -> putAdditionalProperty(k, JsonValue.from(v)) }
+            spec.properties.forEach { (k, v) -> putAdditionalProperty(k, JsonValue.from(v)) }
         }.build()
         return Tool.builder()
-            .name(name)
-            .description(description)
-            .strict(true)
+            .name(spec.name)
+            .description(spec.description)
+            .strict(strict)
             .inputSchema(
                 Tool.InputSchema.builder()
                     .properties(props)
-                    .required(required)
+                    .required(spec.required)
                     .putAdditionalProperty("additionalProperties", JsonValue.from(false))
                     .build(),
             )
