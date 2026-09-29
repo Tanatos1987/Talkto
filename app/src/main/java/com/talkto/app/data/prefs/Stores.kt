@@ -54,6 +54,8 @@ data class Settings(
     val ttsVoice: String? = null,
     /** Bulgarian stays near the voice's natural pitch and pace, so every word is clear. */
     val clearBulgarian: Boolean = true,
+    /** The story of ZnaiKo and the friends was shown once, at the first start. */
+    val storySeen: Boolean = false,
     /** False only for the placeholder before DataStore delivered its first value. */
     val loaded: Boolean = false,
 ) {
@@ -81,6 +83,7 @@ class SettingsRepository(private val store: DataStore<Preferences>, private val 
             voicePreset = VoicePreset.parse(p[VOICE_PRESET]),
             ttsVoice = p[TTS_VOICE],
             clearBulgarian = p[CLEAR_BG] ?: true,
+            storySeen = p[STORY_SEEN] ?: false,
             loaded = true,
         )
     }.stateIn(scope, SharingStarted.Eagerly, Settings())
@@ -107,6 +110,8 @@ class SettingsRepository(private val store: DataStore<Preferences>, private val 
 
     suspend fun setClearBulgarian(enabled: Boolean) = store.edit { it[CLEAR_BG] = enabled }
 
+    suspend fun setStorySeen() = store.edit { it[STORY_SEEN] = true }
+
     suspend fun awaitLoaded(): Settings = settings.first { it.loaded }
 
     private companion object {
@@ -120,6 +125,7 @@ class SettingsRepository(private val store: DataStore<Preferences>, private val 
         val VOICE_PRESET = stringPreferencesKey("voice_preset")
         val TTS_VOICE = stringPreferencesKey("tts_voice")
         val CLEAR_BG = booleanPreferencesKey("clear_bulgarian")
+        val STORY_SEEN = booleanPreferencesKey("story_seen")
     }
 }
 

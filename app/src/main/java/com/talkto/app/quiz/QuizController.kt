@@ -309,7 +309,13 @@ class QuizController(
         scope.launch { store.saveQuiz(f(store.quiz.first())) }
     }
 
-    private fun praise(l: Lang) = (if (l == Lang.BG) PRAISE else PRAISE_EN).let { it[random.nextInt(it.size)] }
+    private fun praise(l: Lang): String {
+        val base = (if (l == Lang.BG) PRAISE else PRAISE_EN).let { it[random.nextInt(it.size)] }
+        // Now and then the mad teacher from the story loses again.
+        if (random.nextInt(4) != 0) return base
+        val teacher = if (l == Lang.BG) com.talkto.core.story.Story.TEACHER_LOSES_BG else com.talkto.core.story.Story.TEACHER_LOSES_EN
+        return base + " " + teacher[random.nextInt(teacher.size)]
+    }
 
     private companion object {
         const val RECENT = 80

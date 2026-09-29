@@ -50,17 +50,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
-import androidx.compose.material.icons.rounded.Bedtime
-import androidx.compose.material.icons.rounded.Checkroom
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Face
 import androidx.compose.material.icons.rounded.Mic
-import androidx.compose.material.icons.rounded.Restaurant
-import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.SportsEsports
 import androidx.compose.material.icons.rounded.Stop
-import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -98,7 +92,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -108,6 +101,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.talkto.app.R
@@ -366,6 +361,9 @@ fun TamagotchiScreen(vm: MainViewModel) {
     updates.firstOrNull()?.let { UpdateDialog(it, pet, onDismiss = vm::dismissUpdate) }
 
     confirmation?.let { ConfirmationDialog(it, onAnswer = vm::answerConfirmation) }
+    // The story of ZnaiKo and the friends: once at the first start, and again from Settings.
+    val storyReplay by vm.storyReplay.collectAsStateWithLifecycle()
+    if ((settings.loaded && !settings.storySeen) || storyReplay) com.talkto.app.ui.story.StoryDialog(vm)
 }
 
 // ----------------------------------------------------------------------- header & stats
@@ -453,10 +451,10 @@ private fun CoinGain(gains: kotlinx.coroutines.flow.Flow<Int>, modifier: Modifie
 @Composable
 private fun StatsRow(pet: PetState) {
     Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Stat(stringResource(R.string.stat_satiety), pet.satiety, TalktoColors.Tomato, Modifier.weight(1f))
-        Stat(stringResource(R.string.stat_energy), pet.energy, TalktoColors.Sunflower, Modifier.weight(1f))
-        Stat(stringResource(R.string.stat_happiness), pet.happiness, TalktoColors.Mint, Modifier.weight(1f))
-        Stat(stringResource(R.string.stat_bond), pet.bond, TalktoColors.Denim, Modifier.weight(1f))
+        Stat("🍗", stringResource(R.string.stat_satiety), pet.satiety, TalktoColors.Tomato, Modifier.weight(1f))
+        Stat("⚡", stringResource(R.string.stat_energy), pet.energy, TalktoColors.Sunflower, Modifier.weight(1f))
+        Stat("😊", stringResource(R.string.stat_happiness), pet.happiness, TalktoColors.Mint, Modifier.weight(1f))
+        Stat("💞", stringResource(R.string.stat_bond), pet.bond, TalktoColors.Denim, Modifier.weight(1f))
     }
     LevelRow(pet)
 }
@@ -520,14 +518,15 @@ private fun stageLabel(stage: LifeStage) = stringResource(
 )
 
 @Composable
-private fun Stat(label: String, value: Float, color: Color, modifier: Modifier) {
+private fun Stat(emoji: String, label: String, value: Float, color: Color, modifier: Modifier) {
     val animated by animateFloatAsState(value / 100f, label = "stat")
-    Column(modifier) {
-        Text(label.uppercase(Locale.getDefault()), style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Spacer(Modifier.height(3.dp))
+    // An emoji instead of a word, so children who cannot read yet understand it; the word stays for TalkBack.
+    Row(modifier.semantics(mergeDescendants = true) { contentDescription = "$label ${value.toInt()}%" }, verticalAlignment = Alignment.CenterVertically) {
+        Text(emoji, fontSize = 18.sp)
+        Spacer(Modifier.width(4.dp))
         LinearProgressIndicator(
             progress = { animated },
-            modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
+            modifier = Modifier.weight(1f).height(10.dp).clip(RoundedCornerShape(5.dp)),
             color = if (value < 25f) TalktoColors.Tomato else color,
             trackColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.1f),
             drawStopIndicator = {},
@@ -627,35 +626,32 @@ private fun ActionRow(
     onLearn: () -> Unit,
 ) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        ToyButton(Icons.Rounded.Restaurant, stringResource(R.string.action_feed), TalktoColors.Tomato, onFeed)
-        ToyButton(Icons.Rounded.SportsEsports, stringResource(R.string.action_play), TalktoColors.Mint, onPlay)
+        ToyButton("🍎", stringResource(R.string.action_feed), TalktoColors.Tomato, onFeed)
+        ToyButton("🎮", stringResource(R.string.action_play), TalktoColors.Mint, onPlay)
         ToyButton(
-            if (sleeping) Icons.Rounded.WbSunny else Icons.Rounded.Bedtime,
+            if (sleeping) "☀️" else "🌙",
             stringResource(if (sleeping) R.string.action_wake else R.string.action_sleep),
             TalktoColors.Denim, onSleep,
         )
-        ToyButton(Icons.Rounded.Checkroom, stringResource(R.string.action_wardrobe), TalktoColors.Sunflower, onWardrobe)
-        ToyButton(Icons.Rounded.School, stringResource(R.string.action_learn), Color(0xFF9B5DE5), onLearn)
+        ToyButton("👕", stringResource(R.string.action_wardrobe), TalktoColors.Sunflower, onWardrobe)
+        ToyButton("📚", stringResource(R.string.action_learn), Color(0xFF9B5DE5), onLearn)
     }
 }
 
-/** Big round button like the ones on the plastic egg. */
+/** Big round button like the ones on the plastic egg, with an emoji instead of a word; the word is for TalkBack. */
 @Composable
-private fun ToyButton(icon: ImageVector, label: String, color: Color, onClick: () -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(62.dp)) {
-        Box(
-            Modifier
-                .size(54.dp)
-                .clip(CircleShape)
-                .background(color)
-                .border(3.dp, MaterialTheme.colorScheme.onBackground, CircleShape)
-                .clickable(onClickLabel = label, onClick = onClick),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(icon, contentDescription = label, tint = TalktoColors.Ink)
-        }
-        Spacer(Modifier.height(4.dp))
-        Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+private fun ToyButton(emoji: String, label: String, color: Color, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .size(58.dp)
+            .clip(CircleShape)
+            .background(color)
+            .border(3.dp, MaterialTheme.colorScheme.onBackground, CircleShape)
+            .clickable(onClickLabel = label, onClick = onClick)
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(emoji, fontSize = 28.sp)
     }
 }
 
@@ -972,6 +968,9 @@ private fun SettingsSheet(
                 Switch(checked = settings.handsFree, onCheckedChange = vm::setHandsFree)
             }
             Text(stringResource(R.string.settings_hands_free_note), style = MaterialTheme.typography.bodyMedium)
+            OutlinedButton(onClick = { onDismiss(); vm.openStory() }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                Text(com.talkto.app.i18n.tr("📖 Историята на Знайко", "📖 The story of ZnaiKo"))
+            }
             OutlinedButton(onClick = onBackgrounds, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                 Text(stringResource(R.string.backgrounds_title))
             }

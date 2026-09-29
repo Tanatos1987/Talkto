@@ -10,6 +10,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.rule.GrantPermissionRule
 import com.talkto.app.MainActivity
 import com.talkto.app.R
+import androidx.compose.ui.test.onAllNodesWithText
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -22,6 +24,15 @@ class TamagotchiScreenTest {
     @get:Rule(order = 0) val notifications: GrantPermissionRule = GrantPermissionRule.grant(Manifest.permission.POST_NOTIFICATIONS)
 
     @get:Rule(order = 1) val rule = createAndroidComposeRule<MainActivity>()
+
+    /** The story opens at the first start; skip it. */
+    @Before fun skipStory() {
+        rule.waitForIdle()
+        listOf("Пропусни", "Skip").forEach { label ->
+            if (rule.onAllNodesWithText(label).fetchSemanticsNodes().isNotEmpty()) rule.onAllNodesWithText(label)[0].performClick()
+        }
+        rule.waitForIdle()
+    }
 
     @Test fun screenShowsPetAndControls() {
         rule.onNodeWithText("ZNAIKO").assertIsDisplayed()

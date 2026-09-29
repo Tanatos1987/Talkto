@@ -475,6 +475,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun bulgarianVoiceInstallIntent(): Intent = c.speech.installVoiceIntent()
 
+    // -------------------------------------------------------------- the story
+
+    private val _storyReplay = MutableStateFlow(false)
+    /** The story opened again from Settings. */
+    val storyReplay: StateFlow<Boolean> = _storyReplay
+
+    fun openStory() { _storyReplay.value = true }
+
+    /** Reads one page aloud, in the language of the app. */
+    fun readStoryPage(page: com.talkto.core.story.StoryPage) = viewModelScope.launch {
+        c.avatar.speak(page.text(c.language.current), voice = c.settings.settings.value.voiceEnabled)
+    }
+
+    fun closeStory() {
+        _storyReplay.value = false
+        c.speech.stop()
+        viewModelScope.launch { c.settings.setStorySeen() }
+    }
+
     // -------------------------------------------------------------- backgrounds
 
     val backgroundConfig: StateFlow<BackgroundConfig> = c.backgrounds.config.stateIn(viewModelScope, SharingStarted.Eagerly, BackgroundConfig())
