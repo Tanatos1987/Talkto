@@ -206,6 +206,16 @@ object BulgarianSpeech {
             .replace(Regex("(?<![\\p{L}.])н\\.\\s?е\\.", RegexOption.IGNORE_CASE), "от новата ера")
             .replace(Regex("пр\\.\\s?Хр\\."), "преди Христа")
             .replace(Regex("сл\\.\\s?Хр\\."), "след Христа")
+        // "учебната 2025/2026 година": one school year.
+        s = Regex("(?<![\\d.,/])(20\\d{2}|19\\d{2})\\s?/\\s?(20\\d{2}|19\\d{2})(?![\\d/])").replace(s) { m ->
+            val from = m.groupValues[1].toInt(); val to = m.groupValues[2].toInt()
+            if (to != from + 1) return@replace m.value
+            val next = ordinal(to, Gender.F)
+            // "две хиляди двадесет и пета - двадесет и шеста": the thousands are said once.
+            val short = if (from / 100 == to / 100 && to % 100 != 0) ordinal(to % 100, Gender.F) else next
+            val tail = if (Regex("^\\s*(?:година|г\\.)").containsMatchIn(s.substring(m.range.last + 1))) "" else " година"
+            "${ordinal(from, Gender.F)} - $short$tail"
+        }
         // "1941-1945 г.", "(1941–1945)": from one year to the other, when "година" or the end of the clause says so.
         s = Regex(
             "(?<![\\p{L}\\d.,])(?:(от|през|между|във|в)\\s+)?(1\\d{3}|20\\d{2})\\s?-\\s?(1\\d{3}|20\\d{2})" +
@@ -245,9 +255,9 @@ object BulgarianSpeech {
         return s
     }
 
-    /** "5-6 години" -> "5 до 6 години": a range, not a minus (a sum has "=" or "?" after it). */
+    /** "5-6 години", "стр. 5-10." -> "5 до 6 години", "5 до 10.": a range, not a minus (a sum has "=" or "?" after it). */
     private fun ranges(t: String): String =
-        Regex("(?<![\\d.,\\-])(\\d{1,4})\\s?-\\s?(\\d{1,4})(?![\\d\\-])(?=\\s+\\p{L})").replace(t) { m ->
+        Regex("(?<![\\d.,\\-])(\\d{1,4})\\s?-\\s?(\\d{1,4})(?![\\d\\-])(?=\\s+\\p{L}|\\s*[.!;:),]|$)").replace(t) { m ->
             val a = m.groupValues[1].toInt(); val b = m.groupValues[2].toInt()
             if (a < b) "$a до $b" else m.value
         }
