@@ -104,7 +104,11 @@ class ProfileRepository(private val store: ProfileStore, private val clock: () -
                 f.key == "city" -> "Живееш в ${f.value}"
                 f.key == "job" -> "Работиш като ${f.value}"
                 f.key == "age" -> "На ${f.value} години си"
-                f.key.startsWith("favourite:") -> "Любим(а) ${f.key.removePrefix("favourite:")}: ${f.value}"
+                f.key == "friend" -> "Най-добрият ти приятел е ${f.value}"
+                f.key == "pet" -> "Домашният ти любимец: ${f.value}"
+                f.key == "grade" -> "Учиш в ${f.value} клас"
+                f.key == "dream" -> "Като пораснеш, искаш да станеш ${f.value}"
+                f.key.startsWith("favourite:") -> (Favourites.kind(f.key.removePrefix("favourite:"))?.bg ?: "Любим(а) ${f.key.removePrefix("favourite:")}") + ": ${f.value}"
                 f.key.startsWith("likes:") -> "Обичаш ${f.value}"
                 f.key.startsWith("dislikes:") -> "Не обичаш ${f.value}"
                 f.key.startsWith("alias:") -> "Когато кажеш „${f.key.removePrefix("alias:")}“, правя „${f.value}“"
@@ -118,7 +122,11 @@ class ProfileRepository(private val store: ProfileStore, private val clock: () -
                 f.key == "city" -> "You live in ${f.value}"
                 f.key == "job" -> "You work as ${f.value}"
                 f.key == "age" -> "You are ${f.value} years old"
-                f.key.startsWith("favourite:") -> "Favourite ${f.key.removePrefix("favourite:")}: ${f.value}"
+                f.key == "friend" -> "Your best friend is ${f.value}"
+                f.key == "pet" -> "Your pet: ${f.value}"
+                f.key == "grade" -> "You are in year ${f.value}"
+                f.key == "dream" -> "When you grow up, you want to be ${f.value}"
+                f.key.startsWith("favourite:") -> (Favourites.kind(f.key.removePrefix("favourite:"))?.en ?: "Favourite ${f.key.removePrefix("favourite:")}") + ": ${f.value}"
                 f.key.startsWith("likes:") -> "You like ${f.value}"
                 f.key.startsWith("dislikes:") -> "You don't like ${f.value}"
                 f.key.startsWith("alias:") -> "When you say \"${f.key.removePrefix("alias:")}\", I do \"${f.value}\""
@@ -162,7 +170,7 @@ object FactExtractor {
         CITY.find(t)?.let { out += "city" to it.groupValues[1].trim() }
         JOB.find(t)?.let { out += "job" to it.groupValues[1].trim() }
         AGE.find(t)?.let { m -> m.groupValues.drop(1).firstOrNull { it.isNotEmpty() }?.let { out += "age" to it } }
-        FAVOURITE.find(t)?.let { out += "favourite:" + it.groupValues[1].lowercase(Locale.ROOT) to it.groupValues[2].trim() }
+        FAVOURITE.find(t)?.let { out += "favourite:" + Favourites.canonical(it.groupValues[1]) to it.groupValues[2].trim() }
         val dislike = DISLIKES.find(t)
         dislike?.let { out += "dislikes:" + it.groupValues[1].lowercase(Locale.ROOT).trim() to it.groupValues[1].trim() }
         if (dislike == null) {

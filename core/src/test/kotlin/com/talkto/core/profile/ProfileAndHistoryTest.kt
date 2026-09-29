@@ -45,7 +45,8 @@ class FactExtractorTest {
         assertThat(ex("живея в Пловдив")).containsEntry("city", "Пловдив")
         assertThat(ex("работя като медицинска сестра")).containsEntry("job", "медицинска сестра")
         assertThat(ex("рожденият ми ден е на 15.03")).containsEntry("birthday", "15.03")
-        assertThat(ex("любимият ми цвят е зеленото")).containsEntry("favourite:цвят", "зеленото")
+        assertThat(ex("любимият ми цвят е зеленото")).containsEntry("favourite:colour", "зеленото")
+        assertThat(ex("my favourite colour is blue")).containsEntry("favourite:colour", "blue")
     }
 
     @Test fun `not every sentence is a fact`() {

@@ -8,7 +8,7 @@ package com.talkto.core.voice
 object Speakable {
 
     fun clean(text: String): String {
-        val cps = text.codePoints().toArray()
+        val cps = UNITS.entries.fold(text) { acc, (unit, words) -> acc.replace(unit, words) }.codePoints().toArray()
         val out = StringBuilder(text.length)
         for (i in cps.indices) {
             val cp = cps[i]
@@ -44,7 +44,8 @@ object Speakable {
         t = t.replace(Regex(",(?:\\s*,)+"), ",")
         t = t.replace(Regex(",\\s*([.!?;])"), "$1").replace(Regex("([.!?;])\\s*,"), "$1")
         t = t.replace(Regex("([.!?;])(?:\\s*[.;])+"), "$1")
-        t = t.replace(Regex(",(?=\\S)"), ", ")
+        // A space after each pause, but a decimal or thousands comma stays inside its number (9,58 or 1,600).
+        t = t.replace(Regex("(?<!\\d),(?=\\S)|,(?=[^\\s\\d])"), ", ")
         return t.trim().trimStart(',', '.', ';', ' ').trim()
     }
 
@@ -59,6 +60,12 @@ object Speakable {
             cp == 0x00A9 || cp == 0x00AE || cp == 0x2122 || cp == 0x3030 || cp == 0x303D || cp == 0x3297 || cp == 0x3299
 
     private fun isInvisible(cp: Int) = cp in 0xFE00..0xFE0F || cp == 0x200D || cp == 0x20E3 || cp == 0x200B
+
+    /** Units the voice would otherwise spell letter by letter. */
+    private val UNITS = mapOf(
+        Regex("(?<=\\d)\\s?км/ч") to " километра в час",
+        Regex("(?<=\\d)\\s?km/h") to " kilometres an hour",
+    )
 
     private val QUOTES = setOf('"'.code, '\''.code, 0x201E, 0x201C, 0x201D, 0x2018, 0x2019, 0x201A, 0x00AB, 0x00BB, 0x2039, 0x203A, '`'.code)
     private val BRACKETS = setOf('('.code, ')'.code, '['.code, ']'.code, '{'.code, '}'.code)
