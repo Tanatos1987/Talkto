@@ -58,3 +58,32 @@ class VoicePresetTest {
         assertThat(com.talkto.core.voice.VoicePreset.parse("BEAR")).isEqualTo(com.talkto.core.voice.VoicePreset.BEAR)
     }
 }
+
+class SpeakableTest {
+    private fun s(t: String) = com.talkto.core.voice.Speakable.clean(t)
+
+    @Test fun `emoji, quotes and brackets are not read aloud`() {
+        assertThat(s("„куче“ на английски е \"dog\" 🐶.")).isEqualTo("куче на английски е dog.")
+        assertThat(s("Бе-е-е! 🎂 Честит рожден ден!")).isEqualTo("Бе-е-е! Честит рожден ден!")
+        assertThat(s("Аз избрах камък (ти хартия).")).isEqualTo("Аз избрах камък, ти хартия.")
+        assertThat(s("🇧🇬 Български")).isEqualTo("Български")
+        assertThat(s("⭐⭐☆ Урокът е готов!")).isEqualTo("Урокът е готов!")
+        assertThat(s("1️⃣ едно")).isEqualTo("1 едно")
+    }
+
+    @Test fun `lists become sentences, bullets and dashes become pauses`() {
+        assertThat(s("• 3 групи дубликати\n• 2 празни папки")).isEqualTo("3 групи дубликати. 2 празни папки")
+        assertThat(s("Ниво 3 · Бебе — растеш!")).isEqualTo("Ниво 3 Бебе, растеш!")
+        assertThat(s("Мисля, мисля...")).isEqualTo("Мисля, мисля.")
+        assertThat(s("Здрасти - как си?")).isEqualTo("Здрасти, как си?")
+    }
+
+    @Test fun `meaningful symbols between numbers and inside words stay`() {
+        assertThat(s("Часът е 14:10.")).isEqualTo("Часът е 14:10.")
+        assertThat(s("7 + 5 = ?")).isEqualTo("7 + 5 = ?")
+        assertThat(s("1/2 от 18 е 9, а 50% от 20 е 10. Навън е 20 °C.")).isEqualTo("1/2 от 18 е 9, а 50% от 20 е 10. Навън е 20 °C.")
+        assertThat(s("Включи Wi-Fi, don't worry.")).isEqualTo("Включи Wi-Fi, don't worry.")
+        assertThat(s("Температурата е -5 градуса")).isEqualTo("Температурата е -5 градуса")
+        assertThat(s("Прочети: първо това")).isEqualTo("Прочети, първо това")
+    }
+}

@@ -8,6 +8,7 @@ import com.talkto.core.avatar.VisemeFrame
 import com.talkto.core.avatar.VisemePlanner
 import com.talkto.core.i18n.Lang
 import com.talkto.core.i18n.ScriptSegmenter
+import com.talkto.core.voice.Speakable
 import com.talkto.core.voice.VoicePreset
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -109,28 +110,30 @@ class SpeechEngine(context: Context, private val scope: CoroutineScope) {
 
     /** Speaks [text]. Returns false when no TTS engine is usable; the caller then animates the mouth silently. */
     suspend fun speak(text: String): Boolean {
-        val ok = withTimeoutOrNull(3_000) { ready.await() } ?: false
-        if (!ok) {
+        val engineReady = withTimeoutOrNull(3_000) { ready.await() } ?: false
+        if (!engineReady) {
             mimeSilently(text); return false
         }
+        // Only words reach the voice: no emoji names, quotes, bullets or brackets read aloud.
+        val clean = Speakable.clean(text)
         // Say the name the way it sounds, in the language of the sentence around it.
-        val main = ScriptSegmenter.dominant(text, defaultLang)
-        val spoken = text.replace("ZnaiKo", if (main == Lang.BG) "Знайко" else "Znayko")
+        val main = ScriptSegmenter.dominant(clean, defaultLang)
+        val spoken = clean.replace("ZnaiKo", if (main == Lang.BG) "Знайко" else "Znayko")
         val parts = ScriptSegmenter.segments(spoken, defaultLang).filter { seg -> seg.text.any { it.isLetterOrDigit() } }
         if (parts.isEmpty()) return true
         utterances.clear()
         tts.setSpeechRate(speechRate)
         tts.setPitch(pitch)
-        var ok = true
+        var queued = true
         parts.forEachIndexed { i, part ->
             configureLanguage(part.lang)
             val id = UUID.randomUUID().toString()
             utterances[id] = part.text
             if (i == 0) currentText = part.text
             val mode = if (i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
-            ok = tts.speak(part.text, mode, null, id) == TextToSpeech.SUCCESS && ok
+            queued = tts.speak(part.text, mode, null, id) == TextToSpeech.SUCCESS && queued
         }
-        return ok
+        return queued
     }
 
     /** One run is over; the line is over when none is left. */
