@@ -121,7 +121,6 @@ fun GamesSheet(
     }
 }
 
-@Composable
 private val ROW_COLOURS = listOf(Color(0xFFFFE3EF), Color(0xFFE3F2FF), Color(0xFFFFF4D6), Color(0xFFE6F9E8), Color(0xFFEFE6FF), Color(0xFFFFE8DC))
 
 @Composable

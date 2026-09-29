@@ -43,11 +43,12 @@ fun Avatar3DView(
     house: HouseLook = HouseLook(),
     atHome: Boolean = false,
     preview: Boolean = false,
+    roundness: Float = 0f,
 ) {
     val renderer = remember(body, twirl) { Creature3DRenderer(body, twirl) }
     SideEffect {
         renderer.scene = SceneState(
-            pose, outfit, stage, sleeping, growth = growth, updates = updates, look = look, house = house, atHome = atHome, preview = preview,
+            pose, outfit, stage, sleeping, growth = growth, updates = updates, look = look, house = house, atHome = atHome, preview = preview, roundness = roundness,
         )
     }
     LaunchedEffect(lookAt) { lookAt?.let { (x, y) -> renderer.lookAt(x, y) } }

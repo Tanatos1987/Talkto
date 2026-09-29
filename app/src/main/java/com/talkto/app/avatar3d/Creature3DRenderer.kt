@@ -51,6 +51,8 @@ data class SceneState(
     val house: HouseLook = HouseLook(),
     /** ZnaiKo is (or is going) inside its house. */
     val atHome: Boolean = false,
+    /** 0..1: round from junk food; the body gets wider and a little lower. */
+    val roundness: Float = 0f,
     /** The creator's preview: just the creature, no house. */
     val preview: Boolean = false,
 )
@@ -223,7 +225,11 @@ class Creature3DRenderer(
         val scale = stageScale * doorScale
         val bob = abs(sin(anim.walkPhase)) * 0.07f * anim.walk
         var root = Mat4.translation(posX, -1f + hop.value.coerceAtLeast(0f) * 0.08f + bob, posZ)
-        root = Mat4.multiply(root, Mat4.scale(scale * (1f + sq * 0.35f), scale * (1f - sq * 0.5f + breath), scale * (1f + sq * 0.25f)))
+        val round = s.roundness.coerceIn(0f, 1f)
+        // Junk food shows: wider and deeper, a touch lower, and the belly wobbles a little more with each breath.
+        val fatX = 1f + round * 0.32f
+        val fatY = 1f - round * 0.05f + breath * round * 1.5f
+        root = Mat4.multiply(root, Mat4.scale(scale * (1f + sq * 0.35f) * fatX, scale * (1f - sq * 0.5f + breath) * fatY, scale * (1f + sq * 0.25f) * fatX))
         root = Mat4.multiply(root, Mat4.translation(0f, 1f, 0f))
         publishBody(root, BodyPlan.of(s.look))
         root = Mat4.multiply(root, Mat4.rotationY(yaw.value + spin + walkYaw))

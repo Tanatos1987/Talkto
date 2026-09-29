@@ -21,6 +21,7 @@ import com.talkto.core.commands.AppCommand
 import com.talkto.core.pet.KnowledgeSource
 import com.talkto.core.profile.AboutYou
 import com.talkto.core.shop.ShopItem
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -236,10 +237,29 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // -------------------------------------------------------------- tamagotchi
 
-    fun feed() {
+    fun feed() = feed(com.talkto.core.pet.Food.APPLE)
+
+    private val _meals = MutableSharedFlow<com.talkto.core.pet.Food>(extraBufferCapacity = 4)
+    /** Each food as it is given, for the bite flying to ZnaiKo on screen. */
+    val meals: SharedFlow<com.talkto.core.pet.Food> = _meals
+
+    /** Gives [food]: it flies to ZnaiKo, who chews, then says how it feels; the body changes with what it eats. */
+    fun feed(food: com.talkto.core.pet.Food) {
         comeOut()
-        c.pet.feed()
-        c.avatar.play(AnimationCommand(Expression.HAPPY, Gesture.BOUNCE, holdMs = 1_500))
+        _meals.tryEmit(food)
+        viewModelScope.launch {
+            delay(900) // the bite reaches the mouth
+            c.pet.eat(food)
+            val s = c.pet.state.value
+            val sick = !food.healthy && s.fat > 70f
+            val (face, move) = when {
+                food.healthy -> Expression.HAPPY to Gesture.BOUNCE
+                sick -> Expression.SAD to Gesture.SHAKE
+                else -> Expression.TONGUE to Gesture.NOD
+            }
+            c.avatar.play(AnimationCommand(face, move, holdMs = 1_500))
+            c.avatar.speak(com.talkto.core.pet.Nutrition.line(food, s.fat, s.vitality, c.language.current), voice = c.settings.settings.value.voiceEnabled)
+        }
     }
 
     fun dismissUpdate() = _pendingUpdates.update { it.drop(1) }

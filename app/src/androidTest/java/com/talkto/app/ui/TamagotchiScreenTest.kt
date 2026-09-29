@@ -52,6 +52,8 @@ class TamagotchiScreenTest {
 
     @Test fun feedingDoesNotCrash() {
         rule.onNodeWithContentDescription(rule.activity.getString(R.string.action_feed)).performClick()
+        rule.onNodeWithText("🥕").performClick()
+        rule.waitForIdle()
         rule.onNodeWithContentDescription("ZnaiKo logo").assertIsDisplayed()
     }
 }

@@ -5,7 +5,9 @@ import com.talkto.core.avatar.Expression
 import com.talkto.core.games.GameOutcome
 import com.talkto.core.i18n.Lang
 import com.talkto.core.games.Skill
+import com.talkto.core.pet.Food
 import com.talkto.core.pet.Knowledge
+import com.talkto.core.pet.Nutrition
 import com.talkto.core.pet.KnowledgeSource
 import com.talkto.core.pet.LifeStage
 import com.talkto.core.pet.Progression
@@ -57,6 +59,10 @@ data class PetState(
     val owned: Set<String> = emptySet(),
     /** ZnaiKo is inside its house. */
     val atHome: Boolean = false,
+    /** 0..100: grows with junk food, melts with healthy food, play and time. Makes the body round. */
+    val fat: Float = 0f,
+    /** 0..100: healthy food raises it, junk lowers it. Low is pale, high is shiny. */
+    val vitality: Float = 60f,
 ) {
     val wallet: Wallet get() = Wallet(coins, owned)
 
@@ -156,11 +162,23 @@ class PetEngine(
         }
     }
 
-    fun feed() = mutate(XpReason.FEED) { it.copy(satiety = (it.satiety + 30f).cap(), happiness = (it.happiness + 5f).cap()) }
+    fun feed() = eat(Food.APPLE)
+
+    /** ZnaiKo eats [food]: it fills up, and junk food makes it round and pale while healthy food keeps it fit. */
+    fun eat(food: Food) = mutate(XpReason.FEED) {
+        val b = Nutrition.bite(food, it.fat)
+        it.copy(
+            satiety = (it.satiety + b.satiety).cap(), happiness = (it.happiness + b.happiness).cap(), energy = (it.energy + b.energy).cap(),
+            fat = (it.fat + b.fat).cap(), vitality = (it.vitality + b.vitality).cap(),
+        )
+    }
 
     fun play() = mutate(XpReason.PLAY) {
         if (it.sleeping || it.energy < 10f) it.copy(happiness = (it.happiness - 2f).cap())
-        else it.copy(happiness = (it.happiness + 18f).cap(), energy = (it.energy - 10f).cap(), satiety = (it.satiety - 5f).cap(), bond = (it.bond + 1f).cap())
+        else it.copy(
+            happiness = (it.happiness + 18f).cap(), energy = (it.energy - 10f).cap(), satiety = (it.satiety - 5f).cap(), bond = (it.bond + 1f).cap(),
+            fat = (it.fat - Nutrition.PLAY_BURNS).cap(),
+        )
     }
 
     /** ZnaiKo sleeps in its house: going to bed walks it home, waking up brings it out. */
@@ -263,7 +281,10 @@ class PetEngine(
         val hours = ((now - s.updatedAtMs).coerceIn(0, MAX_CATCH_UP_MS)) / 3_600_000f
         if (hours <= 0f) return s.copy(updatedAtMs = now)
         val hungry = s.satiety < 30f
+        val (fat, vitality) = Nutrition.rest(s.fat, s.vitality, hours)
         return s.copy(
+            fat = fat,
+            vitality = vitality,
             satiety = (s.satiety - 5f * hours).cap(),
             energy = (if (s.sleeping) s.energy + 14f * hours else s.energy - 4f * hours).cap(),
             happiness = (s.happiness - (if (hungry) 5f else 2.5f) * hours).cap(),

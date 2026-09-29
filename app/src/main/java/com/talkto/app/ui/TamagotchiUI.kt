@@ -149,7 +149,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
-private enum class Sheet { NONE, CREATOR, AVATAR, SETTINGS, HISTORY, BACKGROUNDS, GAMES, LEARN, SHOP, HOUSE }
+private enum class Sheet { NONE, CREATOR, AVATAR, SETTINGS, HISTORY, BACKGROUNDS, GAMES, LEARN, SHOP, HOUSE, FOOD }
 
 @Composable
 fun TamagotchiScreen(vm: MainViewModel) {
@@ -215,6 +215,8 @@ fun TamagotchiScreen(vm: MainViewModel) {
                 MoodBackdrop(scene, background.photos[scene].orEmpty(), Modifier.fillMaxSize())
             }
             val stageModifier = Modifier.fillMaxSize().padding(top = 72.dp, bottom = 12.dp, start = 24.dp, end = 24.dp)
+            // What ZnaiKo eats shows on its body: round and pale from junk food, slim and shiny from healthy food.
+            val fedLook = remember(look, pet.fat.toInt(), pet.vitality.toInt()) { com.talkto.core.pet.Nutrition.look(look, pet.fat, pet.vitality) }
             // A photo avatar is a 2D portrait; the built-in creature is 3D unless switched off in Settings.
             if (visual.bitmap == null && settings.avatar3d) {
                 Avatar3DView(
@@ -229,14 +231,15 @@ fun TamagotchiScreen(vm: MainViewModel) {
                     twirl = vm.twirl,
                     growth = pet.stageGrowth,
                     updates = pet.updates,
-                    look = look,
+                    look = fedLook,
                     house = house,
                     atHome = pet.atHome,
+                    roundness = com.talkto.core.pet.Nutrition.roundness(pet.fat),
                 )
             } else {
                 AvatarStage(
                     visual = visual, pose = pose, outfit = outfit, sleeping = pet.sleeping, stage = pet.stage, modifier = stageModifier,
-                    look = look, house = house, atHome = pet.atHome,
+                    look = fedLook, house = house, atHome = pet.atHome,
                 )
             }
             // Transparent layer above either renderer: slaps, hits, pats and caresses. At home a tap opens the house.
@@ -255,6 +258,7 @@ fun TamagotchiScreen(vm: MainViewModel) {
                     onTwirlEnd = vm.twirl::release,
                 ),
             )
+            com.talkto.app.ui.food.FeedingOverlay(vm.meals, stageModifier)
             SpeechBubble(
                 text = when {
                     agent.busy && agent.activeTool != null -> stringResource(R.string.tool_running, toolLabel(agent.activeTool!!))
@@ -278,7 +282,7 @@ fun TamagotchiScreen(vm: MainViewModel) {
         Spacer(Modifier.height(12.dp))
         ActionRow(
             sleeping = pet.sleeping,
-            onFeed = vm::feed,
+            onFeed = { sheet = Sheet.FOOD },
             onPlay = { sheet = Sheet.GAMES },
             onSleep = vm::toggleSleep,
             onWardrobe = { sheet = Sheet.CREATOR },
@@ -348,6 +352,7 @@ fun TamagotchiScreen(vm: MainViewModel) {
             onTetris = { sheet = Sheet.NONE; vm.openArcade(MainViewModel.Arcade.TETRIS) },
             onSweets = { sheet = Sheet.NONE; vm.openArcade(MainViewModel.Arcade.SWEETS) },
         )
+        Sheet.FOOD -> com.talkto.app.ui.food.FoodSheet(pet, onEat = { f -> sheet = Sheet.NONE; vm.feed(f) }, onDismiss = { sheet = Sheet.NONE })
         Sheet.NONE -> Unit
     }
 
@@ -458,6 +463,7 @@ private fun StatsRow(pet: PetState) {
         Stat("⚡", stringResource(R.string.stat_energy), pet.energy, TalktoColors.Sunflower, Modifier.weight(1f))
         Stat("😊", stringResource(R.string.stat_happiness), pet.happiness, TalktoColors.Mint, Modifier.weight(1f))
         Stat("💞", stringResource(R.string.stat_bond), pet.bond, TalktoColors.Denim, Modifier.weight(1f))
+        Stat("💪", com.talkto.app.i18n.tr("Здраве", "Health"), pet.vitality, Color(0xFF9B5DE5), Modifier.weight(1f))
     }
     LevelRow(pet)
 }
