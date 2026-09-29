@@ -810,6 +810,81 @@ private fun AvatarCreatorSheet(vm: MainViewModel, onDismiss: () -> Unit) {
     }
 }
 
+/**
+ * Bulgarian pronunciation: which engine and voice speak it, a way to download the voice when it is missing,
+ * clear speech (the character's pitch and pace kept near natural for Bulgarian) and a sample to hear the difference.
+ */
+@Composable
+private fun BulgarianVoiceCard(vm: MainViewModel, clear: Boolean) {
+    val bg by vm.bulgarianVoice.collectAsStateWithLifecycle()
+    val ctx = LocalContext.current
+    // Back from Google Play or the voice download screen: look again.
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) { vm.recheckBulgarianVoice() }
+    fun open(intent: android.content.Intent) {
+        try {
+            ctx.startActivity(intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (_: ActivityNotFoundException) {
+            runCatching { ctx.startActivity(android.content.Intent("com.android.settings.TTS_SETTINGS").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        }
+    }
+    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+        Column(Modifier.padding(14.dp)) {
+            Text(com.talkto.app.i18n.tr("🇧🇬 Произношение на български", "🇧🇬 Bulgarian pronunciation"), style = MaterialTheme.typography.titleSmall)
+            val engine = bg.engineLabel ?: bg.engine ?: "?"
+            Text(
+                when (bg.status) {
+                    com.talkto.app.avatar.SpeechEngine.Status.CHECKING -> com.talkto.app.i18n.tr("Проверявам гласа…", "Checking the voice…")
+                    com.talkto.app.avatar.SpeechEngine.Status.READY -> com.talkto.app.i18n.tr(
+                        "✅ Говори с $engine" + if (bg.offline) ", без интернет." else ", с интернет.",
+                        "✅ Speaking with $engine" + if (bg.offline) ", offline." else ", online.",
+                    )
+                    com.talkto.app.avatar.SpeechEngine.Status.MISSING_DATA -> com.talkto.app.i18n.tr(
+                        "⚠️ Българският глас не е изтеглен, затова звучи с чужд акцент. Изтеглете го от бутона долу.",
+                        "⚠️ The Bulgarian voice is not downloaded, so it sounds foreign. Download it with the button below.",
+                    )
+                    com.talkto.app.avatar.SpeechEngine.Status.NOT_SUPPORTED, com.talkto.app.avatar.SpeechEngine.Status.NO_ENGINE -> com.talkto.app.i18n.tr(
+                        "⚠️ Гласът на телефона ($engine) не говори български. Инсталирайте „Услуги за говор от Google“ и ZnaiKo ще ги ползва сам.",
+                        "⚠️ The phone's voice ($engine) has no Bulgarian. Install \"Speech Services by Google\" and ZnaiKo will use it by itself.",
+                    )
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(vertical = 4.dp),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                when (bg.status) {
+                    com.talkto.app.avatar.SpeechEngine.Status.MISSING_DATA -> Button(onClick = { open(vm.bulgarianVoiceInstallIntent()) }) {
+                        Text(com.talkto.app.i18n.tr("Изтегли гласа", "Download the voice"))
+                    }
+                    com.talkto.app.avatar.SpeechEngine.Status.NOT_SUPPORTED, com.talkto.app.avatar.SpeechEngine.Status.NO_ENGINE -> Button(onClick = {
+                        open(android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse("market://details?id=com.google.android.tts")))
+                    }) { Text(com.talkto.app.i18n.tr("Към Google Play", "Open Google Play")) }
+                    else -> Unit
+                }
+                OutlinedButton(onClick = { open(android.content.Intent("com.android.settings.TTS_SETTINGS")) }) {
+                    Text(com.talkto.app.i18n.tr("Настройки за говор", "Speech settings"))
+                }
+            }
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(com.talkto.app.i18n.tr("Ясно произношение", "Clear pronunciation"), style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        com.talkto.app.i18n.tr(
+                            "Гласът на героя остава, но на български е по-близо до естествения, за да се чува всяка дума.",
+                            "The character's voice stays, but in Bulgarian it is closer to natural, so every word is heard.",
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Switch(checked = clear, onCheckedChange = vm::setClearBulgarian)
+            }
+            Row {
+                TextButton(onClick = vm::sampleBulgarian) { Text(com.talkto.app.i18n.tr("🔊 Чуй пример", "🔊 Hear a sample")) }
+                TextButton(onClick = { vm.recheckBulgarianVoice(force = true) }) { Text(com.talkto.app.i18n.tr("Провери пак", "Check again")) }
+            }
+        }
+    }
+}
+
 /** Character voices (pitch and rate) and, optionally, a specific voice of the phone's TTS engine. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -836,7 +911,8 @@ private fun VoicePicker(vm: MainViewModel, selected: VoicePreset, engineVoice: S
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = engineVoice == null, onClick = { vm.setTtsVoice(null) }, label = { Text(stringResource(R.string.settings_voice_engine_auto)) })
                 voices.forEachIndexed { i, v ->
-                    val label = "${v.language} #${i + 1}" + if (v.offline) "" else " ☁"
+                    val stars = when { v.quality >= 500 -> "★★★"; v.quality >= 400 -> "★★"; else -> "★" }
+                    val label = "${v.language} #${i + 1} $stars" + if (v.offline) "" else " ☁"
                     FilterChip(selected = engineVoice == v.name, onClick = { vm.setTtsVoice(v.name) }, label = { Text(label) })
                 }
             }
@@ -890,6 +966,7 @@ private fun SettingsSheet(
                 Switch(checked = settings.voiceEnabled, onCheckedChange = vm::setVoice)
             }
             VoicePicker(vm, settings.voicePreset, settings.ttsVoice)
+            BulgarianVoiceCard(vm, settings.clearBulgarian)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.settings_hands_free), modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
                 Switch(checked = settings.handsFree, onCheckedChange = vm::setHandsFree)

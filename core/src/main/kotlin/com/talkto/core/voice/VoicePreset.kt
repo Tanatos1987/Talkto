@@ -30,6 +30,17 @@ enum class VoicePreset(val bg: String, val pitch: Float, val rate: Float, val sa
     fun label(lang: Lang) = lang.pick(bg, en)
     fun sample(lang: Lang) = lang.pick(sample, sampleEn)
 
+    /**
+     * Pitch and rate for speaking [lang]. Bulgarian voices blur when pushed far from their natural pitch and speed,
+     * so with [clear] the character is kept, but gently: pitch within 0.85..1.25 and a slightly calmer pace.
+     */
+    fun prosody(lang: Lang, clear: Boolean): Pair<Float, Float> =
+        if (lang == Lang.BG && clear) {
+            (1f + (pitch - 1f) * 0.45f).coerceIn(0.85f, 1.25f) to (rate * 0.95f).coerceIn(0.85f, 1.0f)
+        } else {
+            pitch to rate
+        }
+
     companion object {
         val DEFAULT = FAIRY
 

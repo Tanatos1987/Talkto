@@ -86,4 +86,18 @@ class SpeakableTest {
         assertThat(s("Температурата е -5 градуса")).isEqualTo("Температурата е -5 градуса")
         assertThat(s("Прочети: първо това")).isEqualTo("Прочети, първо това")
     }
+
+    @Test fun `signs of a sum keep their meaning`() {
+        assertThat(s("10 - 4 = 6")).isEqualTo("10 − 4 = 6")
+        assertThat(s("x - 2 = 5")).isEqualTo("x − 2 = 5")
+        assertThat(s("4 * 5 = 20")).isEqualTo("4 × 5 = 20")
+        assertThat(s("4 · 5 = 20")).isEqualTo("4 × 5 = 20")
+        assertThat(s("12 : 3 = 4")).isEqualTo("12 ÷ 3 = 4")
+        assertThat(s("10 / 2 = 5")).isEqualTo("10 / 2 = 5")
+        assertThat(s("5 > 3 и 2 < 4")).isEqualTo("5 > 3 и 2 < 4")
+        assertThat(s("x^2 + 1")).isEqualTo("x² + 1")
+        assertThat(s("1941–1945")).isEqualTo("1941-1945")
+        assertThat(s("**Браво**, 5 *звезди*")).isEqualTo("Браво, 5 звезди")
+        assertThat(s("Тича 10 м/с")).isEqualTo("Тича 10 метра в секунда")
+    }
 }

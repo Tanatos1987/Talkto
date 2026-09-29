@@ -56,7 +56,7 @@
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
         <intent>
-            <action android:name="android.speech.tts.TTS_SERVICE" />
+            <action android:name="android.intent.action.TTS_SERVICE" />
         </intent>
         <package android:name="moe.shizuku.privileged.api" />
         <intent>

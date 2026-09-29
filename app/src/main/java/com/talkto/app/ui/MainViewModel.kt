@@ -459,6 +459,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun loadEngineVoices() = viewModelScope.launch { _engineVoices.value = c.speech.availableVoices() }
 
+    /** How Bulgarian can be spoken on this phone. */
+    val bulgarianVoice: StateFlow<SpeechEngine.BulgarianVoice> = c.speech.bulgarian
+
+    fun recheckBulgarianVoice(force: Boolean = false) = c.speech.recheck(force)
+
+    fun setClearBulgarian(enabled: Boolean) = viewModelScope.launch {
+        c.settings.setClearBulgarian(enabled)
+        c.speech.clearBulgarian = enabled
+        c.avatar.speak(com.talkto.core.voice.BulgarianSpeech.SAMPLE, voice = true)
+    }
+
+    /** A Bulgarian sentence with the things phones get wrong: a date, a year, a class, a unit. */
+    fun sampleBulgarian() = viewModelScope.launch { c.avatar.speak(com.talkto.core.voice.BulgarianSpeech.SAMPLE, voice = true) }
+
+    fun bulgarianVoiceInstallIntent(): Intent = c.speech.installVoiceIntent()
+
     // -------------------------------------------------------------- backgrounds
 
     val backgroundConfig: StateFlow<BackgroundConfig> = c.backgrounds.config.stateIn(viewModelScope, SharingStarted.Eagerly, BackgroundConfig())

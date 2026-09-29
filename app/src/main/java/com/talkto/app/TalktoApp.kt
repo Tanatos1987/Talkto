@@ -98,7 +98,12 @@ class AppContainer(private val context: Context) {
     private val imageApi = StabilityImageApi(apiKey = { settings.settings.value.stabilityKey })
     private val generator = AvatarGenerator(imageApi, FileAvatarCache(context.filesDir.toPath().resolve("avatars")))
     val speech = SpeechEngine(context, appScope).also { engine ->
-        appScope.launch { settings.settings.collect { engine.setVoice(it.voicePreset, it.ttsVoice) } }
+        appScope.launch {
+            settings.settings.collect {
+                engine.setVoice(it.voicePreset, it.ttsVoice)
+                engine.clearBulgarian = it.clearBulgarian
+            }
+        }
         appScope.launch { language.lang.collect { engine.defaultLang = it } }
     }
     val avatar = AvatarEngine(context, generator, FaceAnchorDetector(), speech, petStore, pathGuard, appScope)

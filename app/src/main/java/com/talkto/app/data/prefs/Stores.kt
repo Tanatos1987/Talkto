@@ -50,8 +50,10 @@ data class Settings(
     val handsFree: Boolean = false,
     /** Character voice (pitch and rate), see VoicePreset. */
     val voicePreset: VoicePreset = VoicePreset.DEFAULT,
-    /** A specific engine voice by name; null lets the engine pick one for the language. */
+    /** A specific engine voice by name; null lets ZnaiKo pick the best one for the language. */
     val ttsVoice: String? = null,
+    /** Bulgarian stays near the voice's natural pitch and pace, so every word is clear. */
+    val clearBulgarian: Boolean = true,
     /** False only for the placeholder before DataStore delivered its first value. */
     val loaded: Boolean = false,
 ) {
@@ -78,6 +80,7 @@ class SettingsRepository(private val store: DataStore<Preferences>, private val 
             handsFree = p[HANDS_FREE] ?: false,
             voicePreset = VoicePreset.parse(p[VOICE_PRESET]),
             ttsVoice = p[TTS_VOICE],
+            clearBulgarian = p[CLEAR_BG] ?: true,
             loaded = true,
         )
     }.stateIn(scope, SharingStarted.Eagerly, Settings())
@@ -102,6 +105,8 @@ class SettingsRepository(private val store: DataStore<Preferences>, private val 
 
     suspend fun setTtsVoice(name: String?) = store.edit { if (name == null) it.remove(TTS_VOICE) else it[TTS_VOICE] = name }
 
+    suspend fun setClearBulgarian(enabled: Boolean) = store.edit { it[CLEAR_BG] = enabled }
+
     suspend fun awaitLoaded(): Settings = settings.first { it.loaded }
 
     private companion object {
@@ -114,6 +119,7 @@ class SettingsRepository(private val store: DataStore<Preferences>, private val 
         val HANDS_FREE = booleanPreferencesKey("hands_free")
         val VOICE_PRESET = stringPreferencesKey("voice_preset")
         val TTS_VOICE = stringPreferencesKey("tts_voice")
+        val CLEAR_BG = booleanPreferencesKey("clear_bulgarian")
     }
 }
 
