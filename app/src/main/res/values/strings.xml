@@ -159,7 +159,12 @@
     <string name="err_network">Нямам връзка с интернет в момента. Опитай пак след малко.</string>
     <string name="err_rate_limited">Малко съм претоварен. Дай ми минутка.</string>
     <string name="err_api_key">Липсва ми API ключ. Добави го от Настройки.</string>
-    <string name="err_api_rejected">Услугата отказа заявката. Пробвай с друга формулировка или снимка.</string>
+    <string name="err_api_rejected">Claude отказа заявката. Пробвай пак след малко.</string>
+    <string name="err_api_rejected_reason">Claude отказа заявката. Причина: %1$s</string>
+    <string name="err_api_key_invalid">Ключът за Claude не става. Провери го в Настройки или го премахни, за да работя офлайн.</string>
+    <string name="err_api_no_credit">В профила ти в Anthropic няма кредит, затова Claude не отговаря. Зареди от console.anthropic.com или премахни ключа, за да работя офлайн.</string>
+    <string name="settings_remove_key">Премахни ключа</string>
+    <string name="settings_key_removed">Ключът е премахнат. Вече работя офлайн.</string>
     <string name="err_capability">Това изисква допълнително разрешение, което още не е включено.</string>
     <string name="err_storage_full">Паметта на телефона е пълна.</string>
     <string name="err_unknown">Опа, нещо се обърка. Но съм тук!</string>

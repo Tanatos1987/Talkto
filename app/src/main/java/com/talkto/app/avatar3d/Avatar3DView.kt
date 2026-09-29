@@ -13,8 +13,10 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.talkto.app.avatar.AvatarPose
 import com.talkto.app.avatar.OutfitConfig
 import com.talkto.core.pet.LifeStage
+import com.talkto.core.touch.BodyLocator
 import com.talkto.core.touch.Touch
 import com.talkto.core.touch.TouchReaction
+import com.talkto.core.touch.TwirlInput
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -31,8 +33,10 @@ fun Avatar3DView(
     reactions: Flow<Pair<TouchReaction, Touch>>,
     lookAt: Pair<Float, Float>?,
     modifier: Modifier = Modifier,
+    body: BodyLocator? = null,
+    twirl: TwirlInput? = null,
 ) {
-    val renderer = remember { Creature3DRenderer() }
+    val renderer = remember(body, twirl) { Creature3DRenderer(body, twirl) }
     SideEffect { renderer.scene = SceneState(pose, outfit, stage, sleeping) }
     LaunchedEffect(lookAt) { lookAt?.let { (x, y) -> renderer.lookAt(x, y) } }
     LaunchedEffect(reactions) { reactions.collect { (r, t) -> renderer.react(r, t) } }

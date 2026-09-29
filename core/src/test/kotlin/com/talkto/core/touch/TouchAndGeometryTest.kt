@@ -24,8 +24,28 @@ class TouchClassifierTest {
     }
 
     @Test fun `slow stroke and long hold are gentle`() {
-        assertThat(c.classify(track(Triple(0, 100f, 100f), Triple(300, 140f, 110f), Triple(600, 180f, 120f)))!!.kind).isEqualTo(TouchKind.GENTLE)
+        assertThat(c.classify(track(Triple(0, 100f, 100f), Triple(300, 110f, 140f), Triple(600, 120f, 180f)))!!.kind).isEqualTo(TouchKind.GENTLE)
         assertThat(c.classify(track(Triple(0, 150f, 150f), Triple(700, 152f, 151f)))!!.kind).isEqualTo(TouchKind.GENTLE)
+    }
+
+    @Test fun `slow sideways drag twirls the pet`() {
+        val t = c.classify(track(Triple(0, 60f, 200f), Triple(300, 120f, 205f), Triple(600, 200f, 210f)))!!
+        assertThat(t.kind).isEqualTo(TouchKind.TWIRL)
+        assertThat(c.isTwirl(40f, 5f)).isTrue()
+        assertThat(c.isTwirl(5f, 40f)).isFalse()
+    }
+
+    @Test fun `taps land in the zone under the finger`() {
+        val body = BodyBox(0.5f, 0.5f, 0.3f, 0.3f)
+        val cls = TouchClassifier(300f, 400f, body = { body })
+        // belly: below the centre
+        assertThat(cls.classify(track(Triple(0, 150f, 260f), Triple(100, 150f, 260f)))!!.zone).isEqualTo(TouchZone.BELLY)
+        assertThat(body.zoneOf(0.5f, 0.3f)).isEqualTo(TouchZone.HEAD)
+        assertThat(body.zoneOf(0.6f, 0.45f)).isEqualTo(TouchZone.EYE)
+        assertThat(body.zoneOf(0.5f, 0.55f)).isEqualTo(TouchZone.MOUTH)
+        assertThat(body.zoneOf(0.5f, 0.78f)).isEqualTo(TouchZone.FEET)
+        assertThat(body.zoneOf(0.75f, 0.55f)).isEqualTo(TouchZone.SIDE)
+        assertThat(body.zoneOf(0.05f, 0.1f)).isEqualTo(TouchZone.MISS)
     }
 
     @Test fun `very short jab or a hard press is a hit`() {
@@ -51,7 +71,7 @@ class TemperamentTest {
     private var now = 0L
     private var dice = 0.9f
     private val t = Temperament(clock = { now }, random = { dice })
-    private fun touch(kind: TouchKind, nx: Float = 0.3f) = Touch(kind, nx, 0.5f, 0.8f)
+    private fun touch(kind: TouchKind, nx: Float = 0.3f, zone: TouchZone = TouchZone.BELLY) = Touch(kind, nx, 0.5f, 0.8f, zone)
 
     @Test fun `first slap angers, repeated slaps sadden, the head turns away from the hand`() {
         val first = t.react(touch(TouchKind.SLAP, nx = 0.2f), petHappy = true)
@@ -70,7 +90,30 @@ class TemperamentTest {
         assertThat(t.react(touch(TouchKind.GENTLE), true).line).isIn(Temperament.FORGIVE)
         now += 20 * 60_000L
         assertThat(t.upset).isLessThan(0.05f)
-        assertThat(t.react(touch(TouchKind.GENTLE), true).expression).isEqualTo(Expression.LOVE)
+        assertThat(t.react(touch(TouchKind.GENTLE, zone = TouchZone.HEAD), true).expression).isEqualTo(Expression.LOVE)
+    }
+
+    @Test fun `the same poke feels different on different parts of the body`() {
+        val eye = t.react(touch(TouchKind.POKE, zone = TouchZone.EYE), true)
+        val belly = t.react(touch(TouchKind.POKE, zone = TouchZone.BELLY), true)
+        val feet = t.react(touch(TouchKind.POKE, zone = TouchZone.FEET), true)
+        assertThat(eye.effect).isEqualTo(TouchEffect.WINCE)
+        assertThat(belly.effect).isEqualTo(TouchEffect.GIGGLE)
+        assertThat(feet.effect).isEqualTo(TouchEffect.HOP)
+        assertThat(setOf(eye.line, belly.line, feet.line)).hasSize(3)
+    }
+
+    @Test fun `lines do not repeat twice in a row`() {
+        val a = t.react(touch(TouchKind.POKE, zone = TouchZone.BELLY), true).line
+        val b = t.react(touch(TouchKind.POKE, zone = TouchZone.BELLY), true).line
+        assertThat(a).isNotEqualTo(b)
+    }
+
+    @Test fun `spinning the pet again and again makes it dizzy`() {
+        val first = t.react(touch(TouchKind.TWIRL).copy(strength = 0.6f), true)
+        assertThat(first.effect).isNotEqualTo(TouchEffect.DIZZY)
+        val later = (1..3).map { t.react(touch(TouchKind.TWIRL).copy(strength = 0.6f), true) }
+        assertThat(later.map { it.effect }).contains(TouchEffect.DIZZY)
     }
 
     @Test fun `a happy pet sometimes sticks its tongue out when patted`() {
@@ -128,5 +171,16 @@ class GeometryTest {
         s.target = 1f
         repeat(240) { s.step(1f / 60f) }
         assertThat(s.value).isWithin(1e-2f).of(1f)
+    }
+}
+
+class TwirlInputTest {
+    @Test fun `drags add up until taken and a fling is capped`() {
+        val t = TwirlInput()
+        t.drag(10f); t.drag(5f)
+        assertThat(t.take()).isEqualTo(TwirlInput.Step(15f, null, true))
+        t.release(99_999f)
+        assertThat(t.take()).isEqualTo(TwirlInput.Step(0f, TwirlInput.MAX_SPIN, false))
+        assertThat(t.take().flingDegPerS).isNull()
     }
 }

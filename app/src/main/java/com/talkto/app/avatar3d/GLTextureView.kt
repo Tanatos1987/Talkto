@@ -114,16 +114,21 @@ class GLTextureView(context: Context, private val renderer: GLSurfaceView.Render
             check(display != EGL14.EGL_NO_DISPLAY) { "No EGL display" }
             val version = IntArray(2)
             check(EGL14.eglInitialize(display, version, 0, version, 1)) { "eglInitialize failed" }
-            val attribs = intArrayOf(
-                EGL14.EGL_RED_SIZE, 8, EGL14.EGL_GREEN_SIZE, 8, EGL14.EGL_BLUE_SIZE, 8, EGL14.EGL_ALPHA_SIZE, 8,
-                EGL14.EGL_DEPTH_SIZE, 16,
-                EGL14.EGL_RENDERABLE_TYPE, EGL14.EGL_OPENGL_ES2_BIT,
-                EGL14.EGL_NONE,
-            )
-            val configs = arrayOfNulls<EGLConfig>(1)
-            val count = IntArray(1)
-            check(EGL14.eglChooseConfig(display, attribs, 0, configs, 0, 1, count, 0) && count[0] > 0) { "No RGBA8888 + depth EGL config" }
-            val config = configs[0]!!
+            // 4x MSAA smooths the round body's edges; phones without it fall back to the plain config.
+            fun choose(samples: Int): EGLConfig? {
+                val attribs = intArrayOf(
+                    EGL14.EGL_RED_SIZE, 8, EGL14.EGL_GREEN_SIZE, 8, EGL14.EGL_BLUE_SIZE, 8, EGL14.EGL_ALPHA_SIZE, 8,
+                    EGL14.EGL_DEPTH_SIZE, 16,
+                    EGL14.EGL_RENDERABLE_TYPE, EGL14.EGL_OPENGL_ES2_BIT,
+                    EGL14.EGL_SAMPLE_BUFFERS, if (samples > 0) 1 else 0,
+                    EGL14.EGL_SAMPLES, samples,
+                    EGL14.EGL_NONE,
+                )
+                val configs = arrayOfNulls<EGLConfig>(1)
+                val count = IntArray(1)
+                return if (EGL14.eglChooseConfig(display, attribs, 0, configs, 0, 1, count, 0) && count[0] > 0) configs[0] else null
+            }
+            val config = checkNotNull(choose(4) ?: choose(0)) { "No RGBA8888 + depth EGL config" }
             context = EGL14.eglCreateContext(display, config, EGL14.EGL_NO_CONTEXT, intArrayOf(EGL14.EGL_CONTEXT_CLIENT_VERSION, 2, EGL14.EGL_NONE), 0)
             check(context != EGL14.EGL_NO_CONTEXT) { "eglCreateContext failed" }
             surface = EGL14.eglCreateWindowSurface(display, config, texture, intArrayOf(EGL14.EGL_NONE), 0)

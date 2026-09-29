@@ -116,8 +116,10 @@ class AgentSession(
                     claude.send(command, onEvent)
                 } catch (t: Throwable) {
                     val err = ErrorMapper.map(t)
-                    if (err.kind != TalktoError.Kind.NETWORK || !offline.recognizes(command)) throw err
-                    offline.send(command, onEvent).let { it.copy(text = OFFLINE_FALLBACK_PREFIX + it.text) }
+                    // Whatever stops Claude (no network, no credit, a bad key, an overloaded server), a command
+                    // the offline brain knows is still carried out, and the reason is said once.
+                    if (err.kind !in FALLBACK_KINDS || !offline.recognizes(command)) throw err
+                    offline.send(command, onEvent).let { it.copy(text = fallbackPrefix(err.kind) + it.text) }
                 }
             }
             runCatching { history.record(Speaker.TALKTO, reply.text, if (online) "claude" else "offline") }
@@ -152,7 +154,16 @@ class AgentSession(
     }
 
     private companion object {
-        const val OFFLINE_FALLBACK_PREFIX = "Нямам връзка с Claude, затова го направих сам. "
+        fun fallbackPrefix(kind: TalktoError.Kind) = when (kind) {
+            TalktoError.Kind.NETWORK -> "Нямам връзка с Claude, затова го направих сам. "
+            TalktoError.Kind.API_NO_CREDIT -> "В профила за Claude няма кредит, затова го направих сам. "
+            TalktoError.Kind.API_KEY_INVALID, TalktoError.Kind.API_KEY_MISSING -> "Ключът за Claude не става, затова го направих сам. "
+            else -> "Claude не ми отговори, затова го направих сам. "
+        }
+        val FALLBACK_KINDS = setOf(
+            TalktoError.Kind.NETWORK, TalktoError.Kind.RATE_LIMITED, TalktoError.Kind.API_REJECTED,
+            TalktoError.Kind.API_NO_CREDIT, TalktoError.Kind.API_KEY_INVALID, TalktoError.Kind.API_KEY_MISSING,
+        )
         const val RESTORE_LINES = 30
         const val SEED_LINES = 20
     }

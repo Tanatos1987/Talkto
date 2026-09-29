@@ -21,6 +21,8 @@ data class UiNotice(
     @StringRes val message: Int,
     val expression: Expression,
     val technical: String,
+    /** The server's own reason, shown for refusals that the user may be able to fix. */
+    val reason: String? = null,
 )
 
 object FriendlyErrors {
@@ -35,6 +37,8 @@ object FriendlyErrors {
         TalktoError.Kind.NETWORK -> R.string.err_network
         TalktoError.Kind.RATE_LIMITED -> R.string.err_rate_limited
         TalktoError.Kind.API_KEY_MISSING -> R.string.err_api_key
+        TalktoError.Kind.API_KEY_INVALID -> R.string.err_api_key_invalid
+        TalktoError.Kind.API_NO_CREDIT -> R.string.err_api_no_credit
         TalktoError.Kind.API_REJECTED -> R.string.err_api_rejected
         TalktoError.Kind.CAPABILITY_UNAVAILABLE -> R.string.err_capability
         TalktoError.Kind.STORAGE_FULL -> R.string.err_storage_full
@@ -71,7 +75,10 @@ class GlobalErrorHandler(private val context: Context) {
         val err = runCatching { ErrorMapper.map(t) }.getOrElse { TalktoError.Unknown(t.message ?: "error", t) }
         Log.w(TAG, "[$where] ${err.kind}: ${err.message}", t)
         _notices.tryEmit(
-            UiNotice(err.kind, FriendlyErrors.messageFor(err.kind), FriendlyErrors.expressionFor(err.kind), err.message ?: ""),
+            UiNotice(
+                err.kind, FriendlyErrors.messageFor(err.kind), FriendlyErrors.expressionFor(err.kind), err.message ?: "",
+                reason = if (err.kind == TalktoError.Kind.API_REJECTED) err.message?.substringAfter(": ", "")?.takeIf { it.isNotBlank() } else null,
+            ),
         )
     }
 

@@ -15,14 +15,22 @@ import com.talkto.core.avatar3d.Mesh
 import com.talkto.core.avatar3d.Primitives
 import com.talkto.core.avatar3d.Spring
 import com.talkto.core.pet.LifeStage
+import com.talkto.core.touch.BodyBox
+import com.talkto.core.touch.BodyLocator
 import com.talkto.core.touch.Touch
+import com.talkto.core.touch.TouchEffect
 import com.talkto.core.touch.TouchReaction
+import com.talkto.core.touch.TwirlInput
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.ConcurrentLinkedQueue
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.exp
+import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.random.Random
 
@@ -43,8 +51,15 @@ data class SceneState(
  * vinyl-like body reads well on small screens. The face is built from primitives that animate directly:
  * eyelids blink by scaling the eyes, the mouth ellipsoid follows the lip-sync viseme, the tongue slides out,
  * and springs drive every physical reaction (slap recoil, hit squash, pat bounce, lean into a caress).
+ *
+ * A sideways drag turns the creature with the finger ([twirl]) and a flick keeps it spinning; when it slows down
+ * it turns back to face the user. Every frame the body's screen position goes to [body], so a touch can tell the
+ * belly from an eye.
  */
-class Creature3DRenderer : GLSurfaceView.Renderer {
+class Creature3DRenderer(
+    private val body: BodyLocator? = null,
+    private val twirl: TwirlInput? = null,
+) : GLSurfaceView.Renderer {
 
     @Volatile var scene = SceneState()
 
@@ -90,6 +105,8 @@ class Creature3DRenderer : GLSurfaceView.Renderer {
 
     private var viewProj = Mat4.identity()
     private val eye = floatArrayOf(0f, 0.25f, 5.4f)
+    private var aspect = 1f
+    private var cameraStage = -1f
 
     // --------------------------------------------------------------------- animation state
 
@@ -112,6 +129,15 @@ class Creature3DRenderer : GLSurfaceView.Renderer {
     private var mouthWide = 0.5f
     private var tongue = 0f
     private var wander = 0f
+
+    // Finger turning and touch effects.
+    private var spin = 0f
+    private var spinVel = 0f
+    private var spinHeld = false
+    private var winceUntil = -1f
+    private var giggleUntil = -1f
+    private var dizzyUntil = -1f
+    private var lookHoldUntil = -1f
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         program = link(VERTEX, FRAGMENT)
@@ -142,11 +168,23 @@ class Creature3DRenderer : GLSurfaceView.Renderer {
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
         GLES20.glViewport(0, 0, width, height)
-        val aspect = width.toFloat() / height.coerceAtLeast(1)
-        // Keep the whole creature (hats included) in frame in portrait and landscape.
-        val fov = if (aspect < 1f) 34f / aspect.coerceAtLeast(0.6f) else 34f
+        aspect = width.toFloat() / height.coerceAtLeast(1)
+        cameraStage = -1f
+    }
+
+    /**
+     * Frames the creature by its size: a baby is seen from closer up, so it never looks lost on the stage,
+     * yet an adult still reads as bigger. Hats stay in frame in portrait and landscape.
+     */
+    private fun updateCamera(stageScale: Float) {
+        if (stageScale == cameraStage) return
+        cameraStage = stageScale
+        val fov = if (aspect < 1f) 28f / aspect.coerceAtLeast(0.6f) else 28f
+        val distance = 4.2f + 1.4f * stageScale
+        val centerY = -1f + stageScale * 1.15f
+        eye[0] = 0f; eye[1] = centerY + 0.35f; eye[2] = distance
         val proj = Mat4.perspective(fov.coerceAtMost(60f), aspect, 0.5f, 20f)
-        val view = Mat4.lookAt(eye[0], eye[1], eye[2], 0f, 0.1f, 0f)
+        val view = Mat4.lookAt(eye[0], eye[1], eye[2], 0f, centerY, 0f)
         viewProj = Mat4.multiply(proj, view)
     }
 
@@ -176,8 +214,38 @@ class Creature3DRenderer : GLSurfaceView.Renderer {
             yaw.kick(r.recoilYaw * 9f)
             squash.kick(r.squash * 14f)
             if (r.gesture == Gesture.BOUNCE) hop.kick(5f)
-            // Lean into a caress, towards where the finger was.
-            if (r.expression == Expression.LOVE) roll.kick((touch.nx - 0.5f) * -60f)
+            when (r.effect) {
+                TouchEffect.WINCE -> winceUntil = time + 0.9f
+                TouchEffect.GIGGLE -> giggleUntil = time + 1.4f
+                TouchEffect.HOP -> hop.kick(11f)
+                // Pushed away from the finger: leans and tips back.
+                TouchEffect.PUSH -> { roll.kick((touch.nx - 0.5f) * 400f); pitch.kick((touch.ny - 0.5f) * -250f) }
+                TouchEffect.DIZZY -> dizzyUntil = time + 3f
+                // Turns towards what the finger pointed at.
+                TouchEffect.LOOK -> { lookHoldUntil = time + 2.5f; yaw.kick((touch.nx - 0.5f) * 500f) }
+                // Leans into a caress, towards where the finger was.
+                TouchEffect.LEAN -> roll.kick((touch.nx - 0.5f) * -300f)
+                TouchEffect.NUZZLE -> { pitch.kick(-200f); squash.kick(2f) }
+                TouchEffect.NONE -> Unit
+            }
+        }
+        twirl?.take()?.let { step ->
+            spin += step.dragDeg
+            spinHeld = step.dragging
+            if (step.dragging) spinVel = 0f
+            step.flingDegPerS?.let { spinVel = it }
+        }
+        if (!spinHeld) {
+            if (abs(spinVel) > 30f) {
+                spin += spinVel * dt
+                spinVel *= exp(-1.6f * dt)
+            } else {
+                // Slowed down: turn back to face the user the short way round.
+                spinVel = 0f
+                val home = (spin / 360f).roundToInt() * 360f
+                spin = Ease.approach(spin, home, 3f, dt)
+                if (abs(spin - home) < 0.3f) spin -= home
+            }
         }
         if (s.pose.gestureId != lastGestureId) {
             lastGestureId = s.pose.gestureId
@@ -197,14 +265,34 @@ class Creature3DRenderer : GLSurfaceView.Renderer {
         }
         pitch.target = if (gesture == Gesture.NOD) wave * 18f else if (s.pose.expression == Expression.THINKING) -8f else 0f
         roll.target = if (gesture == Gesture.WAVE) wave * 10f else if (s.pose.expression == Expression.CONFUSED) 12f else 0f
+        // Alive when idle: a slow sway and a look around, so it reads as a round 3D toy, not a flat sticker.
+        if (!s.sleeping && (gesture == Gesture.NONE || g >= 1f)) {
+            yaw.target += sin(time * 0.31f) * 16f + sin(time * 0.83f) * 5f
+            roll.target += sin(time * 0.57f) * 3f
+        }
+        if (time < giggleUntil) {
+            roll.target += sin(time * 26f) * 7f
+            squash.target = (sin(time * 18f) * 0.08f).coerceAtLeast(0f)
+        } else {
+            squash.target = 0f
+        }
+        if (time < dizzyUntil) {
+            val k = ((dizzyUntil - time) / 3f).coerceIn(0f, 1f)
+            roll.target += sin(time * 5f) * 14f * k
+            pitch.target += cos(time * 5f) * 8f * k
+        }
         if (gesture == Gesture.BOUNCE && g < 0.05f) hop.kick(6f)
         yaw.step(dt); pitch.step(dt); roll.step(dt); squash.step(dt); hop.step(dt)
 
         // Eyes: follow the finger, otherwise wander a little.
         wander += dt
-        val target = lookTarget?.takeIf { now < lookUntilNs }
-        val tx = target?.let { (it.first - 0.5f) * 2f } ?: (sin(wander * 0.7f) * 0.35f)
-        val ty = target?.let { (0.5f - it.second) * 2f } ?: (sin(wander * 0.43f) * 0.2f)
+        val target = lookTarget?.takeIf { now < lookUntilNs || time < lookHoldUntil }
+        var tx = target?.let { (it.first - 0.5f) * 2f } ?: (sin(wander * 0.7f) * 0.35f)
+        var ty = target?.let { (0.5f - it.second) * 2f } ?: (sin(wander * 0.43f) * 0.2f)
+        if (time < dizzyUntil) {
+            // Eyes roll round and round.
+            tx = cos(time * 9f); ty = sin(time * 9f)
+        }
         lookX = Ease.approach(lookX, tx.coerceIn(-1f, 1f), 10f, dt)
         lookY = Ease.approach(lookY, ty.coerceIn(-1f, 1f), 10f, dt)
 
@@ -235,13 +323,15 @@ class Creature3DRenderer : GLSurfaceView.Renderer {
             LifeStage.TEEN -> 0.93f
             LifeStage.ADULT -> 1f
         }
+        updateCamera(stageScale)
         val breath = sin(time * if (s.sleeping) 1.4f else 2.1f) * 0.018f
         val sq = squash.value.coerceIn(-0.4f, 0.6f)
         // Root: stands on the floor (y = -1), scales from the feet, turns and tilts as one body.
         var root = Mat4.translation(0f, -1f + hop.value.coerceAtLeast(0f) * 0.08f, 0f)
         root = Mat4.multiply(root, Mat4.scale(stageScale * (1f + sq * 0.35f), stageScale * (1f - sq * 0.5f + breath), stageScale * (1f + sq * 0.25f)))
         root = Mat4.multiply(root, Mat4.translation(0f, 1f, 0f))
-        root = Mat4.multiply(root, Mat4.rotationY(yaw.value))
+        publishBody(root)
+        root = Mat4.multiply(root, Mat4.rotationY(yaw.value + spin))
         root = Mat4.multiply(root, Mat4.rotationX(pitch.value))
         root = Mat4.multiply(root, Mat4.rotationZ(roll.value))
 
@@ -269,6 +359,21 @@ class Creature3DRenderer : GLSurfaceView.Renderer {
         }
     }
 
+    /** Projects the body centre and its radii to the view (0..1), for touch zones. Rotation does not move them. */
+    private fun publishBody(base: FloatArray) {
+        val locator = body ?: return
+        val mvp = Mat4.multiply(viewProj, base)
+        fun screen(x: Float, y: Float, z: Float): FloatArray {
+            val c = Mat4.transform(mvp, x, y, z)
+            val w = if (abs(c[3]) < 1e-5f) 1f else c[3]
+            return floatArrayOf((c[0] / w + 1f) / 2f, (1f - c[1] / w) / 2f)
+        }
+        val c = screen(0f, 0f, 0f)
+        val right = screen(1f, 0f, 0f)
+        val top = screen(0f, 0.93f, 0f)
+        locator.box = BodyBox(c[0], c[1], abs(right[0] - c[0]), abs(c[1] - top[1]))
+    }
+
     private fun drawFace(root: FloatArray, e: Expression, s: SceneState, ink: FloatArray) {
         val white = rgb(0xFFFFFF)
         val eyeOpen = when {
@@ -277,7 +382,7 @@ class Creature3DRenderer : GLSurfaceView.Renderer {
             e == Expression.HAPPY || e == Expression.TONGUE -> 0.6f
             e == Expression.SURPRISED -> 1.2f
             else -> 1f
-        } * (1f - blink * 0.92f)
+        } * (1f - blink * 0.92f) * (if (time < winceUntil) 0.06f else 1f)
         val pupilColor = if (e == Expression.LOVE) rgb(0xF15BB5) else ink
         val pupilSize = if (e == Expression.LOVE) 0.13f else if (e == Expression.SURPRISED) 0.08f else 0.1f
         for (side in listOf(-1f, 1f)) {
@@ -334,16 +439,27 @@ class Creature3DRenderer : GLSurfaceView.Renderer {
         val cloth = argb(o.clothesColor)
         val gold = rgb(0xFFC857)
         when (o.hat) {
-            Hat.NONE -> Unit
+            // No hat: a little sprout, ZnaiKo's trademark, sways as it moves.
+            Hat.NONE -> {
+                val sway = sin(time * 1.7f) * 8f + roll.value * 0.6f
+                val stem = Mat4.multiply(root, Mat4.multiply(Mat4.translation(0f, 0.9f, 0f), Mat4.rotationZ(sway)))
+                val leaf = rgb(0x4FA85E)
+                part(tube, stem, leaf, t = floatArrayOf(0f, 0.12f, 0f), sc = floatArrayOf(0.035f, 0.26f, 0.035f), shine = 0.2f)
+                for (side in listOf(-1f, 1f)) {
+                    val m = Mat4.multiply(stem, Mat4.multiply(Mat4.translation(0.12f * side, 0.27f, 0f), Mat4.rotationZ(-50f * side)))
+                    part(sphere, m, leaf, sc = floatArrayOf(0.16f, 0.07f, 0.1f), shine = 0.5f, rim = 0.5f)
+                }
+            }
             Hat.PARTY -> {
                 val m = Mat4.multiply(root, Mat4.multiply(Mat4.translation(0.12f, 0.8f, 0f), Mat4.rotationZ(-12f)))
                 part(cone, m, hat, sc = floatArrayOf(0.34f, 0.8f, 0.34f), shine = 0.4f)
                 part(sphere, m, gold, t = floatArrayOf(0f, 0.82f, 0f), sc = floatArrayOf(0.09f, 0.09f, 0.09f))
             }
             Hat.BEANIE -> {
-                part(hemisphere, root, hat, t = floatArrayOf(0f, 0.3f, 0f), sc = floatArrayOf(0.96f, 0.66f, 0.92f), shine = 0.1f)
-                part(tube, root, darken(hat), t = floatArrayOf(0f, 0.34f, 0f), sc = floatArrayOf(0.97f, 0.14f, 0.93f), shine = 0.1f)
-                part(sphere, root, rgb(0xFFFFFF), t = floatArrayOf(0f, 1.0f, 0f), sc = floatArrayOf(0.12f, 0.12f, 0.12f), shine = 0f)
+                // Sits above the eyes (their top edge is at y = 0.42).
+                part(hemisphere, root, hat, t = floatArrayOf(0f, 0.47f, 0f), sc = floatArrayOf(0.86f, 0.6f, 0.84f), shine = 0.1f)
+                part(tube, root, darken(hat), t = floatArrayOf(0f, 0.5f, 0f), sc = floatArrayOf(0.87f, 0.11f, 0.85f), shine = 0.1f)
+                part(sphere, root, rgb(0xFFFFFF), t = floatArrayOf(0f, 1.1f, 0f), sc = floatArrayOf(0.12f, 0.12f, 0.12f), shine = 0f)
             }
             Hat.CROWN -> {
                 part(tube, root, gold, t = floatArrayOf(0f, 0.98f, 0f), sc = floatArrayOf(0.42f, 0.26f, 0.42f), shine = 1f)
@@ -359,8 +475,9 @@ class Creature3DRenderer : GLSurfaceView.Renderer {
                 part(tube, root, hat, t = floatArrayOf(0f, 0.93f, 0f), sc = floatArrayOf(0.455f, 0.1f, 0.455f))
             }
             Hat.CAP -> {
-                part(hemisphere, root, hat, t = floatArrayOf(0f, 0.36f, 0f), sc = floatArrayOf(0.9f, 0.55f, 0.88f), shine = 0.2f)
-                part(sphere, root, darken(hat), t = floatArrayOf(0f, 0.42f, 0.72f), sc = floatArrayOf(0.5f, 0.04f, 0.42f))
+                part(hemisphere, root, hat, t = floatArrayOf(0f, 0.5f, 0f), sc = floatArrayOf(0.84f, 0.5f, 0.82f), shine = 0.25f)
+                // The brim sticks out forward above the eyes instead of covering them.
+                part(sphere, root, darken(hat), t = floatArrayOf(0f, 0.55f, 0.72f), sc = floatArrayOf(0.46f, 0.035f, 0.36f))
             }
         }
         when (o.glasses) {
@@ -508,14 +625,23 @@ class Creature3DRenderer : GLSurfaceView.Renderer {
             varying vec3 vW;
             void main() {
                 vec3 n = normalize(vN);
-                vec3 l = normalize(vec3(-0.45, 0.8, 0.6));
                 vec3 v = normalize(uEye - vW);
+                // Warm key light from the top left, cool fill from the right, sky/ground ambient.
+                vec3 l = normalize(vec3(-0.45, 0.8, 0.6));
+                vec3 l2 = normalize(vec3(0.75, 0.15, 0.5));
                 vec3 h = normalize(l + v);
-                float wrap = max(dot(n, l) * 0.7 + 0.3, 0.0);
-                float spec = pow(max(dot(n, h), 0.0), 36.0) * uShine;
-                float rim = pow(1.0 - max(dot(n, v), 0.0), 2.5) * uRim;
-                vec3 fill = vec3(0.10, 0.09, 0.14) * (1.0 - wrap);
-                vec3 c = uColor * (0.32 + 0.68 * wrap) + fill + vec3(spec) + vec3(0.9, 0.95, 1.0) * rim * 0.35;
+                float key = max(dot(n, l) * 0.6 + 0.4, 0.0);
+                key *= key;
+                float fill = max(dot(n, l2), 0.0) * 0.28;
+                vec3 ambient = mix(vec3(0.20, 0.17, 0.23), vec3(0.40, 0.45, 0.56), n.y * 0.5 + 0.5);
+                float nh = max(dot(n, h), 0.0);
+                float spec = (pow(nh, 56.0) * 0.9 + pow(nh, 10.0) * 0.07) * uShine;
+                float fres = pow(1.0 - max(dot(n, v), 0.0), 3.0) * uRim;
+                // Contact darkening near the floor (y = -1) grounds the body.
+                float ao = mix(0.7, 1.0, smoothstep(-1.15, -0.35, vW.y));
+                vec3 c = uColor * (ambient + vec3(1.0, 0.96, 0.9) * key * 0.85 + vec3(0.8, 0.9, 1.0) * fill) * ao;
+                c += vec3(spec) + vec3(0.85, 0.93, 1.0) * fres * 0.45;
+                c = c / (1.0 + c * 0.15) * 1.1;
                 gl_FragColor = vec4(c, uAlpha);
             }
         """

@@ -196,12 +196,19 @@ fun TamagotchiScreen(vm: MainViewModel) {
                     reactions = vm.reactions,
                     lookAt = lookAt,
                     modifier = stageModifier,
+                    body = vm.body,
+                    twirl = vm.twirl,
                 )
             } else {
                 AvatarStage(visual = visual, pose = pose, outfit = outfit, sleeping = pet.sleeping, stage = pet.stage, modifier = stageModifier)
             }
             // Transparent layer above either renderer: slaps, hits, pats and caresses.
-            Box(stageModifier.petTouches(onDown = vm::onTouchDown, onTouch = vm::onTouch))
+            Box(
+                stageModifier.petTouches(
+                    body = vm.body, onDown = vm::onTouchDown, onTouch = vm::onTouch,
+                    onTwirl = vm.twirl::drag, onTwirlEnd = vm.twirl::release,
+                ),
+            )
             SpeechBubble(
                 text = when {
                     agent.busy && agent.activeTool != null -> stringResource(R.string.tool_running, toolLabel(agent.activeTool!!))
@@ -304,8 +311,12 @@ private fun Header(online: Boolean, onSettings: () -> Unit) {
             )
         }
         Spacer(Modifier.weight(1f))
-        IconButton(onClick = onSettings) {
-            Icon(Icons.Rounded.Settings, contentDescription = stringResource(R.string.action_settings))
+        // A filled, high-contrast button: the gear must be easy to find on every mood background and theme.
+        IconButton(
+            onClick = onSettings,
+            modifier = Modifier.size(44.dp).clip(CircleShape).background(TalktoColors.Sunflower),
+        ) {
+            Icon(Icons.Rounded.Settings, contentDescription = stringResource(R.string.action_settings), tint = TalktoColors.Ink, modifier = Modifier.size(26.dp))
         }
     }
 }
@@ -753,7 +764,11 @@ private fun SettingsSheet(
             Spacer(Modifier.height(12.dp))
             KeyField(stringResource(R.string.settings_anthropic_key), claudeKey, settings.hasClaudeKey) { claudeKey = it }
             KeyField(stringResource(R.string.settings_stability_key), stabilityKey, !settings.stabilityKey.isNullOrBlank()) { stabilityKey = it }
-            if (!settings.hasClaudeKey) {
+            if (settings.hasClaudeKey) {
+                OutlinedButton(onClick = vm::removeClaudeKey, modifier = Modifier.padding(bottom = 4.dp)) {
+                    Text(stringResource(R.string.settings_remove_key))
+                }
+            } else {
                 Text(stringResource(R.string.settings_offline_note), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 6.dp))
             }
             Text(stringResource(R.string.settings_keys_note), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 6.dp))

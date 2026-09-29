@@ -28,7 +28,10 @@ import com.talkto.core.history.Utterance
 import com.talkto.core.scene.MoodScene
 import com.talkto.core.memory.Habit
 import com.talkto.core.profile.Fact
+import com.talkto.core.touch.BodyLocator
 import com.talkto.core.touch.Touch
+import com.talkto.core.touch.TouchKind
+import com.talkto.core.touch.TwirlInput
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -80,7 +83,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _systemLine.value = SystemLine(first, System.currentTimeMillis())
         }
         viewModelScope.launch {
-            c.errors.notices.collect { n -> say(n.message, n.expression) }
+            c.errors.notices.collect { n ->
+                if (n.reason != null) say(R.string.err_api_rejected_reason, n.expression, n.reason) else say(n.message, n.expression)
+            }
         }
         viewModelScope.launch {
             c.pet.levelUps.collect { level -> say(R.string.level_up, Expression.LOVE, level) }
@@ -146,6 +151,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val reactions = c.avatar.reactions
 
+    /** Where the 3D body is on screen (written by the renderer), so a touch knows which part it hit. */
+    val body = BodyLocator()
+
+    /** Sideways drags that turn the 3D pet. */
+    val twirl = TwirlInput()
+
     fun onTouchDown(nx: Float, ny: Float) {
         _lookAt.value = nx to ny
     }
@@ -156,6 +167,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val r = c.temperament.react(touch, petHappy = happy)
         c.pet.touched(r.happinessDelta, r.bondDelta)
         c.avatar.react(r, touch)
+        // The flat 2D pet cannot be turned by the finger, so a twirl plays its spin instead.
+        if (touch.kind == TouchKind.TWIRL && !c.settings.settings.value.avatar3d) c.avatar.play(AnimationCommand(r.expression, Gesture.SPIN))
         r.line?.let { line ->
             _systemLine.value = SystemLine(0, System.currentTimeMillis(), text = line)
             viewModelScope.launch { c.avatar.speak(line, voice = c.settings.settings.value.voiceEnabled) }
@@ -184,6 +197,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ---------------------------------------------------------------- settings
 
     fun saveKeys(anthropic: String?, stability: String?) = viewModelScope.launch { c.settings.saveKeys(anthropic, stability) }
+
+    /** Forgets the Claude key: ZnaiKo goes back to offline mode at once. */
+    fun removeClaudeKey() = viewModelScope.launch {
+        c.settings.saveKeys(anthropic = "", stability = null)
+        c.agentSession.newConversation()
+        say(R.string.settings_key_removed, Expression.HAPPY)
+    }
 
     fun setVoice(enabled: Boolean) = viewModelScope.launch { c.settings.setVoice(enabled) }
 

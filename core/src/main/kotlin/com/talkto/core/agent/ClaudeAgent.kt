@@ -3,6 +3,7 @@ package com.talkto.core.agent
 import com.anthropic.client.AnthropicClient
 import com.anthropic.core.JsonValue
 import com.anthropic.core.jsonMapper
+import com.anthropic.errors.BadRequestException
 import com.anthropic.models.messages.CacheControlEphemeral
 import com.anthropic.models.messages.ContentBlockParam
 import com.anthropic.models.messages.Message
@@ -13,6 +14,7 @@ import com.anthropic.models.messages.StopReason
 import com.anthropic.models.messages.TextBlockParam
 import com.anthropic.models.messages.ToolResultBlockParam
 import com.talkto.core.error.ErrorMapper
+import com.talkto.core.error.TalktoError
 import com.talkto.core.memory.MemoryRepository
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -24,7 +26,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 
 data class AgentConfig(
-    val model: String = "claude-opus-5",
+    val model: String = "claude-opus-5-5",
     val maxTokens: Long = 16_000,
     /** Short, spoken replies and simple tool chains: medium keeps latency low on a phone. Raise for heavier tasks. */
     val effort: OutputConfig.Effort = OutputConfig.Effort.MEDIUM,
@@ -114,12 +116,24 @@ class ClaudeAgent(
         require(userText.isNotBlank()) { "Empty message" }
         trimHistory()
         val checkpoint = history.size
-        history += MessageParam.builder().role(MessageParam.Role.USER).content(userText.trim()).build()
+        val user = MessageParam.builder().role(MessageParam.Role.USER).content(userText.trim()).build()
+        history += user
         try {
             runLoop(onEvent).also { if (it.refused) rollback(checkpoint) }
         } catch (t: Throwable) {
             rollback(checkpoint)
-            throw ErrorMapper.map(t)
+            val err = ErrorMapper.map(t)
+            // A conversation the API no longer accepts (seeded from an old log, trimmed, or cut by a crash) must not
+            // block every later turn: start over with only this message, once.
+            if (err.kind != TalktoError.Kind.API_REJECTED || t !is BadRequestException || checkpoint == 0) throw err
+            history.clear()
+            history += user
+            try {
+                runLoop(onEvent).also { if (it.refused) history.clear() }
+            } catch (t2: Throwable) {
+                history.clear()
+                throw ErrorMapper.map(t2)
+            }
         }
     }
 

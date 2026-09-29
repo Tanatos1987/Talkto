@@ -9,6 +9,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.core.content.ContextCompat
 import com.talkto.app.ui.MainViewModel
 import com.talkto.app.ui.TamagotchiScreen
@@ -28,7 +30,10 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             TalktoTheme {
-                TamagotchiScreen(vm)
+                // The Surface sets the content colour, so icons and labels are light on the dark shell (not black).
+                Surface(color = MaterialTheme.colorScheme.background, contentColor = MaterialTheme.colorScheme.onBackground) {
+                    TamagotchiScreen(vm)
+                }
             }
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
