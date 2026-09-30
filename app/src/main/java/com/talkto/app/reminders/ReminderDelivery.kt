@@ -56,11 +56,10 @@ class AndroidReminderScheduler(private val context: Context) : ReminderScheduler
         fun notify(base: Context, reminder: Reminder) {
             val context = LanguageRepository.localized(base, LanguageRepository.read(base))
             val nm = context.getSystemService(NotificationManager::class.java)
-            if (nm.getNotificationChannel(CHANNEL_ID) == null) {
-                nm.createNotificationChannel(
-                    NotificationChannel(CHANNEL_ID, context.getString(R.string.notif_channel_reminders), NotificationManager.IMPORTANCE_HIGH),
-                )
-            }
+            // Created every time: the same id only renames the channel, so it follows ZnaiKo's language.
+            nm.createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, context.getString(R.string.notif_channel_reminders), NotificationManager.IMPORTANCE_HIGH),
+            )
             val open = PendingIntent.getActivity(
                 context, 0, Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,

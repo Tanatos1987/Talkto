@@ -248,4 +248,5 @@
     <string name="lesson_again">Още един урок</string>
     <string name="lesson_progress">%1$d / %2$d</string>
     <string name="lesson_mic">Кажи го</string>
+    <string name="language_switched">Ура! Вече говоря на български. 🇧🇬</string>
 </resources>

@@ -92,11 +92,10 @@ class AgentService : LifecycleService() {
         fun ensureChannel(base: Context) {
             val context = LanguageRepository.localized(base, LanguageRepository.read(base))
             val nm = context.getSystemService(NotificationManager::class.java)
-            if (nm.getNotificationChannel(CHANNEL_ID) == null) {
-                nm.createNotificationChannel(
-                    NotificationChannel(CHANNEL_ID, context.getString(R.string.notif_channel_agent), NotificationManager.IMPORTANCE_DEFAULT),
-                )
-            }
+            // Created every time: the same id only renames the channel, so it follows ZnaiKo's language.
+            nm.createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, context.getString(R.string.notif_channel_agent), NotificationManager.IMPORTANCE_DEFAULT),
+            )
         }
 
         /** Shown when a tool waits for a yes/no while ZnaiKo is not on screen. */

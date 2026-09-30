@@ -203,6 +203,7 @@ fun TamagotchiScreen(vm: MainViewModel) {
             onCoins = { sheet = Sheet.SHOP },
             onHouse = { sheet = Sheet.HOUSE },
             onSettings = { vm.loadHabits(); vm.loadProfile(); sheet = Sheet.SETTINGS },
+            onLanguage = vm::toggleLanguage,
         )
         StatsRow(pet)
         if (!permissions.allFiles) PermissionBanner()
@@ -390,23 +391,30 @@ private fun Header(
     onCoins: () -> Unit,
     onHouse: () -> Unit,
     onSettings: () -> Unit,
+    onLanguage: () -> Unit = {},
 ) {
     Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        com.talkto.app.ui.components.ZnaiKoLogo(size = 26.sp)
-        Spacer(Modifier.width(8.dp))
-        // Mode badge: tapping it opens Settings, where the key can be added.
-        Surface(
-            shape = RoundedCornerShape(50),
-            color = if (online) TalktoColors.Mint.copy(alpha = 0.35f) else TalktoColors.Sunflower.copy(alpha = 0.45f),
-            modifier = Modifier.clip(RoundedCornerShape(50)).clickable(onClick = onSettings),
-        ) {
-            Text(
-                stringResource(if (online) R.string.mode_online else R.string.mode_offline),
-                style = MaterialTheme.typography.labelSmall,
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-            )
-        }
+        com.talkto.app.ui.components.ZnaiKoLogo(size = 24.sp)
+        Spacer(Modifier.width(6.dp))
+        // Mode badge, an emoji so it fits narrow phones next to the flag: tapping it opens Settings, where the key can be added.
+        val mode = stringResource(if (online) R.string.mode_online else R.string.mode_offline)
+        Box(
+            Modifier.size(30.dp).clip(CircleShape)
+                .background(if (online) TalktoColors.Mint.copy(alpha = 0.35f) else TalktoColors.Sunflower.copy(alpha = 0.45f))
+                .clickable(onClickLabel = mode, onClick = onSettings)
+                .semantics { contentDescription = mode },
+            contentAlignment = Alignment.Center,
+        ) { Text(if (online) "🌐" else "📴", fontSize = 16.sp) }
         Spacer(Modifier.weight(1f))
+        // The language flag: one tap switches the screens, the voice and the replies between Bulgarian and English.
+        val bulgarian = com.talkto.app.i18n.screenLang() == com.talkto.core.i18n.Lang.BG
+        Box(
+            Modifier.size(40.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant).clickable(
+                onClickLabel = if (bulgarian) "Switch to English" else "Превключи на български", onClick = onLanguage,
+            ).semantics { contentDescription = if (bulgarian) "Език: български. Докосни за английски." else "Language: English. Tap for Bulgarian." },
+            contentAlignment = Alignment.Center,
+        ) { Text(if (bulgarian) "🇧🇬" else "🇬🇧", fontSize = 22.sp) }
+        Spacer(Modifier.width(6.dp))
         // Coins, with each new gain floating up from them.
         Box(contentAlignment = Alignment.Center) {
             CoinsPill(coins, onCoins)

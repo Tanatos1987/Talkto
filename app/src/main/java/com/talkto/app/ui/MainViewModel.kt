@@ -116,7 +116,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** "Научи ме на английски" said in the chat: open the lessons. */
     val lessonRequests = c.agentSession.lessonRequests
 
-    fun setLanguage(lang: Lang) = c.language.set(lang)
+    /**
+     * Switches everything to [lang]: the screens (the activity is rebuilt with the new resources), ZnaiKo's voice and
+     * replies, and what the microphone listens for. ZnaiKo says so in the new language, so the change is heard at once.
+     */
+    fun setLanguage(lang: Lang) {
+        if (lang == c.language.current) return
+        c.avatar.stopSpeaking()
+        c.language.set(lang)
+        viewModelScope.launch {
+            val listening = c.settings.settings.value.voiceLanguage
+            if (listening != VoiceLanguage.AUTO.name) c.settings.setVoiceLanguage(if (lang == Lang.EN) VoiceLanguage.EN.name else VoiceLanguage.BG.name)
+            say(R.string.language_switched, Expression.HAPPY)
+        }
+    }
+
+    /** The flag on the main screen: Bulgarian <-> English. */
+    fun toggleLanguage() = setLanguage(if (c.language.current == Lang.BG) Lang.EN else Lang.BG)
 
     fun setLearnTarget(lang: Lang) = c.learning.setTarget(lang)
 
