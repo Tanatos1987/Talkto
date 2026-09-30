@@ -1068,7 +1068,8 @@ private fun BackgroundsSheet(vm: MainViewModel, onDismiss: () -> Unit) {
                 Switch(checked = config.enabled, onCheckedChange = vm::setBackgroundsEnabled)
             }
             Text(stringResource(R.string.backgrounds_note), style = MaterialTheme.typography.bodyMedium)
-            Button(
+            // The Google Play version has no gallery permission: photos are picked one by one below.
+            if (!com.talkto.app.BuildConfig.PLAY_STORE) Button(
                 onClick = {
                     val perm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) Manifest.permission.READ_MEDIA_IMAGES else Manifest.permission.READ_EXTERNAL_STORAGE
                     if (StorageAccess.hasAllFilesAccess() || ContextCompat.checkSelfPermission(ctx, perm) == PackageManager.PERMISSION_GRANTED) vm.autoFillBackgrounds()

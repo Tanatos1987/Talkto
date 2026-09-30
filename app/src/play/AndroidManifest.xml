@@ -6,6 +6,11 @@
 
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:node="remove" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:node="remove" />
+    <!-- Photos come through the system photo picker, which needs no permission; the whole-gallery search for mood
+         backgrounds is left out of this version (Play allows broad photo access only as a core feature). -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:node="remove" />
 
     <application>
         <service android:name=".apps.TalktoAccessibilityService" tools:node="remove" />
