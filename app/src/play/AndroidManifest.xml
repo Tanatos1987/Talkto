@@ -9,5 +9,16 @@
 
     <application>
         <service android:name=".apps.TalktoAccessibilityService" tools:node="remove" />
+        <!-- Same service as in the main manifest; the type is repeated here so lint sees it for this version, and the
+             reason Play reads says what this version does (no file management or app control here). -->
+        <service
+            android:name=".agent.AgentService"
+            android:foregroundServiceType="specialUse"
+            tools:node="merge">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="On-device AI companion finishing a reply the user asked for while the app is in the background."
+                tools:replace="android:value" />
+        </service>
     </application>
 </manifest>
