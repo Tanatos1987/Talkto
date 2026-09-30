@@ -2,7 +2,7 @@
 
 *Последна промяна: 30 септември 2026 г.*
 
-„Знайко“ е приложение за Android: говорещ любимец, който учи и играе с детето. Тази страница описва какви данни ползва приложението, къде отиват и как се изтриват. Тя се отнася до версията в Google Play (`znaiko.app`).
+„Знайко“ е приложение за Android: говорещ любимец, който учи и играе с детето. Тази страница описва какви данни ползва приложението, къде отиват и как се изтриват. Тя се отнася до версията в Google Play (`znaiKo.app`).
 
 ## Кратко
 
@@ -57,7 +57,7 @@
 
 *Last updated: 30 September 2026*
 
-ZnaiKo is an Android app: a talking pet that learns and plays with a child. This page describes what data the app uses, where it goes and how it is deleted. It covers the Google Play version (`znaiko.app`).
+ZnaiKo is an Android app: a talking pet that learns and plays with a child. This page describes what data the app uses, where it goes and how it is deleted. It covers the Google Play version (`znaiKo.app`).
 
 ## In short
 

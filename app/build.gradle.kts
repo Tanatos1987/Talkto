@@ -48,7 +48,7 @@ android {
         }
         create("play") {
             dimension = "store"
-            applicationId = "znaiko.app"
+            applicationId = "znaiKo.app"
             buildConfigField("boolean", "PLAY_STORE", "true")
         }
     }
