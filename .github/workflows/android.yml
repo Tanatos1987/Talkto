@@ -30,25 +30,25 @@ jobs:
         run: ./gradlew :core:test --stacktrace
 
       - name: App unit tests (Robolectric)
-        run: ./gradlew :app:testDebugUnitTest --stacktrace
+        run: ./gradlew :app:testFullDebugUnitTest --stacktrace
 
       - name: Lint
-        run: ./gradlew :app:lintDebug
+        run: ./gradlew :app:lintFullDebug :app:lintPlayDebug
 
       - name: Build debug APK
-        run: ./gradlew :app:assembleDebug
+        run: ./gradlew :app:assembleFullDebug
 
       - uses: actions/upload-artifact@v4
         with:
           name: talkto-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/full/debug/*.apk
           if-no-files-found: error
 
       # The Play Store takes an Android App Bundle. Without the signing secrets it is built unsigned
       # (sign it before uploading); with them CI signs both the release APK and the bundle.
       - name: Build release bundle (AAB)
         if: env.HAS_KEYSTORE != 'true'
-        run: ./gradlew :app:bundleRelease
+        run: ./gradlew :app:bundlePlayRelease
 
       - name: Build signed release APK and bundle
         if: env.HAS_KEYSTORE == 'true'
@@ -59,19 +59,19 @@ jobs:
           TALKTO_KEY_PASSWORD: ${{ secrets.TALKTO_KEY_PASSWORD }}
         run: |
           echo "$TALKTO_KEYSTORE_B64" | base64 -d > release.jks
-          TALKTO_KEYSTORE=release.jks ./gradlew :app:assembleRelease :app:bundleRelease
+          TALKTO_KEYSTORE=release.jks ./gradlew :app:assembleFullRelease :app:bundlePlayRelease
 
       - uses: actions/upload-artifact@v4
         with:
           name: talkto-aab
-          path: app/build/outputs/bundle/release/*.aab
+          path: app/build/outputs/bundle/playRelease/*.aab
           if-no-files-found: error
 
       - uses: actions/upload-artifact@v4
         if: env.HAS_KEYSTORE == 'true'
         with:
           name: talkto-release-apk
-          path: app/build/outputs/apk/release/*.apk
+          path: app/build/outputs/apk/full/release/*.apk
           if-no-files-found: error
 
       - uses: actions/upload-artifact@v4
@@ -81,5 +81,6 @@ jobs:
           path: |
             core/build/reports/tests
             app/build/reports/tests
-            app/build/reports/lint-results-debug.html
-            app/build/intermediates/mapping/release/minifyReleaseWithR8/missing_rules.txt
+            app/build/reports/lint-results-fullDebug.html
+            app/build/reports/lint-results-playDebug.html
+            app/build/intermediates/mapping/playRelease/minifyPlayReleaseWithR8/missing_rules.txt

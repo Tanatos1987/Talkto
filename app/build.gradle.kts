@@ -34,6 +34,25 @@ android {
         vectorDrawables.useSupportLibrary = true
     }
 
+    // Two versions of the same app:
+    // - full: everything, including the file manager and app control (All files access, all apps, accessibility);
+    //   installed directly as an APK, and it keeps the old id so phones that have it keep their ZnaiKo;
+    // - play: for Google Play, whose policy allows those three permissions only to file managers, launchers and
+    //   accessibility tools. The pet, games, tasks, lessons, voice and Claude are the same.
+    flavorDimensions += "store"
+    productFlavors {
+        create("full") {
+            dimension = "store"
+            applicationId = "com.talkto.app"
+            buildConfigField("boolean", "PLAY_STORE", "false")
+        }
+        create("play") {
+            dimension = "store"
+            applicationId = "znaiko.app"
+            buildConfigField("boolean", "PLAY_STORE", "true")
+        }
+    }
+
     signingConfigs {
         create("release") {
             val storePath = signingValue("storeFile", "TALKTO_KEYSTORE")

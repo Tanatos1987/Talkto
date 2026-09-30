@@ -93,10 +93,13 @@ class ToolDispatcher(
     private val zone: () -> ZoneId = ZoneId::systemDefault,
     private val profile: ProfileRepository? = null,
     private val history: HistoryRepository? = null,
+    /** Tools left out of this build; asking for one says so instead of failing on a missing permission. */
+    private val disabled: Set<String> = emptySet(),
 ) {
     private val json = Json { encodeDefaults = true; explicitNulls = false }
 
     suspend fun dispatch(name: String, input: JsonObject): ToolOutcome = try {
+        if (name in disabled) throw TalktoError.CapabilityUnavailable("'$name' is not part of this version of ZnaiKo")
         val result: JsonElement = when (name) {
             ToolProtocol.MANAGE_FILE -> manageFile(input)
             ToolProtocol.LAUNCH_APP -> launchApp(input)

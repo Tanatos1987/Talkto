@@ -72,6 +72,10 @@ class TalktoApp : Application() {
  * every collaborator is constructed exactly once here, which also makes the wiring easy to audit.
  */
 class AppContainer(private val context: Context) {
+    /** The Google Play version has no file manager (no All files access there). */
+    private val storeDisabledTools: Set<String> =
+        if (com.talkto.app.BuildConfig.PLAY_STORE) setOf(com.talkto.core.agent.ToolProtocol.MANAGE_FILE) else emptySet()
+
 
     val errors = GlobalErrorHandler(context)
 
@@ -145,6 +149,7 @@ class AppContainer(private val context: Context) {
         reminders = reminders,
         profile = profile,
         history = history,
+        disabled = storeDisabledTools,
     )
 
     private val clientHolder = AnthropicClientHolder(settings)
@@ -154,7 +159,7 @@ class AppContainer(private val context: Context) {
         dispatcher = dispatcher,
         memory = memory,
         liveContext = ::liveContext,
-        config = AgentConfig(),
+        config = AgentConfig(disabledTools = storeDisabledTools),
     )
 
     /** No-key mode: simple commands on the same dispatcher, so every safety rule still applies. */

@@ -206,7 +206,7 @@ fun TamagotchiScreen(vm: MainViewModel) {
             onLanguage = vm::toggleLanguage,
         )
         StatsRow(pet)
-        if (!permissions.allFiles) PermissionBanner()
+        if (!permissions.allFiles && !com.talkto.app.BuildConfig.PLAY_STORE) PermissionBanner()
         Spacer(Modifier.height(8.dp))
 
         DeviceScreen(Modifier.weight(1f)) {
@@ -1024,8 +1024,11 @@ private fun SettingsSheet(
             }
 
             HorizontalDivider(Modifier.padding(vertical = 16.dp))
-            PermissionRow(stringResource(R.string.perm_storage_title), permissions.allFiles) { StorageAccess.openAllFilesAccess(ctx) }
-            PermissionRow(stringResource(R.string.perm_accessibility), permissions.accessibility) { StorageAccess.openAccessibilitySettings(ctx) }
+            // The Google Play version has neither All files access nor the accessibility service.
+            if (!com.talkto.app.BuildConfig.PLAY_STORE) {
+                PermissionRow(stringResource(R.string.perm_storage_title), permissions.allFiles) { StorageAccess.openAllFilesAccess(ctx) }
+                PermissionRow(stringResource(R.string.perm_accessibility), permissions.accessibility) { StorageAccess.openAccessibilitySettings(ctx) }
+            }
             PermissionRow(stringResource(R.string.perm_shizuku), permissions.shizuku) { vm.requestShizuku() }
 
             HorizontalDivider(Modifier.padding(vertical = 16.dp))

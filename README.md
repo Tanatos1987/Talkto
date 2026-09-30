@@ -233,6 +233,11 @@ ZnaiKo расте по два начина:
 
 Логиката е в `core/games` и е покрита с тестове (за шаха и perft 3 = 8902). Резултатът стига до любимеца: вашата победа го учи, неговата го радва.
 
+### Две версии: пълна и за Google Play
+
+- **full** (`com.talkto.app`): всичко, включително подреждането на файлове и управлението на приложения. Иска „Достъп до всички файлове“, списък на всички приложения и услугата за достъпност. Инсталира се директно като APK (`talkto-apk`).
+- **play** (`znaiko.app`): за Google Play, чиито правила позволяват тези три разрешения само на файлови мениджъри, лаунчери и помощни инструменти. Няма ги файловите инструменти, банера за достъп до файлове и услугата за достъпност. Любимецът, игрите, задачите, уроците, гласът, Claude, бележките и напомнянията са същите. От него CI прави `talkto-aab`.
+
 ### Езици: български и английски
 
 Горе на главния екран има флагче 🇧🇬/🇬🇧. Едно докосване сменя всичко наведнъж: екраните, гласа на Знайко, отговорите му (и офлайн, и от Claude), историята, игрите, задачите и викторината, храната, магазина и дори известията. Знайко веднага казва на новия език, че вече говори на него, а микрофонът започва да слуша за същия език. Същото става и от Настройки > Език, както и с глас: „говори на английски“.
@@ -424,10 +429,10 @@ ZnaiKo расте по два начина:
 ./gradlew :core:test
 
 # Android unit тестове под Robolectric: Room + MemoryRepository, GlobalErrorHandler
-./gradlew :app:testDebugUnitTest
+./gradlew :app:testFullDebugUnitTest
 
 # UI тестове на свързано устройство/емулатор
-./gradlew :app:connectedDebugAndroidTest
+./gradlew :app:connectedFullDebugAndroidTest
 
 # Статичен анализ
 ./gradlew :app:lintDebug
@@ -438,7 +443,7 @@ ZnaiKo расте по два начина:
 ### 3. Debug APK
 
 ```bash
-./gradlew :app:assembleDebug
+./gradlew :app:assembleFullDebug
 # -> app/build/outputs/apk/debug/app-debug.apk
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
@@ -478,7 +483,7 @@ Release build-ът е с R8 (`isMinifyEnabled`, `isShrinkResources`). Прави
 
 `versionCode` е номерът на CI сборката, така че всеки bundle е ново обновление. Без ключ bundle-ът е неподписан и трябва да се подпише преди качване в Play Console. За подписан APK и AAB добавете в GitHub Secrets: `TALKTO_KEYSTORE_B64` (`base64 -w0 keys/talkto-release.jks`), `TALKTO_KEYSTORE_PASSWORD`, `TALKTO_KEY_ALIAS`, `TALKTO_KEY_PASSWORD`. Тогава CI качва и `talkto-release-apk`.
 
-Локално bundle-ът се прави с `./gradlew :app:bundleRelease`, а резултатът е в `app/build/outputs/bundle/release/`.
+Локално bundle-ът за Google Play се прави с `./gradlew :app:bundlePlayRelease`, а резултатът е в `app/build/outputs/bundle/playRelease/`.
 
 ### 5. Първо пускане на телефона
 

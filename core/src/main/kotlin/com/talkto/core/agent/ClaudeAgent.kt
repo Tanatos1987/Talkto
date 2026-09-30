@@ -35,6 +35,8 @@ data class AgentConfig(
     val serverSideFallbacks: Boolean = true,
     /** Older turns are dropped (at a user-turn boundary) beyond this many messages. */
     val maxHistoryMessages: Int = 60,
+    /** Tools this build does not have (the Google Play version has no file manager); Claude is not offered them. */
+    val disabledTools: Set<String> = emptySet(),
 )
 
 sealed interface AgentEvent {
@@ -186,7 +188,7 @@ class ClaudeAgent(
             .outputConfig(OutputConfig.builder().effort(config.effort).build())
             .messages(history.toList())
             .apply {
-                ToolProtocol.all.forEach { addTool(it) }
+                ToolProtocol.all.filter { it.name() !in config.disabledTools }.forEach { addTool(it) }
                 if (config.serverSideFallbacks) {
                     putAdditionalHeader("anthropic-beta", FALLBACK_BETA)
                     putAdditionalBodyProperty("fallbacks", JsonValue.from("default"))
