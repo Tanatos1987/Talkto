@@ -161,7 +161,8 @@ dependencies {
     // Privileged app control (optional at runtime)
     implementation(libs.shizuku.api)
     implementation(libs.shizuku.provider)
-    implementation(libs.hiddenapibypass)
+    // Full version only: Play warns about SDKs that bypass hidden API limits. Called by name in PrivilegedShell.
+    "fullImplementation"(libs.hiddenapibypass)
 
     // Unit tests (JVM, Robolectric)
     testImplementation(libs.junit)

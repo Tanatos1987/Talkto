@@ -26,6 +26,8 @@
 # --- Shizuku: the provider is instantiated by the system; hidden API calls are reflective ---------
 -keep class rikka.shizuku.** { *; }
 -keep class moe.shizuku.** { *; }
+-keep class org.lsposed.hiddenapibypass.HiddenApiBypass { public static *; }
+-dontwarn org.lsposed.hiddenapibypass.**
 -dontwarn android.app.IActivityManager**
 
 # --- Accessibility service referenced from XML ----------------------------------------------------
