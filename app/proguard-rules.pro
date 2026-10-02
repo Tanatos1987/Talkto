@@ -26,7 +26,17 @@
 # --- Shizuku: the provider is instantiated by the system; hidden API calls are reflective ---------
 -keep class rikka.shizuku.** { *; }
 -keep class moe.shizuku.** { *; }
+-keep class org.lsposed.hiddenapibypass.HiddenApiBypass { public static *; }
+-dontwarn org.lsposed.hiddenapibypass.**
 -dontwarn android.app.IActivityManager**
 
 # --- Accessibility service referenced from XML ----------------------------------------------------
 -keep class com.talkto.app.apps.TalktoAccessibilityService { *; }
+
+# --- Structured outputs in the Anthropic SDK build JSON schemas through java.lang.reflect.Annotated*,
+#     which Android does not have. ZnaiKo never takes that path (its tool schemas are written by hand).
+-dontwarn java.lang.reflect.AnnotatedType
+-dontwarn java.lang.reflect.AnnotatedParameterizedType
+-dontwarn java.lang.reflect.AnnotatedArrayType
+-dontwarn java.lang.reflect.AnnotatedWildcardType
+-dontwarn java.lang.reflect.AnnotatedTypeVariable

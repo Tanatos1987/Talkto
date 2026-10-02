@@ -134,6 +134,11 @@ class ToolDispatcherTest {
         assertThat(dispatcher.dispatch("rm_rf", args("{}")).isError).isTrue()
     }
 
+    @Test fun `spoken definite article still finds the app`() {
+        assertThat(AppMatcher.bestMatch("камерата", apps.installed)?.packageName).isEqualTo("com.android.camera")
+        assertThat(AppMatcher.bestMatch("камерите", apps.installed)).isNull() // plural is a different word; no guess
+    }
+
     @Test fun `launch matches cyrillic labels`() = runTest {
         val out = dispatcher.dispatch("launch_app", args("""{"app":"камера"}"""))
         assertThat(out.content).contains("com.android.camera")
@@ -158,13 +163,31 @@ class ToolDispatcherTest {
         assertThat(animations.single().holdMs).isEqualTo(10_000)
     }
 
-    @Test fun `tool schemas are strict objects`() {
+    @Test fun `tool schemas are closed objects and strict ones fit the API budget`() {
         assertThat(ToolProtocol.all.map { it.name() }).containsExactly(
             "manage_file", "launch_app", "terminate_app", "generate_avatar_from_image", "animate_avatar",
+            "device", "notes", "reminders", "user_profile", "conversation_history",
         )
         ToolProtocol.all.forEach { t ->
-            assertThat(t.strict().orElse(false)).isTrue()
             assertThat(t.inputSchema()._additionalProperties()["additionalProperties"].toString()).isEqualTo("false")
         }
+        // The API refuses the whole request when strict tools have more than 24 optional parameters together.
+        val strict = ToolProtocol.all.filter { it.strict().orElse(false) }
+        val optional = strict.sumOf { t -> (t.inputSchema().properties().map { it._additionalProperties().size }.orElse(0)) - t.inputSchema().required().map { it.size }.orElse(0) }
+        assertThat(optional).isAtMost(ToolProtocol.STRICT_OPTIONAL_LIMIT)
+        assertThat(strict.map { it.name() }).containsAtLeast("launch_app", "terminate_app", "animate_avatar", "notes", "reminders", "user_profile")
+        assertThat(strict.map { it.name() }).doesNotContain("manage_file")
+    }
+
+    @Test fun `profile refuses to store secrets`() = runTest {
+        val profile = com.talkto.core.profile.ProfileRepository(com.talkto.core.profile.InMemoryProfileStore())
+        val d = ToolDispatcher(
+            files = FileSystemManager(PathGuard(listOf(root))), apps = apps, avatar = avatar,
+            memory = MemoryRepository(store), gate = { true }, profile = profile,
+        )
+        assertThat(d.dispatch("user_profile", args("""{"action":"remember","key":"wifi password","value":"hunter2"}""")).isError).isTrue()
+        assertThat(d.dispatch("user_profile", args("""{"action":"remember","key":"note:card","value":"4111 1111 1111 1111"}""")).isError).isTrue()
+        assertThat(d.dispatch("user_profile", args("""{"action":"remember","key":"likes:чай","value":"чай с мед"}""")).isError).isFalse()
+        assertThat(profile.get("likes:чай")).isEqualTo("чай с мед")
     }
 }

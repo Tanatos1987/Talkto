@@ -51,7 +51,7 @@ data class DeletionPlan(
     val totalBytes: Long,
     /** First files that would disappear, for the confirmation dialog. */
     val sample: List<String>,
-    /** When false the items go to the Talkto trash and can be recovered. */
+    /** When false the items go to the ZnaiKo trash and can be recovered. */
     val permanent: Boolean,
     val expiresAtEpochMs: Long,
 )
@@ -66,3 +66,30 @@ data class DeletionResult(
 
 @Serializable
 enum class OrganizeStrategy { BY_TYPE, BY_MONTH, BY_EXTENSION }
+
+@Serializable
+data class CategoryUsage(val category: String, val files: Int, val bytes: Long)
+
+@Serializable
+data class StorageReport(
+    val root: String,
+    val totalFiles: Int,
+    val totalBytes: Long,
+    val categories: List<CategoryUsage>,
+    val largest: List<FileEntry>,
+    val trashBytes: Long,
+)
+
+@Serializable
+data class DuplicateGroup(val sizeBytes: Long, val paths: List<String>) {
+    /** Space freed by keeping only the first (oldest) copy. */
+    val wastedBytes: Long get() = sizeBytes * (paths.size - 1)
+}
+
+@Serializable
+data class DuplicateReport(
+    val groups: List<DuplicateGroup>,
+    val wastedBytes: Long,
+    val scannedFiles: Int,
+    val truncated: Boolean,
+)
