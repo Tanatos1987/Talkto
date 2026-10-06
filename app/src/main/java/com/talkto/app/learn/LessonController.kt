@@ -58,6 +58,8 @@ class LessonController(
     private val lang: () -> Lang,
     private val scope: CoroutineScope,
     private val random: Random = Random.Default,
+    /** Counts answers and lessons for the parents' report. */
+    private val onActivity: (com.talkto.core.parent.Activity) -> Unit = {},
 ) {
     private val _state = MutableStateFlow<LessonUi?>(null)
     val state: StateFlow<LessonUi?> = _state.asStateFlow()
@@ -137,6 +139,7 @@ class LessonController(
 
     private fun settle(ok: Boolean, option: Int?, answer: String) {
         _state.update { s -> s?.let { it.copy(chosen = option, correct = ok, right = it.right + if (ok) 1 else 0, asked = it.asked + 1) } }
+        onActivity(if (ok) com.talkto.core.parent.Activity.WORD_RIGHT else com.talkto.core.parent.Activity.WORD_WRONG)
         if (ok) {
             pet.learn(KnowledgeSource.LESSON_ANSWER)
             pet.earn(CoinReason.LESSON_ANSWER)
@@ -151,6 +154,7 @@ class LessonController(
     private fun finish(ui: LessonUi) {
         val stars = starsFor(ui.right, ui.asked)
         learning.update { it.finishLesson(stars, learning.today()) }
+        onActivity(com.talkto.core.parent.Activity.LESSON)
         pet.learn(KnowledgeSource.LESSON)
         pet.earn(CoinReason.LESSON_DONE)
         val learned = learning.data.value.state.learned(ui.target)

@@ -131,6 +131,8 @@ class PetEngine(
     private val scope: CoroutineScope,
     private val clock: () -> Long = System::currentTimeMillis,
     private val zone: () -> ZoneId = ZoneId::systemDefault,
+    /** Counts finished games for the parents' report. */
+    private val onActivity: (com.talkto.core.parent.Activity) -> Unit = {},
 ) {
     private val _state = MutableStateFlow(PetState(updatedAtMs = clock()))
     val state: StateFlow<PetState> = _state.asStateFlow()
@@ -231,6 +233,7 @@ class PetEngine(
 
     /** A board or card game ended. Winning cheers the user's side, losing teaches ZnaiKo. */
     fun gameFinished(outcome: GameOutcome) {
+        onActivity(com.talkto.core.parent.Activity.GAME)
         earn(CoinReason.GAME_PLAYED)
         if (outcome == GameOutcome.USER_WON) earn(CoinReason.GAME_WON)
         when (outcome) {

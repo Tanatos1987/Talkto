@@ -54,12 +54,16 @@ class AnthropicClientHolder(private val settings: SettingsRepository) {
 
     @Synchronized
     fun get(): AnthropicClient {
-        val current = settings.settings.value.anthropicKey?.takeIf { it.isNotBlank() }
-            ?: throw TalktoError.ApiKeyMissing("Claude")
+        val s = settings.settings.value
+        val proxy = s.proxyUrl?.trim()?.takeIf { it.startsWith("https://") }
+        // A family server holds the real key; the field then carries the code that server asks for (or nothing).
+        val apiKey = s.anthropicKey?.takeIf { it.isNotBlank() } ?: if (proxy != null) "family-server" else throw TalktoError.ApiKeyMissing("Claude")
+        val current = apiKey + "|" + proxy.orEmpty()
         client?.takeIf { key == current }?.let { return it }
         client?.close()
         return AnthropicOkHttpClient.builder()
-            .apiKey(current)
+            .apiKey(apiKey)
+            .apply { if (proxy != null) baseUrl(proxy) }
             .maxRetries(2)
             .timeout(Duration.ofSeconds(90))
             .build()
@@ -85,6 +89,8 @@ class AgentSession(
     private val history: HistoryRepository,
     private val language: LanguageRepository,
     private val learning: LearnRepository,
+    /** Counts conversations for the parents' report. */
+    private val onActivity: (com.talkto.core.parent.Activity) -> Unit = {},
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
     private val _gameRequests = MutableSharedFlow<GameKind>(extraBufferCapacity = 2)
@@ -148,7 +154,8 @@ class AgentSession(
         // A turn started right after a cold start (e.g. from a notification) must see the saved API key.
         val cfg = settings.awaitLoaded()
         history.enabled = cfg.recordConversations
-        val online = cfg.hasClaudeKey
+        onActivity(com.talkto.core.parent.Activity.CHAT)
+        val online = cfg.claudeOn
         // Personal shortcuts ("кино" -> "тихо") and learning happen before routing, so both brains benefit.
         val command = runCatching { profile.expandAlias(trimmed) }.getOrNull() ?: trimmed
         val facts = runCatching { profile.learnFrom(trimmed) }.getOrDefault(emptyList())
@@ -291,7 +298,7 @@ class AgentSession(
     /** Starts chat practice from the lessons screen: ZnaiKo greets in the practised language (or explains the key). */
     suspend fun beginPractice(target: Lang) {
         val cfg = settings.awaitLoaded()
-        val reply = learn(LearnCommand.Practice(target), cfg.hasClaudeKey)
+        val reply = learn(LearnCommand.Practice(target), cfg.claudeOn)
         _state.update { it.copy(messages = it.messages + ChatMessage(false, reply, clock())) }
         runCatching { history.record(Speaker.TALKTO, reply, "offline") }
         avatar.play(AnimationCommand(Expression.HAPPY, Gesture.BOUNCE))

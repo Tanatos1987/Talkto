@@ -167,6 +167,9 @@ fun TamagotchiScreen(vm: MainViewModel) {
     val house by vm.house.collectAsStateWithLifecycle()
     var sheet by rememberSaveable { mutableStateOf(Sheet.NONE) }
     var aboutMe by rememberSaveable { mutableStateOf(false) }
+    // Not saveable on purpose: after the activity is rebuilt the parents' corner asks for the PIN again.
+    var parentGate by remember { mutableStateOf(false) }
+    var parentOpen by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         vm.screens.collect { cmd ->
             when (cmd) {
@@ -196,7 +199,7 @@ fun TamagotchiScreen(vm: MainViewModel) {
             .padding(horizontal = 16.dp),
     ) {
         Header(
-            online = settings.hasClaudeKey || !settings.loaded,
+            online = settings.claudeOn || !settings.loaded,
             coins = pet.coins,
             gains = vm.coinGains,
             atHome = pet.atHome,
@@ -340,6 +343,7 @@ fun TamagotchiScreen(vm: MainViewModel) {
         Sheet.SETTINGS -> SettingsSheet(
             vm, permissions, onDismiss = { sheet = Sheet.NONE },
             onHistory = { sheet = Sheet.HISTORY }, onBackgrounds = { sheet = Sheet.BACKGROUNDS },
+            onParent = { sheet = Sheet.NONE; parentGate = true },
         )
         Sheet.BACKGROUNDS -> BackgroundsSheet(vm, onDismiss = { sheet = Sheet.NONE })
         Sheet.HISTORY -> HistorySheet(vm, onDismiss = { sheet = Sheet.NONE })
@@ -378,6 +382,13 @@ fun TamagotchiScreen(vm: MainViewModel) {
     // The story of ZnaiKo and the friends: once at the first start, and again from Settings.
     val storyReplay by vm.storyReplay.collectAsStateWithLifecycle()
     if ((settings.loaded && !settings.storySeen) || storyReplay) com.talkto.app.ui.story.StoryDialog(vm)
+
+    // The parents' corner, behind its PIN.
+    if (parentGate) com.talkto.app.ui.parent.ParentGate(vm, onUnlocked = { parentGate = false; parentOpen = true }, onDismiss = { parentGate = false })
+    if (parentOpen) com.talkto.app.ui.parent.ParentSheet(vm, onDismiss = { parentOpen = false })
+    // Today's time is used up: last, so it covers everything else.
+    val timeUp by vm.timeUp.collectAsStateWithLifecycle()
+    if (timeUp && !parentOpen) com.talkto.app.ui.parent.RestOverlay(vm)
 }
 
 // ----------------------------------------------------------------------- header & stats
@@ -941,13 +952,11 @@ private fun SettingsSheet(
     onDismiss: () -> Unit,
     onHistory: () -> Unit,
     onBackgrounds: () -> Unit,
+    onParent: () -> Unit,
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val habits by vm.habits.collectAsStateWithLifecycle()
     val ctx = LocalContext.current
-    // Keys are never pre-filled: an empty field means "keep the current key".
-    var claudeKey by remember { mutableStateOf("") }
-    var stabilityKey by remember { mutableStateOf("") }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp).verticalScroll(rememberScrollState())) {
@@ -955,23 +964,15 @@ private fun SettingsSheet(
             Spacer(Modifier.height(12.dp))
             LanguagePicker(vm)
             Spacer(Modifier.height(8.dp))
-            KeyField(stringResource(R.string.settings_anthropic_key), claudeKey, settings.hasClaudeKey) { claudeKey = it }
-            KeyField(stringResource(R.string.settings_stability_key), stabilityKey, !settings.stabilityKey.isNullOrBlank()) { stabilityKey = it }
-            if (settings.hasClaudeKey) {
-                OutlinedButton(onClick = vm::removeClaudeKey, modifier = Modifier.padding(bottom = 4.dp)) {
-                    Text(stringResource(R.string.settings_remove_key))
-                }
-            } else {
+            // Keys, the model, the time limit and the report live behind the parents' PIN.
+            Button(
+                onClick = onParent,
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = TalktoColors.Ink, contentColor = TalktoColors.Sunflower),
+            ) { Text(com.talkto.app.i18n.tr("👪 Родителски кът 🔒", "👪 Parents' corner 🔒"), fontWeight = FontWeight.Bold) }
+            if (!settings.claudeOn) {
                 Text(stringResource(R.string.settings_offline_note), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 6.dp))
             }
-            Text(stringResource(R.string.settings_keys_note), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 6.dp))
-            Button(
-                onClick = {
-                    vm.saveKeys(claudeKey.takeIf { it.isNotBlank() }, stabilityKey.takeIf { it.isNotBlank() })
-                    claudeKey = ""; stabilityKey = ""
-                },
-                enabled = claudeKey.isNotBlank() || stabilityKey.isNotBlank(),
-            ) { Text(stringResource(R.string.save)) }
 
             HorizontalDivider(Modifier.padding(vertical = 16.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {

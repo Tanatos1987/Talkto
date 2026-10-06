@@ -21,7 +21,10 @@ import com.talkto.core.commands.AppCommand
 import com.talkto.core.pet.KnowledgeSource
 import com.talkto.core.profile.AboutYou
 import com.talkto.core.shop.ShopItem
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -99,10 +102,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val games = GameController(c.pet, c.avatar, { c.settings.settings.value.voiceEnabled }, viewModelScope, lang = { c.language.current })
 
     /** Language lessons with ZnaiKo. */
-    val lessons = LessonController(c.learning, c.pet, c.avatar, { c.settings.settings.value.voiceEnabled }, { c.language.current }, viewModelScope)
+    val lessons = LessonController(
+        c.learning, c.pet, c.avatar, { c.settings.settings.value.voiceEnabled }, { c.language.current }, viewModelScope,
+        onActivity = { c.activity.record(it) },
+    )
 
     /** Maths tasks and trivia. */
-    val quiz = QuizController(c.petStore, c.pet, c.avatar, c.profile, { c.settings.settings.value.voiceEnabled }, { c.language.current }, viewModelScope)
+    val quiz = QuizController(
+        c.petStore, c.pet, c.avatar, c.profile, { c.settings.settings.value.voiceEnabled }, { c.language.current }, viewModelScope,
+        onActivity = { c.activity.record(it) },
+    )
 
     private val _screens = MutableSharedFlow<AppCommand>(extraBufferCapacity = 4)
     /** Places asked for by voice or text (house, shop, creator, "get to know me"); the screen opens them. */
@@ -159,7 +168,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     init {
         val crashed = c.errors.consumeCrashMarker()
         viewModelScope.launch {
-            val hasKey = c.settings.awaitLoaded().hasClaudeKey
+            val hasKey = c.settings.awaitLoaded().claudeOn
             val first = when {
                 crashed -> R.string.crashed_last_time
                 hasKey -> R.string.greeting
@@ -230,7 +239,113 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun onVisible(visible: Boolean) {
         c.confirmations.uiVisible = visible
         if (visible) refreshPermissions()
+        countMinutes(visible)
     }
+
+    // ------------------------------------------------- parents' corner and screen time
+
+    /** What the child did, day by day. */
+    val activityLog: StateFlow<com.talkto.core.parent.ActivityLog> = c.activity.log
+
+    fun today(): Long = c.activity.today()
+
+    /** Today's time is used up: ZnaiKo rests until tomorrow or until a parent adds time. */
+    val timeUp: StateFlow<Boolean> = combine(c.activity.log, c.settings.settings) { log, s ->
+        com.talkto.core.parent.ScreenTime.timeUp(s.dailyLimitMinutes, log.on(c.activity.today()))
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    private var minuteCounter: Job? = null
+    private var restSaid = false
+
+    /** Counts the minutes the app is on screen; stops when it is not. */
+    private fun countMinutes(visible: Boolean) {
+        if (!visible) {
+            minuteCounter?.cancel()
+            minuteCounter = null
+            return
+        }
+        if (minuteCounter?.isActive == true) return
+        minuteCounter = viewModelScope.launch {
+            while (isActive) {
+                delay(60_000)
+                c.activity.record(com.talkto.core.parent.Activity.MINUTE)
+                checkScreenTime()
+            }
+        }
+    }
+
+    private fun checkScreenTime() {
+        val limit = c.settings.settings.value.dailyLimitMinutes
+        val today = c.activity.todayActivity()
+        val l = c.language.current
+        when {
+            com.talkto.core.parent.ScreenTime.timeUp(limit, today) -> if (!restSaid) {
+                restSaid = true
+                lessons.close(); quiz.close(); games.close(); closeArcade()
+                c.pet.setSleeping(true)
+                sayText(l.pick("Време е за почивка! Чудесно си поиграхме. Ела пак утре!", "Time for a rest! We had a lovely time. Come back tomorrow!"), Expression.SLEEPY)
+            }
+            com.talkto.core.parent.ScreenTime.warnNow(limit, today) ->
+                sayText(l.pick("Още пет минутки и ще трябва да си почина.", "Five more minutes, then I need a rest."), Expression.SLEEPY)
+            else -> restSaid = false
+        }
+    }
+
+    private fun sayText(text: String, expression: Expression) {
+        _systemLine.value = SystemLine(0, System.currentTimeMillis(), text = text)
+        c.avatar.play(AnimationCommand(expression, Gesture.NOD, holdMs = 2_000))
+        viewModelScope.launch { c.avatar.speak(text, voice = c.settings.settings.value.voiceEnabled) }
+    }
+
+    /** True when [pin] is the parents' PIN. */
+    fun checkPin(pin: String): Boolean {
+        val s = c.settings.settings.value
+        return com.talkto.core.parent.ParentPin.matches(pin, s.parentPinSalt, s.parentPinHash)
+    }
+
+    fun setPin(pin: String) = viewModelScope.launch {
+        if (!com.talkto.core.parent.ParentPin.valid(pin)) return@launch
+        val salt = com.talkto.core.parent.ParentPin.newSalt()
+        c.settings.setParentPin(com.talkto.core.parent.ParentPin.hash(pin, salt), salt)
+    }
+
+    /** A forgotten PIN: the PIN, the keys and the family server are removed, and ZnaiKo goes offline. */
+    fun resetParent() = viewModelScope.launch {
+        c.settings.resetParent()
+        c.agentSession.newConversation()
+    }
+
+    /** Extra minutes for today, given by a parent from the rest screen. */
+    fun addMinutes(minutes: Int) {
+        c.activity.addBonus(minutes)
+        restSaid = false
+        c.pet.setSleeping(false)
+    }
+
+    fun setAiEnabled(enabled: Boolean) = viewModelScope.launch { c.settings.setAiEnabled(enabled) }
+
+    fun setDailyLimit(minutes: Int) = viewModelScope.launch {
+        c.settings.setDailyLimit(minutes)
+        restSaid = false
+    }
+
+    fun setChildAge(age: Int) = viewModelScope.launch { c.settings.setChildAge(age) }
+
+    fun setClaudeModel(model: String) = viewModelScope.launch { c.settings.setClaudeModel(model) }
+
+    /** Saves the family server; only https addresses are accepted. Returns false for anything else. */
+    fun setProxyUrl(url: String): Boolean {
+        val u = url.trim()
+        if (u.isNotEmpty() && (!u.startsWith("https://") || u.length < 12)) return false
+        viewModelScope.launch {
+            c.settings.setProxyUrl(u)
+            c.agentSession.newConversation()
+        }
+        return true
+    }
+
+    /** Words learned so far in the language being practised. */
+    fun wordsLearned(): Int = c.learning.data.value.state.learned(c.learning.target)
 
     fun refreshPermissions() {
         val ctx = getApplication<Application>()

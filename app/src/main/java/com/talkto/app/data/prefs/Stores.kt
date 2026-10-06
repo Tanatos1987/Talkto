@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.talkto.app.background.BackgroundConfig
@@ -58,10 +59,25 @@ data class Settings(
     val storySeen: Boolean = false,
     /** The Claude model; a parent picks it in the parents' corner. */
     val claudeModel: String = com.talkto.core.agent.AgentConfig.MODEL_EVERYDAY,
+    /** A parent can switch Claude off: ZnaiKo then works offline even with a key. */
+    val aiEnabled: Boolean = true,
+    /** Minutes a day the child may play; 0 = no limit. */
+    val dailyLimitMinutes: Int = 0,
+    /** The child's age as a parent set it; 0 = not given. */
+    val childAge: Int = 0,
+    /** Optional server that holds the Claude key for the family (https), used instead of api.anthropic.com. */
+    val proxyUrl: String? = null,
+    /** Salted hash of the parents' PIN; null until a parent sets one. */
+    val parentPinHash: String? = null,
+    val parentPinSalt: String? = null,
     /** False only for the placeholder before DataStore delivered its first value. */
     val loaded: Boolean = false,
 ) {
-    val hasClaudeKey get() = !anthropicKey.isNullOrBlank()
+    /** Claude can be reached: a key of its own, or a family server that holds one. */
+    val hasClaudeKey get() = !anthropicKey.isNullOrBlank() || !proxyUrl.isNullOrBlank()
+    /** Claude answers: reachable and not switched off by a parent. */
+    val claudeOn get() = hasClaudeKey && aiEnabled
+    val hasParentPin get() = !parentPinHash.isNullOrBlank()
 }
 
 @Serializable
@@ -87,6 +103,12 @@ class SettingsRepository(private val store: DataStore<Preferences>, private val 
             clearBulgarian = p[CLEAR_BG] ?: true,
             storySeen = p[STORY_SEEN] ?: false,
             claudeModel = p[CLAUDE_MODEL]?.takeIf { it in com.talkto.core.agent.AgentConfig.MODELS } ?: com.talkto.core.agent.AgentConfig.MODEL_EVERYDAY,
+            aiEnabled = p[AI_ENABLED] ?: true,
+            dailyLimitMinutes = p[DAILY_LIMIT] ?: 0,
+            childAge = p[CHILD_AGE] ?: 0,
+            proxyUrl = p[PROXY_URL],
+            parentPinHash = p[PIN_HASH],
+            parentPinSalt = p[PIN_SALT],
             loaded = true,
         )
     }.stateIn(scope, SharingStarted.Eagerly, Settings())
@@ -117,6 +139,26 @@ class SettingsRepository(private val store: DataStore<Preferences>, private val 
 
     suspend fun setClaudeModel(model: String) = store.edit { it[CLAUDE_MODEL] = model }
 
+    suspend fun setAiEnabled(enabled: Boolean) = store.edit { it[AI_ENABLED] = enabled }
+
+    suspend fun setDailyLimit(minutes: Int) = store.edit { it[DAILY_LIMIT] = minutes.coerceAtLeast(0) }
+
+    suspend fun setChildAge(age: Int) = store.edit { it[CHILD_AGE] = age.coerceIn(0, 18) }
+
+    /** Blank clears it. */
+    suspend fun setProxyUrl(url: String?) = store.edit { p ->
+        val u = url?.trim().orEmpty()
+        if (u.isEmpty()) p.remove(PROXY_URL) else p[PROXY_URL] = u
+    }
+
+    suspend fun setParentPin(hash: String, salt: String) = store.edit { it[PIN_HASH] = hash; it[PIN_SALT] = salt }
+
+    /** A forgotten PIN: the PIN goes, and with it the keys and the family server, so a child cannot take over. */
+    suspend fun resetParent() = store.edit { p ->
+        listOf(PIN_HASH, PIN_SALT, ANTHROPIC, STABILITY, PROXY_URL).forEach { p.remove(it) }
+        p[DAILY_LIMIT] = 0
+    }
+
     suspend fun awaitLoaded(): Settings = settings.first { it.loaded }
 
     private companion object {
@@ -132,6 +174,12 @@ class SettingsRepository(private val store: DataStore<Preferences>, private val 
         val CLEAR_BG = booleanPreferencesKey("clear_bulgarian")
         val STORY_SEEN = booleanPreferencesKey("story_seen")
         val CLAUDE_MODEL = stringPreferencesKey("claude_model")
+        val AI_ENABLED = booleanPreferencesKey("ai_enabled")
+        val DAILY_LIMIT = intPreferencesKey("daily_limit_minutes")
+        val CHILD_AGE = intPreferencesKey("child_age")
+        val PROXY_URL = stringPreferencesKey("proxy_url")
+        val PIN_HASH = stringPreferencesKey("parent_pin_hash")
+        val PIN_SALT = stringPreferencesKey("parent_pin_salt")
     }
 }
 
@@ -173,7 +221,15 @@ class PetStore(private val store: DataStore<Preferences>) {
 
     suspend fun saveQuiz(d: QuizData) = store.edit { it[QUIZ] = json.encodeToString(QuizData.serializer(), d) }
 
+    /** What the child did, day by day (parents' report, weekly praise, time limit). */
+    val activity: Flow<com.talkto.core.parent.ActivityLog> =
+        store.data.map { it.decode(ACTIVITY, com.talkto.core.parent.ActivityLog.serializer(), com.talkto.core.parent.ActivityLog()) }
+
+    suspend fun saveActivity(log: com.talkto.core.parent.ActivityLog) =
+        store.edit { it[ACTIVITY] = json.encodeToString(com.talkto.core.parent.ActivityLog.serializer(), log) }
+
     private companion object {
+        val ACTIVITY = stringPreferencesKey("activity_json")
         val OUTFIT = stringPreferencesKey("outfit_json")
         val AVATAR = stringPreferencesKey("avatar_json")
         val PET = stringPreferencesKey("pet_json")

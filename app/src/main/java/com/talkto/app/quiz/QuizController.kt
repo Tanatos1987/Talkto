@@ -89,6 +89,8 @@ class QuizController(
     private val lang: () -> Lang,
     private val scope: CoroutineScope,
     private val random: Random = Random.Default,
+    /** Counts answers for the parents' report. */
+    private val onActivity: (com.talkto.core.parent.Activity) -> Unit = {},
 ) {
     private val math = MathTasks(random)
     private val trivia = Trivia(random)
@@ -153,6 +155,7 @@ class QuizController(
         }
         val l = lang()
         if (ok) {
+            onActivity(com.talkto.core.parent.Activity.MATH_RIGHT)
             val score = ui.score.answer(true)
             pet.earn(CoinReason.QUIZ_ANSWER)
             pet.learn(KnowledgeSource.QUIZ_ANSWER)
@@ -168,6 +171,7 @@ class QuizController(
             say(praise(l) + " " + l.pick("Отговорът е ${ui.task.answer}.", "The answer is ${ui.task.answer}."))
         } else {
             val tries = ui.tries + 1
+            if (tries == 2) onActivity(com.talkto.core.parent.Activity.MATH_WRONG)
             val score = if (tries >= 2) ui.score.answer(false) else ui.score
             _state.value = ui.copy(result = false, tries = tries, heard = heard, score = score)
             avatar.play(AnimationCommand(Expression.CONFUSED, Gesture.SHAKE, holdMs = 1_200))
@@ -200,6 +204,7 @@ class QuizController(
         val card = ui.card ?: return
         if (ui.chosen != null || ui.done) return
         val ok = option == card.correct
+        onActivity(if (ok) com.talkto.core.parent.Activity.TRIVIA_RIGHT else com.talkto.core.parent.Activity.TRIVIA_WRONG)
         val l = lang()
         val score = ui.score.answer(ok)
         var coins = ui.coins

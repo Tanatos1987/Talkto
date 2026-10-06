@@ -96,7 +96,9 @@ class AppContainer(private val context: Context) {
     private val dataStore = context.talktoDataStore
     val settings = SettingsRepository(dataStore, KeyCipher(), appScope)
     val petStore = PetStore(dataStore)
-    val pet = PetEngine(petStore, appScope)
+    /** What the child did each day: the parents' report, the weekly praise and the time limit. */
+    val activity = com.talkto.app.parent.ActivityRepository(petStore, appScope)
+    val pet = PetEngine(petStore, appScope, onActivity = { activity.record(it) })
 
     // ---- files
     val pathGuard = PathGuard(StorageAccess.managedRoots(context))
@@ -209,9 +211,13 @@ class AppContainer(private val context: Context) {
 
     val learning = LearnRepository(petStore, language, appScope)
 
-    val agentSession = AgentSession(agent, offlineAgent, avatar, pet, settings, errors, profile, history, language, learning)
+    val agentSession = AgentSession(
+        agent, offlineAgent, avatar, pet, settings, errors, profile, history, language, learning,
+        onActivity = { activity.record(it) },
+    )
 
     fun start() {
+        activity.start()
         pet.start()
         learning.start()
         avatar.restore()
@@ -232,6 +238,7 @@ class AppContainer(private val context: Context) {
         return buildString {
             appendLine("now: ${now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm EEEE", Locale.ENGLISH))} (${now.zone})")
             appendLine("speak_language: ${language.current.code}")
+            settings.settings.value.childAge.takeIf { it > 0 }?.let { appendLine("child_age: $it") }
             appendLine("device_locale: ${Locale.getDefault().toLanguageTag()}")
             appendLine("pet: ${pet.state.value.describe()}")
             appendLine("all_files_access: ${if (StorageAccess.hasAllFilesAccess()) "granted" else "NOT granted - file tools will fail until the user enables it"}")
