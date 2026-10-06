@@ -33,6 +33,7 @@ import com.talkto.core.agent.AgentConfig
 import com.talkto.core.agent.ClaudeAgent
 import com.talkto.core.agent.OfflineAgent
 import com.talkto.core.agent.PetActions
+import com.talkto.core.agent.SystemPrompt
 import com.talkto.core.agent.ToolDispatcher
 import com.talkto.core.i18n.Lang
 import com.talkto.core.avatar.AvatarGenerator
@@ -159,7 +160,10 @@ class AppContainer(private val context: Context) {
         dispatcher = dispatcher,
         memory = memory,
         liveContext = ::liveContext,
-        config = AgentConfig(disabledTools = storeDisabledTools),
+        config = AgentConfig(
+            disabledTools = storeDisabledTools,
+            systemPrompt = SystemPrompt.build(if (BuildConfig.PLAY_STORE) SystemPrompt.PLAY else SystemPrompt.FULL),
+        ),
     )
 
     /** No-key mode: simple commands on the same dispatcher, so every safety rule still applies. */
