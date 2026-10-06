@@ -70,6 +70,9 @@ data class Settings(
     /** Salted hash of the parents' PIN; null until a parent sets one. */
     val parentPinHash: String? = null,
     val parentPinSalt: String? = null,
+    /** ZnaiKo's morning and evening notes, minutes after midnight; -1 = off. */
+    val morningMinute: Int = -1,
+    val eveningMinute: Int = -1,
     /** False only for the placeholder before DataStore delivered its first value. */
     val loaded: Boolean = false,
 ) {
@@ -109,6 +112,8 @@ class SettingsRepository(private val store: DataStore<Preferences>, private val 
             proxyUrl = p[PROXY_URL],
             parentPinHash = p[PIN_HASH],
             parentPinSalt = p[PIN_SALT],
+            morningMinute = p[MORNING] ?: -1,
+            eveningMinute = p[EVENING] ?: -1,
             loaded = true,
         )
     }.stateIn(scope, SharingStarted.Eagerly, Settings())
@@ -151,6 +156,8 @@ class SettingsRepository(private val store: DataStore<Preferences>, private val 
         if (u.isEmpty()) p.remove(PROXY_URL) else p[PROXY_URL] = u
     }
 
+    suspend fun setRoutines(morning: Int, evening: Int) = store.edit { it[MORNING] = morning; it[EVENING] = evening }
+
     suspend fun setParentPin(hash: String, salt: String) = store.edit { it[PIN_HASH] = hash; it[PIN_SALT] = salt }
 
     /** A forgotten PIN: the PIN goes, and with it the keys and the family server, so a child cannot take over. */
@@ -180,6 +187,8 @@ class SettingsRepository(private val store: DataStore<Preferences>, private val 
         val PROXY_URL = stringPreferencesKey("proxy_url")
         val PIN_HASH = stringPreferencesKey("parent_pin_hash")
         val PIN_SALT = stringPreferencesKey("parent_pin_salt")
+        val MORNING = intPreferencesKey("routine_morning")
+        val EVENING = intPreferencesKey("routine_evening")
     }
 }
 

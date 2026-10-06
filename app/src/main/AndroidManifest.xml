@@ -132,6 +132,11 @@
             android:name=".reminders.ReminderReceiver"
             android:exported="false" />
 
+        <!-- ZnaiKo's morning and evening notes (inexact daily alarms, no extra permission) -->
+        <receiver
+            android:name=".reminders.RoutineReceiver"
+            android:exported="false" />
+
         <receiver
             android:name=".reminders.RescheduleReceiver"
             android:exported="true">

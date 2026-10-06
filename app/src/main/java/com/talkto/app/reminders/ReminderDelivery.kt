@@ -110,6 +110,8 @@ class RescheduleReceiver : BroadcastReceiver() {
                 container.reminders.rescheduleAll().forEach { missed ->
                     container.reminders.fired(missed.id)?.let { AndroidReminderScheduler.notify(context, it) }
                 }
+                val s = container.settings.awaitLoaded()
+                runCatching { container.routines.apply(s.morningMinute, s.eveningMinute) }
             } finally {
                 pending.finish()
             }

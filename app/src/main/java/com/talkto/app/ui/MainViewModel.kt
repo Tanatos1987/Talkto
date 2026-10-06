@@ -460,6 +460,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setChildAge(age: Int) = viewModelScope.launch { c.settings.setChildAge(age) }
 
+    /** Morning and evening notes (minutes after midnight, -1 off); armed at once. */
+    fun setRoutines(morning: Int, evening: Int) = viewModelScope.launch {
+        c.settings.setRoutines(morning, evening)
+        runCatching { c.routines.apply(morning, evening) }
+    }
+
     fun setClaudeModel(model: String) = viewModelScope.launch { c.settings.setClaudeModel(model) }
 
     /** Saves the family server; only https addresses are accepted. Returns false for anything else. */
@@ -521,9 +527,26 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             c.pet.setWeeklyPraiseDay(today)
             val week = c.activity.log.value.weekTotal(today - 1)
             com.talkto.core.pet.WeeklyPraise.text(week, c.language.current)?.let { line ->
-                delay(4_000) // after the greeting
+                delay(9_000) // after the greeting and the morning words
                 sayText(line, Expression.LOVE)
             }
+        }
+        // Morning and evening: ZnaiKo's routine words, once per morning or evening while the app runs.
+        viewModelScope.launch {
+            c.activity.ready.first { it }
+            val now = java.time.LocalDateTime.now()
+            val kind = when (now.hour) {
+                in 5..10 -> com.talkto.core.routine.RoutineKind.MORNING
+                in 19..22 -> com.talkto.core.routine.RoutineKind.EVENING
+                else -> return@launch
+            }
+            val key = "${now.toLocalDate()}:$kind"
+            if (routineSaid == key) return@launch
+            routineSaid = key
+            delay(2_500) // after the greeting
+            val name = runCatching { c.profile.get("name") }.getOrNull()
+            val line = com.talkto.core.routine.Routines.line(kind, now.toLocalDate(), c.language.current, name)
+            sayText(line, if (kind == com.talkto.core.routine.RoutineKind.MORNING) Expression.HAPPY else Expression.SLEEPY)
         }
     }
 
@@ -975,5 +998,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private companion object {
         /** A reply this long is a tale, not a chat line. */
         const val LONG_REPLY = 400
+
+        /** The day and routine ZnaiKo last greeted for; process-wide, so a rebuilt screen does not repeat it. */
+        @Volatile var routineSaid: String? = null
     }
 }

@@ -134,6 +134,8 @@ class AppContainer(private val context: Context) {
     val device = AndroidDeviceActions(context)
     val notes = NotesRepository(RoomNoteStore(database.notes()))
     val reminders = RemindersRepository(RoomReminderStore(database.reminders()), AndroidReminderScheduler(context))
+    /** ZnaiKo's morning and evening notes. */
+    val routines = com.talkto.app.reminders.RoutineScheduler(context)
 
     // ---- learning about the user, conversation log, touch temperament
     val profile = ProfileRepository(RoomProfileStore(database.profile()))
@@ -238,6 +240,10 @@ class AppContainer(private val context: Context) {
         // Force-stop and updates clear AlarmManager; re-arming on every start is cheap and idempotent.
         appScope.launch {
             reminders.rescheduleAll().forEach { missed -> reminders.fired(missed.id)?.let { AndroidReminderScheduler.notify(context, it) } }
+        }
+        appScope.launch {
+            val s = settings.awaitLoaded()
+            runCatching { routines.apply(s.morningMinute, s.eveningMinute) }
         }
         appScope.launch { pet.state.collect { avatar.setMood(it.mood) } }
     }

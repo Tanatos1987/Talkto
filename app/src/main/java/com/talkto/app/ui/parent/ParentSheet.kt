@@ -58,6 +58,7 @@ import com.talkto.core.agent.AgentConfig
 import com.talkto.core.parent.ActivityLog
 import com.talkto.core.parent.ParentPin
 import com.talkto.core.parent.ScreenTime
+import com.talkto.core.routine.Routines
 import com.talkto.core.safety.FlagLog
 import java.time.LocalDate
 import java.time.format.TextStyle
@@ -185,6 +186,35 @@ fun ParentSheet(vm: MainViewModel, onDismiss: () -> Unit) {
                         selected = settings.dailyLimitMinutes == m,
                         onClick = { vm.setDailyLimit(m) },
                         label = { Text(if (m == 0) tr("Без лимит", "No limit") else tr("$m мин", "$m min")) },
+                    )
+                }
+            }
+
+            Section(tr("🌅 Сутрин и 🌙 вечер", "🌅 Mornings and 🌙 evenings"))
+            Text(
+                tr(
+                    "Знайко изпраща кратка бележка: сутрин за зъбки, закуска и раница, вечер за зъбки, пижама и приказка.",
+                    "ZnaiKo sends a short note: in the morning about teeth, breakfast and the school bag, in the evening about teeth, pyjamas and a story.",
+                ),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(tr("Сутрин", "Morning"), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 6.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Routines.MORNING_CHOICES.forEach { m ->
+                    FilterChip(
+                        selected = settings.morningMinute == m,
+                        onClick = { vm.setRoutines(m, settings.eveningMinute) },
+                        label = { Text(if (m < 0) tr("Изкл.", "Off") else Routines.label(m)) },
+                    )
+                }
+            }
+            Text(tr("Вечер", "Evening"), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 6.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Routines.EVENING_CHOICES.forEach { m ->
+                    FilterChip(
+                        selected = settings.eveningMinute == m,
+                        onClick = { vm.setRoutines(settings.morningMinute, m) },
+                        label = { Text(if (m < 0) tr("Изкл.", "Off") else Routines.label(m)) },
                     )
                 }
             }
