@@ -16,6 +16,7 @@ jobs:
     env:
       HAS_KEYSTORE: ${{ secrets.TALKTO_KEYSTORE_B64 != '' }}
       TALKTO_FEEDBACK_EMAIL: ${{ secrets.TALKTO_FEEDBACK_EMAIL }}
+      TALKTO_REPORT_URL: ${{ secrets.TALKTO_REPORT_URL }}
     steps:
       - uses: actions/checkout@v4
 

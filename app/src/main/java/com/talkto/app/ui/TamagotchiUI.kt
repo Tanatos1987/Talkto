@@ -183,11 +183,14 @@ fun TamagotchiScreen(vm: MainViewModel) {
     }
 
     val lastReply = agent.messages.lastOrNull { !it.fromUser }
+    val systemNewer = systemLine != null && (lastReply == null || systemLine!!.atMs > lastReply.atMs)
     val bubbleText = when {
-        systemLine != null && (lastReply == null || systemLine!!.atMs > lastReply.atMs) ->
-            systemLine!!.text ?: stringResource(systemLine!!.res, *systemLine!!.args.toTypedArray())
+        systemNewer -> systemLine!!.text ?: stringResource(systemLine!!.res, *systemLine!!.args.toTypedArray())
         else -> lastReply?.text
     }
+    // An answer Claude wrote can be flagged with 🚩 while it is in the bubble.
+    val flaggable: String? = lastReply?.takeIf { !systemNewer && !agent.busy && it.fromClaude }?.text
+    var flagging by remember { mutableStateOf<String?>(null) }
 
     Column(
         Modifier
@@ -271,6 +274,7 @@ fun TamagotchiScreen(vm: MainViewModel) {
                 },
                 busy = agent.busy,
                 modifier = Modifier.align(Alignment.TopCenter).padding(12.dp),
+                onFlag = flaggable?.let { text -> { flagging = text } },
             )
             if (visual.generating) {
                 Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.25f)), contentAlignment = Alignment.Center) {
@@ -388,6 +392,10 @@ fun TamagotchiScreen(vm: MainViewModel) {
     // The story of ZnaiKo and the friends: once at the first start, and again from Settings.
     val storyReplay by vm.storyReplay.collectAsStateWithLifecycle()
     if ((settings.loaded && !settings.storySeen) || storyReplay) com.talkto.app.ui.story.StoryDialog(vm)
+
+    flagging?.let { text ->
+        com.talkto.app.ui.safety.FlagDialog(onFlag = { reason -> vm.flagReply(text, reason) }, onDismiss = { flagging = null })
+    }
 
     // The parents' corner, behind its PIN.
     if (parentGate) com.talkto.app.ui.parent.ParentGate(vm, onUnlocked = { parentGate = false; parentOpen = true }, onDismiss = { parentGate = false })
@@ -617,7 +625,7 @@ private fun DeviceScreen(modifier: Modifier, content: @Composable BoxScope.() ->
 }
 
 @Composable
-private fun SpeechBubble(text: String?, busy: Boolean, modifier: Modifier) {
+private fun SpeechBubble(text: String?, busy: Boolean, modifier: Modifier, onFlag: (() -> Unit)? = null) {
     AnimatedVisibility(
         visible = !text.isNullOrBlank(),
         enter = fadeIn() + scaleIn(initialScale = 0.9f),
@@ -641,8 +649,12 @@ private fun SpeechBubble(text: String?, busy: Boolean, modifier: Modifier) {
                     style = MaterialTheme.typography.bodyLarge,
                     maxLines = 5,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    modifier = Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
                 )
+                if (onFlag != null) {
+                    Spacer(Modifier.width(4.dp))
+                    com.talkto.app.ui.safety.FlagButton(onClick = onFlag)
+                }
             }
         }
     }
@@ -1159,6 +1171,7 @@ private fun HistorySheet(vm: MainViewModel, onDismiss: () -> Unit) {
     val items by vm.historyItems.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
     var confirmClear by remember { mutableStateOf(false) }
+    var flagging by remember { mutableStateOf<com.talkto.core.history.Utterance?>(null) }
     val ctx = LocalContext.current
     LaunchedEffect(query) { vm.loadHistory(query) }
 
@@ -1190,17 +1203,26 @@ private fun HistorySheet(vm: MainViewModel, onDismiss: () -> Unit) {
                         val u = items[i]
                         val you = u.speaker == Speaker.USER
                         Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                            Text(
-                                (if (you) stringResource(R.string.history_you) else "ZnaiKo") + " · " + HISTORY_TIME.format(java.time.Instant.ofEpochMilli(u.atMs)),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (you) TalktoColors.Denim else TalktoColors.Mint,
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    (if (you) stringResource(R.string.history_you) else "ZnaiKo") + " · " + HISTORY_TIME.format(java.time.Instant.ofEpochMilli(u.atMs)),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (you) TalktoColors.Denim else TalktoColors.Mint,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                // What Claude said can be flagged here too, also after the bubble has moved on.
+                                if (!you && u.mode == "claude") com.talkto.app.ui.safety.FlagButton(onClick = { flagging = u })
+                            }
                             Text(u.text, style = MaterialTheme.typography.bodyMedium)
                         }
                     }
                 }
             }
         }
+    }
+
+    flagging?.let { u ->
+        com.talkto.app.ui.safety.FlagDialog(onFlag = { reason -> vm.flagFromHistory(u, reason) }, onDismiss = { flagging = null })
     }
 
     if (confirmClear) {

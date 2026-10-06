@@ -44,6 +44,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -57,6 +58,7 @@ import com.talkto.core.agent.AgentConfig
 import com.talkto.core.parent.ActivityLog
 import com.talkto.core.parent.ParentPin
 import com.talkto.core.parent.ScreenTime
+import com.talkto.core.safety.FlagLog
 import java.time.LocalDate
 import java.time.format.TextStyle
 import java.util.Locale
@@ -151,6 +153,8 @@ fun ParentSheet(vm: MainViewModel, onDismiss: () -> Unit) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val log by vm.activityLog.collectAsStateWithLifecycle()
     val pet by vm.pet.collectAsStateWithLifecycle()
+    val flags by vm.flags.collectAsStateWithLifecycle()
+    val ctx = androidx.compose.ui.platform.LocalContext.current
     var claudeKey by remember { mutableStateOf("") }
     var stabilityKey by remember { mutableStateOf("") }
     var proxy by remember(settings.proxyUrl) { mutableStateOf(settings.proxyUrl.orEmpty()) }
@@ -163,6 +167,9 @@ fun ParentSheet(vm: MainViewModel, onDismiss: () -> Unit) {
 
             Section(tr("📊 Какво прави детето", "📊 What the child did"))
             Report(log, vm.today(), settings.dailyLimitMinutes, vm.wordsLearned(), pet.level, pet.streakDays)
+
+            Section(tr("🚩 Сигнали за отговори", "🚩 Flagged answers"))
+            Flags(flags, vm.flagsAutomatic, onEmail = { vm.emailFlags(ctx) }, onRemove = vm::removeFlag, onClear = vm::clearFlags)
 
             Section(tr("⏰ Време на ден", "⏰ Time a day"))
             Text(
@@ -329,6 +336,68 @@ private fun Report(log: ActivityLog, today: Long, limit: Int, wordsLearned: Int,
         }
     }
 }
+
+/**
+ * Answers from Claude the child flagged with 🚩, newest first: why, when, what the child had asked and what Claude
+ * said. Without a report address in this build the parent passes them on by e-mail.
+ */
+@Composable
+private fun Flags(log: FlagLog, automatic: Boolean, onEmail: () -> Unit, onRemove: (Long) -> Unit, onClear: () -> Unit) {
+    val lang = screenLang()
+    Text(
+        if (automatic) {
+            tr(
+                "Когато детето натисне 🚩 до отговор на Claude, отговорът се скрива и стига до създателите на Знайко без името на детето и без въпроса му. Тук виждате всичко.",
+                "When the child taps 🚩 next to an answer from Claude, the answer is hidden and reaches ZnaiKo's authors without the child's name or question. You see all of it here.",
+            )
+        } else {
+            tr(
+                "Когато детето натисне 🚩 до отговор на Claude, отговорът се скрива и се записва тук. Изпратете сигналите на създателите на Знайко с бутона отдолу.",
+                "When the child taps 🚩 next to an answer from Claude, the answer is hidden and kept here. Send the flags to ZnaiKo's authors with the button below.",
+            )
+        },
+        style = MaterialTheme.typography.bodySmall,
+    )
+    if (log.items.isEmpty()) {
+        Text(tr("Няма сигнали. 👍", "No flags. 👍"), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 6.dp))
+        return
+    }
+    val shown = log.items.asReversed().take(SHOWN_FLAGS)
+    shown.forEach { f ->
+        Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+            Column(Modifier.padding(start = 12.dp, top = 8.dp, end = 4.dp, bottom = 4.dp)) {
+                val status = when {
+                    f.sent -> tr("✓ изпратен", "✓ sent")
+                    f.emailed -> tr("📧 в имейл", "📧 e-mailed")
+                    automatic -> tr("⏳ ще се изпрати", "⏳ will be sent")
+                    else -> tr("⏳ чака", "⏳ waiting")
+                }
+                Text(
+                    f.reason.label(lang) + " · " + FLAG_TIME.format(java.time.Instant.ofEpochMilli(f.atMs)) + " · " + status,
+                    style = MaterialTheme.typography.labelMedium,
+                )
+                if (f.question.isNotBlank()) {
+                    Text(tr("Детето: ", "Child: ") + f.question, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+                Text(tr("Знайко: ", "ZnaiKo: ") + f.reply, style = MaterialTheme.typography.bodyMedium, maxLines = 4, overflow = TextOverflow.Ellipsis)
+                TextButton(onClick = { onRemove(f.atMs) }, modifier = Modifier.align(Alignment.End)) { Text(tr("Изтрий", "Delete")) }
+            }
+        }
+    }
+    if (log.items.size > shown.size) {
+        Text(tr("и още ${log.items.size - shown.size}", "and ${log.items.size - shown.size} more"), style = MaterialTheme.typography.bodySmall)
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+        val waiting = log.waiting.size
+        if (waiting > 0) Button(onClick = onEmail) { Text(tr("📧 Изпрати по имейл ($waiting)", "📧 Send by e-mail ($waiting)")) }
+        TextButton(onClick = onClear) { Text(tr("Изчисти всички", "Clear all"), color = TalktoColors.Tomato) }
+    }
+}
+
+private const val SHOWN_FLAGS = 10
+
+private val FLAG_TIME: java.time.format.DateTimeFormatter =
+    java.time.format.DateTimeFormatter.ofPattern("dd.MM HH:mm").withZone(java.time.ZoneId.systemDefault())
 
 /**
  * Today's time is used up: ZnaiKo sleeps and the screen rests. Only a parent (with the PIN) can add time.

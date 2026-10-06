@@ -101,7 +101,7 @@ fun FeedbackDialog(onDismiss: () -> Unit) {
                         appendLine()
                         append("ZnaiKo ${BuildConfig.VERSION_NAME}, Android ${Build.VERSION.RELEASE}")
                     }
-                    send(ctx, subject, body)
+                    sendEmail(ctx, subject, body)
                     onDismiss()
                 },
             ) { Text(tr("Изпрати 🚀", "Send 🚀")) }
@@ -110,7 +110,8 @@ fun FeedbackDialog(onDismiss: () -> Unit) {
     )
 }
 
-private fun send(ctx: android.content.Context, subject: String, body: String) {
+/** An e-mail to the authors (FEEDBACK_EMAIL), or a share sheet when this build has no address. Nothing goes out until the user sends it. */
+internal fun sendEmail(ctx: android.content.Context, subject: String, body: String) {
     val to = BuildConfig.FEEDBACK_EMAIL
     val intent = if (to.isNotBlank()) {
         Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:")).putExtra(Intent.EXTRA_EMAIL, arrayOf(to))

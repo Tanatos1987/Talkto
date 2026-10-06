@@ -40,7 +40,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import java.time.Duration
 
-data class ChatMessage(val fromUser: Boolean, val text: String, val atMs: Long)
+/** [fromClaude]: the reply was written by Claude, so the child can flag it with 🚩. */
+data class ChatMessage(val fromUser: Boolean, val text: String, val atMs: Long, val fromClaude: Boolean = false)
 
 data class AgentUiState(
     val messages: List<ChatMessage> = emptyList(),
@@ -159,7 +160,9 @@ class AgentSession(
     suspend fun restore() {
         val lines = runCatching { history.recent(RESTORE_LINES) }.getOrDefault(emptyList())
         if (lines.isEmpty() || _state.value.messages.isNotEmpty()) return
-        _state.update { it.copy(messages = lines.map { u -> ChatMessage(u.speaker == Speaker.USER, u.text, u.atMs) }) }
+        _state.update {
+            it.copy(messages = lines.map { u -> ChatMessage(u.speaker == Speaker.USER, u.text, u.atMs, fromClaude = u.speaker == Speaker.TALKTO && u.mode == "claude") })
+        }
     }
 
     suspend fun run(text: String) {
@@ -206,6 +209,8 @@ class AgentSession(
         _state.update { it.copy(messages = it.messages + ChatMessage(true, trimmed, clock()), busy = true) }
         avatar.play(AnimationCommand(Expression.THINKING, Gesture.NONE, holdMs = 30_000))
         var toolErrors = 0
+        // Set only when Claude itself answered; a command the offline brain carried out instead cannot be flagged.
+        var byClaude = false
         try {
             val onEvent: suspend (AgentEvent) -> Unit = { event ->
                 when (event) {
@@ -218,7 +223,7 @@ class AgentSession(
                 offline.send(command, onEvent)
             } else {
                 try {
-                    claude.send(command, onEvent)
+                    claude.send(command, onEvent).also { byClaude = true }
                 } catch (t: Throwable) {
                     val err = ErrorMapper.map(t)
                     // Whatever stops Claude (no network, no credit, a bad key, an overloaded server), a command
@@ -227,9 +232,9 @@ class AgentSession(
                     offline.send(command, onEvent).let { it.copy(text = fallbackPrefix(err.kind, lang()) + it.text) }
                 }
             }
-            runCatching { history.record(Speaker.TALKTO, reply.text, if (online) "claude" else "offline") }
+            runCatching { history.record(Speaker.TALKTO, reply.text, if (byClaude) "claude" else "offline") }
             if (_practice.value != null && online) pet.learn(KnowledgeSource.LESSON_ANSWER)
-            _state.update { it.copy(messages = it.messages + ChatMessage(false, reply.text, clock())) }
+            _state.update { it.copy(messages = it.messages + ChatMessage(false, reply.text, clock(), fromClaude = byClaude)) }
             pet.rewardTask(success = toolErrors == 0 && !reply.refused)
             if (reply.text.isNotBlank()) {
                 // Claude may already have set an expression via animate_avatar; only nudge it when it did not.

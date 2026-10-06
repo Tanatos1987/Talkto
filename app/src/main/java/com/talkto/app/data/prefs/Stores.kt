@@ -228,7 +228,15 @@ class PetStore(private val store: DataStore<Preferences>) {
     suspend fun saveActivity(log: com.talkto.core.parent.ActivityLog) =
         store.edit { it[ACTIVITY] = json.encodeToString(com.talkto.core.parent.ActivityLog.serializer(), log) }
 
+    /** Answers from Claude the child flagged with 🚩 (parents' corner, report to the authors). */
+    val flags: Flow<com.talkto.core.safety.FlagLog> =
+        store.data.map { it.decode(FLAGS, com.talkto.core.safety.FlagLog.serializer(), com.talkto.core.safety.FlagLog()) }
+
+    suspend fun saveFlags(log: com.talkto.core.safety.FlagLog) =
+        store.edit { it[FLAGS] = json.encodeToString(com.talkto.core.safety.FlagLog.serializer(), log) }
+
     private companion object {
+        val FLAGS = stringPreferencesKey("flags_json")
         val ACTIVITY = stringPreferencesKey("activity_json")
         val OUTFIT = stringPreferencesKey("outfit_json")
         val AVATAR = stringPreferencesKey("avatar_json")

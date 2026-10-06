@@ -98,6 +98,13 @@ class AppContainer(private val context: Context) {
     val petStore = PetStore(dataStore)
     /** What the child did each day: the parents' report, the weekly praise and the time limit. */
     val activity = com.talkto.app.parent.ActivityRepository(petStore, appScope)
+    /** Answers the child flagged with 🚩: kept for the parents, and sent to the authors when this build has a report address. */
+    val flags = com.talkto.app.parent.FlagRepository(
+        petStore, appScope,
+        sender = BuildConfig.REPORT_URL.takeIf { com.talkto.core.safety.FlagSender.accepts(it) }?.let { com.talkto.core.safety.FlagSender(it) },
+        app = context.packageName,
+        version = BuildConfig.VERSION_NAME,
+    )
     val pet = PetEngine(petStore, appScope, onActivity = { activity.record(it) })
 
     // ---- files
@@ -219,6 +226,7 @@ class AppContainer(private val context: Context) {
 
     fun start() {
         activity.start()
+        flags.start()
         pet.start()
         learning.start()
         avatar.restore()
@@ -253,6 +261,7 @@ class AppContainer(private val context: Context) {
             }
             runCatching { profile.promptBlock() }.getOrNull()?.takeIf { it.isNotEmpty() }?.let { append("\n").append(it) }
             agentSession.practice.value?.let { target -> append("\n").append(practiceBlock(target, language.current)) }
+            flags.contextNote()?.let { append("\n").append(it) }
         }
     }
 

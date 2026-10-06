@@ -135,7 +135,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val learnData: StateFlow<LearnData> = c.learning.data
     /** Chat practice in this language is on. */
     val practice: StateFlow<Lang?> = c.agentSession.practice
-    /** "РќР°СѓС‡Рё РјРµ РЅР° Р°РЅРіР»РёР№СЃРєРё" said in the chat: open the lessons. */
+    /** "Научи ме на английски" said in the chat: open the lessons. */
     val lessonRequests = c.agentSession.lessonRequests
 
     /**
@@ -269,6 +269,71 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         c.confirmations.uiVisible = visible
         if (visible) refreshPermissions()
         countMinutes(visible)
+    }
+
+    // ------------------------------------------------- flagged answers
+
+    /** Answers from Claude the child flagged with 🚩. */
+    val flags: StateFlow<com.talkto.core.safety.FlagLog> = c.flags.log
+
+    /** This build sends flags to the authors by itself; otherwise a parent e-mails them from the parents' corner. */
+    val flagsAutomatic: Boolean get() = c.flags.automatic
+
+    /**
+     * The child flagged something Claude said. It is kept for the parents (and sent to the authors when this build
+     * can), ZnaiKo stops reading it and says thank you, and its line takes the answer's place in the speech bubble.
+     * [question] is what the child said before it; by default the chat line just before the answer.
+     */
+    fun flagReply(text: String, reason: com.talkto.core.safety.FlagReason, question: String? = null) {
+        if (text.isBlank()) return
+        val asked = question ?: questionBefore(text)
+        c.flags.flag(text, asked, reason, c.settings.settings.value.claudeModel, c.language.current)
+        c.avatar.stopSpeaking()
+        val line = c.language.current.pick(
+            "Благодаря, че ми каза! Скрих този отговор и ще внимавам повече.",
+            "Thank you for telling me! I've hidden that answer and I'll be more careful.",
+        )
+        _systemLine.value = SystemLine(0, System.currentTimeMillis(), text = line)
+        viewModelScope.launch {
+            c.avatar.play(AnimationCommand(Expression.SAD, Gesture.NOD, holdMs = 2_000))
+            c.avatar.speak(line, voice = c.settings.settings.value.voiceEnabled)
+        }
+    }
+
+    /** What the child said right before [answer] in the chat on screen. */
+    private fun questionBefore(answer: String): String? {
+        val messages = c.agentSession.state.value.messages
+        val i = messages.indexOfLast { !it.fromUser && it.text == answer }
+        if (i <= 0) return null
+        return messages.subList(0, i).lastOrNull { it.fromUser }?.text
+    }
+
+    /** A line of the conversation log flagged from the history: the question is the child's line before it. */
+    fun flagFromHistory(u: Utterance, reason: com.talkto.core.safety.FlagReason) {
+        val items = _historyItems.value
+        val i = items.indexOfFirst { it.id == u.id }
+        // The whole log is shown newest first, so what was said before the answer is the next line in the list.
+        // Search results skip lines, so there the neighbour may belong to another talk.
+        val asked = if (i < 0 || historyQuery.isNotBlank()) null
+        else items.getOrNull(i + 1)?.takeIf { it.speaker == com.talkto.core.history.Speaker.USER }?.text
+        flagReply(u.text, reason, asked ?: "")
+    }
+
+    fun removeFlag(id: Long) = c.flags.remove(id)
+
+    fun clearFlags() = c.flags.clear()
+
+    /** The flags not passed on yet, as an e-mail the parent reads before sending. */
+    fun emailFlags(context: Context) {
+        val waiting = c.flags.log.value.waiting
+        if (waiting.isEmpty()) return
+        val lang = c.language.current
+        com.talkto.app.ui.feedback.sendEmail(
+            context,
+            com.talkto.core.safety.FlagReport.subject(lang),
+            com.talkto.core.safety.FlagReport.email(waiting, com.talkto.app.BuildConfig.VERSION_NAME, lang),
+        )
+        c.flags.markEmailed(waiting.map { it.atMs })
     }
 
     // ------------------------------------------------- parents' corner and screen time
@@ -847,8 +912,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _historyItems = MutableStateFlow<List<Utterance>>(emptyList())
     val historyItems: StateFlow<List<Utterance>> = _historyItems.asStateFlow()
 
+    private var historyQuery = ""
+
     /** Newest first, filtered by [query] when given. */
     fun loadHistory(query: String = "") = viewModelScope.launch {
+        historyQuery = query
         _historyItems.value = runCatching {
             if (query.isBlank()) c.history.recent(500).asReversed() else c.history.search(query, 200)
         }.getOrDefault(emptyList())

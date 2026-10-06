@@ -131,6 +131,7 @@ private fun TaleCard(tale: Tale, lang: com.talkto.core.i18n.Lang, onClick: () ->
 @Composable
 fun TaleDialog(ui: TaleUi, vm: MainViewModel) {
     val tales = vm.tales
+    var flagging by remember { mutableStateOf(false) }
     Dialog(onDismissRequest = tales::close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(16.dp)) {
@@ -142,6 +143,8 @@ fun TaleDialog(ui: TaleUi, vm: MainViewModel) {
                         },
                         style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f),
                     )
+                    // A tale Claude made up (not one from the library) can be flagged like any of its answers.
+                    if (ui is TaleUi.Reading && ui.tale == null) com.talkto.app.ui.safety.FlagButton(onClick = { flagging = true })
                     IconButton(onClick = tales::close) { Icon(Icons.Rounded.Close, contentDescription = tr("Затвори", "Close")) }
                 }
                 Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -166,6 +169,12 @@ fun TaleDialog(ui: TaleUi, vm: MainViewModel) {
                 }
             }
         }
+    }
+    if (flagging && ui is TaleUi.Reading) {
+        com.talkto.app.ui.safety.FlagDialog(
+            onFlag = { reason -> tales.close(); vm.flagReply(ui.text, reason) },
+            onDismiss = { flagging = false },
+        )
     }
 }
 

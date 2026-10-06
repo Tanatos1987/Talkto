@@ -30,6 +30,10 @@ android {
         // Where "Обратна връзка" sends its e-mail: the TALKTO_FEEDBACK_EMAIL secret in CI, empty means "pick an app".
         val feedback = (System.getenv("TALKTO_FEEDBACK_EMAIL") ?: providers.gradleProperty("talkto.feedbackEmail").orNull ?: "").replace("\"", "")
         buildConfigField("String", "FEEDBACK_EMAIL", "\"$feedback\"")
+        // Where a flagged Claude answer goes without leaving the app (Google Play's rule for AI content): the
+        // TALKTO_REPORT_URL secret in CI, an https address that takes a JSON POST. Empty: parents pass flags on by e-mail.
+        val report = (System.getenv("TALKTO_REPORT_URL") ?: providers.gradleProperty("talkto.reportUrl").orNull ?: "").trim().replace("\"", "")
+        buildConfigField("String", "REPORT_URL", "\"$report\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
     }
