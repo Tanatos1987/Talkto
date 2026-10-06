@@ -26,10 +26,15 @@ class ActivityRepository(
     /** Counting starts once the saved log is in, so an early count never overwrites it. */
     @Volatile private var loaded = false
 
+    private val _ready = MutableStateFlow(false)
+    /** True once the saved log has been read. */
+    val ready: StateFlow<Boolean> = _ready.asStateFlow()
+
     fun start() {
         scope.launch {
             runCatching { store.activity.first() }.getOrNull()?.let { _log.value = it }
             loaded = true
+            _ready.value = true
         }
     }
 

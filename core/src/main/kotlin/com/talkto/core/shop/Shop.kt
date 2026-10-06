@@ -51,6 +51,8 @@ enum class CoinReason(val coins: Int) {
     LEVEL_UP(25),
     UPDATE(30),
     TASK(2),
+    BADGE(20),
+    STORY(3),
 }
 
 /** Everything for sale: the paid cosmetics of every kind, cheapest first on each shelf. */

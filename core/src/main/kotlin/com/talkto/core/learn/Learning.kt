@@ -81,6 +81,9 @@ sealed interface Step {
     /** Say the word aloud in the target language. */
     data class Speak(override val word: Word) : Step
 
+    /** Write the word in the target language (the picture and the learner's word are shown). */
+    data class Type(override val word: Word) : Step
+
     /** What would you answer? The question is spoken in the target language. */
     data class Dialogue(val exchange: Exchange, val options: List<Exchange>, val answer: Int) : Step {
         override val word: Word? get() = null
@@ -99,7 +102,7 @@ data class Lesson(val target: Lang, val topic: Topic?, val steps: List<Step>) {
  */
 class LessonPlanner(private val random: Random = Random.Default) {
 
-    fun plan(target: Lang, topic: Topic?, state: LearningState, today: Long, speaking: Boolean = true, words: Int = 5): Lesson {
+    fun plan(target: Lang, topic: Topic?, state: LearningState, today: Long, speaking: Boolean = true, words: Int = 5, writing: Boolean = false): Lesson {
         val pool = topic?.let(Vocabulary::of) ?: Vocabulary.words.filter { state.of(it, target) != null }.ifEmpty { Vocabulary.of(Topic.ANIMALS) }
         val due = pool.filter { w -> state.of(w, target)?.let { it.seen > 0 && it.dueDay <= today } == true }
             .sortedWith(compareBy({ state.of(it, target)?.box ?: 0 }, { state.of(it, target)?.dueDay ?: 0 }))
@@ -128,6 +131,11 @@ class LessonPlanner(private val random: Random = Random.Default) {
         }
         questions.shuffle(random)
         steps += questions
+        // Writing: a word the learner has met before when there is one, otherwise the last new one (shown just now).
+        if (writing) {
+            val writable = chosen.filter { !it.bg.contains('…') && !it.en.contains('…') }
+            (writable.firstOrNull { state.of(it, target) != null } ?: writable.lastOrNull())?.let { steps += Step.Type(it) }
+        }
         if (speaking) chosen.firstOrNull { !it.bg.contains('…') }?.let { steps += Step.Speak(it) }
         if (topic == Topic.GREETINGS) repeat(2) { steps += dialogue(target) }
         return Lesson(target, topic, steps)

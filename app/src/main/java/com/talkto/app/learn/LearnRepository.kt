@@ -17,7 +17,12 @@ import java.time.ZoneId
 
 /** Saved learning progress and the language being learned (null: the other one than ZnaiKo speaks). */
 @Serializable
-data class LearnData(val state: LearningState = LearningState(), val target: String? = null)
+data class LearnData(
+    val state: LearningState = LearningState(),
+    val target: String? = null,
+    /** Lessons include a "write the word" step. */
+    val writing: Boolean = true,
+)
 
 /** Lesson progress, persisted as one JSON blob next to the pet. */
 class LearnRepository(
@@ -37,6 +42,8 @@ class LearnRepository(
     val target: Lang get() = _data.value.target?.let(Lang::of) ?: language.current.other
 
     fun setTarget(lang: Lang) = save { it.copy(target = lang.code) }
+
+    fun setWriting(on: Boolean) = save { it.copy(writing = on) }
 
     fun update(f: (LearningState) -> LearningState) = save { it.copy(state = f(it.state)) }
 

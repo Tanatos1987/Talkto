@@ -63,6 +63,10 @@ data class PetState(
     val fat: Float = 0f,
     /** 0..100: healthy food raises it, junk lowers it. Low is pale, high is shiny. */
     val vitality: Float = 60f,
+    /** Badges earned (Badge names). */
+    val badges: Set<String> = emptySet(),
+    /** Epoch day of ZnaiKo's last weekly praise; 0 before the first week. */
+    val weeklyPraiseDay: Long = 0,
 ) {
     val wallet: Wallet get() = Wallet(coins, owned)
 
@@ -149,11 +153,16 @@ class PetEngine(
     /** Emits the amount each time coins are earned, for the little "+5" on screen. */
     val coinGains: SharedFlow<Int> = _coinGains.asSharedFlow()
 
+    private val _ready = MutableStateFlow(false)
+    /** True once the saved pet has been read; badges and the weekly praise wait for it. */
+    val ready: StateFlow<Boolean> = _ready.asStateFlow()
+
     fun start() {
         scope.launch {
             val saved = store.pet.first()
             _state.value = (saved ?: PetState(updatedAtMs = clock())).let(::advance)
                 .let { if (it.bornAtMs <= 0) it.copy(bornAtMs = clock()) else it }
+            _ready.value = true
             registerVisit()
             persist()
             while (isActive) {
@@ -241,6 +250,19 @@ class PetEngine(
             GameOutcome.PET_WON -> { mutate(XpReason.PLAY) { it.copy(happiness = (it.happiness + 12f).cap()) }; learn(KnowledgeSource.GAME) }
             GameOutcome.DRAW -> { mutate(XpReason.PLAY) { it.copy(happiness = (it.happiness + 6f).cap(), bond = (it.bond + 1f).cap()) }; learn(KnowledgeSource.GAME) }
         }
+    }
+
+    /** New badges: kept for good, each with a few coins. */
+    fun award(badges: List<com.talkto.core.pet.Badge>) {
+        if (badges.isEmpty()) return
+        _state.update { s -> s.copy(badges = s.badges + badges.map { it.name }, happiness = (s.happiness + 5f).cap()) }
+        earn(CoinReason.BADGE, badges.size)
+        scope.launch { persist() }
+    }
+
+    fun setWeeklyPraiseDay(day: Long) {
+        _state.update { it.copy(weeklyPraiseDay = day) }
+        scope.launch { persist() }
     }
 
     /** A task finished successfully: helping makes ZnaiKo happy and strengthens the bond. */

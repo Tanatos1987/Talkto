@@ -24,6 +24,7 @@ import com.talkto.core.shop.ShopItem
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -122,7 +123,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val learnData: StateFlow<LearnData> = c.learning.data
     /** Chat practice in this language is on. */
     val practice: StateFlow<Lang?> = c.agentSession.practice
-    /** "Научи ме на английски" said in the chat: open the lessons. */
+    /** "РќР°СѓС‡Рё РјРµ РЅР° Р°РЅРіР»РёР№СЃРєРё" said in the chat: open the lessons. */
     val lessonRequests = c.agentSession.lessonRequests
 
     /**
@@ -283,10 +284,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 restSaid = true
                 lessons.close(); quiz.close(); games.close(); closeArcade()
                 c.pet.setSleeping(true)
-                sayText(l.pick("Време е за почивка! Чудесно си поиграхме. Ела пак утре!", "Time for a rest! We had a lovely time. Come back tomorrow!"), Expression.SLEEPY)
+                sayText(l.pick("Р’СЂРµРјРµ Рµ Р·Р° РїРѕС‡РёРІРєР°! Р§СѓРґРµСЃРЅРѕ СЃРё РїРѕРёРіСЂР°С…РјРµ. Р•Р»Р° РїР°Рє СѓС‚СЂРµ!", "Time for a rest! We had a lovely time. Come back tomorrow!"), Expression.SLEEPY)
             }
             com.talkto.core.parent.ScreenTime.warnNow(limit, today) ->
-                sayText(l.pick("Още пет минутки и ще трябва да си почина.", "Five more minutes, then I need a rest."), Expression.SLEEPY)
+                sayText(l.pick("РћС‰Рµ РїРµС‚ РјРёРЅСѓС‚РєРё Рё С‰Рµ С‚СЂСЏР±РІР° РґР° СЃРё РїРѕС‡РёРЅР°.", "Five more minutes, then I need a rest."), Expression.SLEEPY)
             else -> restSaid = false
         }
     }
@@ -346,6 +347,57 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Words learned so far in the language being practised. */
     fun wordsLearned(): Int = c.learning.data.value.state.learned(c.learning.target)
+
+    fun setLearnWriting(on: Boolean) = c.learning.setWriting(on)
+
+    // ------------------------------------------------------- badges and the weekly praise
+
+    init {
+        // Badges: whenever progress changes, any newly earned badge is kept, paid and celebrated.
+        viewModelScope.launch {
+            c.activity.ready.first { it }
+            c.pet.ready.first { it }
+            combine(c.learning.data, quiz.data, c.pet.state, c.activity.log) { learn, q, p, log ->
+                val days = log.days
+                com.talkto.core.pet.BadgeStats(
+                    wordsLearned = Lang.entries.sumOf { learn.state.learned(it) },
+                    lessons = learn.state.lessons,
+                    learnStreak = learn.state.streak,
+                    mathSolved = q.mathSolved,
+                    triviaRight = q.triviaRight,
+                    level = p.level,
+                    visitStreak = p.streakDays,
+                    games = days.sumOf { it.games },
+                    stories = days.sumOf { it.stories },
+                ) to p.badges
+            }.collect { (stats, have) ->
+                val fresh = com.talkto.core.pet.Badge.newOnes(stats, have)
+                if (fresh.isEmpty()) return@collect
+                c.pet.award(fresh)
+                val l = c.language.current
+                val first = fresh.first()
+                val more = fresh.size - 1
+                val line = l.pick("РќРѕРІР° Р·РЅР°С‡РєР°: ${first.emoji} ${first.bg}!", "New badge: ${first.emoji} ${first.en}!") +
+                    if (more > 0) l.pick(" Р РѕС‰Рµ $more!", " And $more more!") else ""
+                sayText(line, Expression.LOVE)
+            }
+        }
+        // Once a week ZnaiKo says what the child did in the last seven days.
+        viewModelScope.launch {
+            c.activity.ready.first { it }
+            c.pet.ready.first { it }
+            val today = c.activity.today()
+            val last = c.pet.state.value.weeklyPraiseDay
+            if (last <= 0L) { c.pet.setWeeklyPraiseDay(today); return@launch }
+            if (today - last < 7) return@launch
+            c.pet.setWeeklyPraiseDay(today)
+            val week = c.activity.log.value.weekTotal(today - 1)
+            com.talkto.core.pet.WeeklyPraise.text(week, c.language.current)?.let { line ->
+                delay(4_000) // after the greeting
+                sayText(line, Expression.LOVE)
+            }
+        }
+    }
 
     fun refreshPermissions() {
         val ctx = getApplication<Application>()
@@ -424,9 +476,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (won) { c.pet.earn(com.talkto.core.shop.CoinReason.GAME_WON); c.pet.gameWon() }
         val l = c.language.current
         val line = when {
-            won -> l.pick("Браво! Мина нивото с $points точки!", "Well done! You passed the level with $points points!")
-            game == Arcade.TETRIS -> l.pick("Край! $points точки и $lines реда. Хайде пак?", "Game over! $points points and $lines lines. Again?")
-            else -> l.pick("Ходовете свършиха. $points точки! Опитай пак.", "Out of moves. $points points! Try again.")
+            won -> l.pick("Р‘СЂР°РІРѕ! РњРёРЅР° РЅРёРІРѕС‚Рѕ СЃ $points С‚РѕС‡РєРё!", "Well done! You passed the level with $points points!")
+            game == Arcade.TETRIS -> l.pick("РљСЂР°Р№! $points С‚РѕС‡РєРё Рё $lines СЂРµРґР°. РҐР°Р№РґРµ РїР°Рє?", "Game over! $points points and $lines lines. Again?")
+            else -> l.pick("РҐРѕРґРѕРІРµС‚Рµ СЃРІСЉСЂС€РёС…Р°. $points С‚РѕС‡РєРё! РћРїРёС‚Р°Р№ РїР°Рє.", "Out of moves. $points points! Try again.")
         }
         c.avatar.play(AnimationCommand(if (won) Expression.HAPPY else Expression.THINKING, Gesture.BOUNCE, holdMs = 1_200))
         c.avatar.speak(line, voice = c.settings.settings.value.voiceEnabled)
@@ -461,8 +513,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun buy(item: ShopItem): Boolean {
         val l = c.language.current
         val ok = c.pet.buy(item)
-        val line = if (ok) l.pick("Благодаря! Купих ${item.label(l)}.", "Thank you! I bought the ${item.label(l).lowercase()}.")
-        else l.pick("Трябват ми още ${item.price - c.pet.state.value.coins} монети.", "I need ${item.price - c.pet.state.value.coins} more coins.")
+        val line = if (ok) l.pick("Р‘Р»Р°РіРѕРґР°СЂСЏ! РљСѓРїРёС… ${item.label(l)}.", "Thank you! I bought the ${item.label(l).lowercase()}.")
+        else l.pick("РўСЂСЏР±РІР°С‚ РјРё РѕС‰Рµ ${item.price - c.pet.state.value.coins} РјРѕРЅРµС‚Рё.", "I need ${item.price - c.pet.state.value.coins} more coins.")
         _systemLine.value = SystemLine(0, System.currentTimeMillis(), text = line)
         c.avatar.play(AnimationCommand(if (ok) Expression.LOVE else Expression.SAD, if (ok) Gesture.SPIN else Gesture.SHAKE, holdMs = 1_500))
         viewModelScope.launch { c.avatar.speak(line, voice = c.settings.settings.value.voiceEnabled) }

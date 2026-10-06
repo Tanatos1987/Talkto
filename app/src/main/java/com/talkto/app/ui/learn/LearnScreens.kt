@@ -44,9 +44,17 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -74,6 +82,7 @@ import com.talkto.core.learn.Topic
 import com.talkto.core.learn.Vocabulary
 import com.talkto.core.learn.Word
 import com.talkto.core.learn.wordOfTheDay
+import com.talkto.core.pet.Badge
 import java.time.LocalDate
 import java.util.Locale
 
@@ -145,6 +154,39 @@ fun LearnSheet(vm: MainViewModel, onLesson: (Topic?, Boolean) -> Unit, onPractic
             }
             Text(stringResource(R.string.learn_stats, st.learned(target), st.due(target, today), st.stars), style = MaterialTheme.typography.bodyMedium)
             if (st.streak > 1) Text(stringResource(R.string.learn_streak, st.streak), style = MaterialTheme.typography.bodyMedium)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    com.talkto.app.i18n.tr("✍️ Упражнения с писане", "✍️ Writing exercises"),
+                    style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f),
+                )
+                Switch(checked = data.writing, onCheckedChange = vm::setLearnWriting)
+            }
+
+            // Badges: earned ones shine, the rest wait faded.
+            val pet by vm.pet.collectAsStateWithLifecycle()
+            Spacer(Modifier.height(8.dp))
+            Text(
+                com.talkto.app.i18n.tr("🏅 Значки: ${pet.badges.size} от ${Badge.entries.size}", "🏅 Badges: ${pet.badges.size} of ${Badge.entries.size}"),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Badge.entries.forEach { b ->
+                    val earned = b.name in pet.badges
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (earned) TalktoColors.Sunflower.copy(alpha = 0.45f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.width(76.dp),
+                    ) {
+                        Column(Modifier.padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(if (earned) b.emoji else "🔒", fontSize = 24.sp)
+                            Text(
+                                b.label(lang), fontSize = 10.sp, textAlign = TextAlign.Center, maxLines = 3,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (earned) 1f else 0.5f),
+                            )
+                        }
+                    }
+                }
+            }
 
             Spacer(Modifier.height(12.dp))
             val word = remember(target, today) { wordOfTheDay(today, target) }
@@ -247,6 +289,7 @@ fun LessonDialog(ui: LessonUi, vm: MainViewModel) {
                                 is Step.Choice -> ChoiceCard(step, ui, lang, onListen = lessons::replay, onChoose = lessons::choose)
                                 is Step.Speak -> SpeakCard(step, ui, lang, vm)
                                 is Step.Dialogue -> DialogueCard(step, ui, onListen = lessons::replay, onChoose = lessons::choose)
+                                is Step.Type -> TypeCard(step, ui, onListen = lessons::replay, onSubmit = lessons::typed)
                                 null -> Unit
                             }
                         }
@@ -254,7 +297,7 @@ fun LessonDialog(ui: LessonUi, vm: MainViewModel) {
                 }
                 if (!ui.done) {
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 8.dp)) {
-                        if (ui.step is Step.Speak && ui.correct == null) {
+                        if ((ui.step is Step.Speak || ui.step is Step.Type) && ui.correct == null) {
                             OutlinedButton(onClick = lessons::skip) { Text(stringResource(R.string.lesson_skip)) }
                         }
                         Button(onClick = lessons::next, enabled = ui.canGoOn) { Text(stringResource(R.string.lesson_next)) }
@@ -418,6 +461,48 @@ private fun SpeakCard(step: Step.Speak, ui: LessonUi, lang: Lang, vm: MainViewMo
             Text(stringResource(R.string.lesson_try_again), style = MaterialTheme.typography.titleMedium, color = TalktoColors.Sunflower)
         }
         Feedback(ui, word.text(ui.target))
+    }
+}
+
+/** "Write it": the picture and the learner's word; the child types the word in the language being learned. */
+@Composable
+private fun TypeCard(step: Step.Type, ui: LessonUi, onListen: () -> Unit, onSubmit: (String) -> Unit) {
+    val word = step.word
+    var text by rememberSaveable(word.id) { mutableStateOf("") }
+    val answer = word.text(ui.target)
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+        if (word.topic.pictures) Text(word.emoji, fontSize = 80.sp)
+        Text(
+            com.talkto.app.i18n.tr("Напиши на ${ui.target.nameIn(Lang.BG)}:", "Write it in ${ui.target.nameIn(Lang.EN)}:"),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Text(word.text(ui.native), fontSize = 32.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(12.dp))
+        OutlinedTextField(
+            value = text,
+            onValueChange = { text = it.take(40) },
+            singleLine = true,
+            enabled = ui.correct == null,
+            placeholder = {
+                // After one wrong try the first letter helps.
+                if (ui.tries > 0) Text(answer.take(1) + "…")
+            },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { onSubmit(text) }),
+            textStyle = MaterialTheme.typography.headlineSmall.copy(textAlign = TextAlign.Center),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(10.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            ListenButton(onListen)
+            Button(onClick = { onSubmit(text) }, enabled = text.isNotBlank() && ui.correct == null) {
+                Text(com.talkto.app.i18n.tr("Провери", "Check"))
+            }
+        }
+        if (ui.correct == null && ui.tries > 0) {
+            Text(stringResource(R.string.lesson_try_again), style = MaterialTheme.typography.titleMedium, color = TalktoColors.Sunflower)
+        }
+        Feedback(ui, answer)
     }
 }
 

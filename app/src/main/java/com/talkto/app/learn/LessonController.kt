@@ -70,7 +70,9 @@ class LessonController(
     fun start(topic: Topic?, speaking: Boolean = true) {
         lastTopic = topic
         lastSpeaking = speaking
-        val lesson = LessonPlanner(random).plan(learning.target, topic, learning.data.value.state, learning.today(), speaking)
+        val lesson = LessonPlanner(random).plan(
+            learning.target, topic, learning.data.value.state, learning.today(), speaking, writing = learning.data.value.writing,
+        )
         _state.value = LessonUi(lesson)
         avatar.play(AnimationCommand(Expression.HAPPY, Gesture.BOUNCE, holdMs = 1_500))
         announce()
@@ -121,16 +123,32 @@ class LessonController(
         }
     }
 
-    /** Skips a "say it" step without counting it (no microphone, a noisy room). */
+    /** A typed answer for a "write it" step. Two tries (the first letter is shown after the first), then the answer. */
+    fun typed(text: String) {
+        val ui = _state.value ?: return
+        val step = ui.step as? Step.Type ?: return
+        if (ui.correct != null || text.isBlank()) return
+        val ok = AnswerMatcher.matches(text, step.word, ui.target)
+        _state.update { s -> s?.let { it.copy(heard = text, tries = it.tries + 1) } }
+        if (ok || ui.tries >= 1) {
+            learning.update { it.record(step.word, ui.target, ok, learning.today()) }
+            settle(ok, null, step.word.text(ui.target))
+        } else {
+            avatar.play(AnimationCommand(Expression.THINKING, Gesture.NONE, holdMs = 1_200))
+            say(lang().pick("Почти! Опитай пак.", "Almost! Try again."))
+        }
+    }
+
+    /** Skips a "say it" or "write it" step without counting it (no microphone, a noisy room, too hard yet). */
     fun skip() {
         val ui = _state.value ?: return
-        if (ui.step !is Step.Speak || ui.correct != null) return
+        if ((ui.step !is Step.Speak && ui.step !is Step.Type) || ui.correct != null) return
         next()
     }
 
     fun next() {
         val ui = _state.value ?: return
-        if (!ui.canGoOn && ui.step !is Step.Speak) return
+        if (!ui.canGoOn && ui.step !is Step.Speak && ui.step !is Step.Type) return
         val nextIndex = ui.index + 1
         if (nextIndex >= ui.lesson.steps.size) return finish(ui)
         _state.value = ui.copy(index = nextIndex, chosen = null, correct = null, heard = null, tries = 0)
@@ -174,6 +192,7 @@ class LessonController(
             }
             is Step.Speak -> say(lang().pick("Кажи на ${ui.target.nameIn(Lang.BG)}: ", "Say it in ${ui.target.nameIn(Lang.EN)}: ") + step.word.text(ui.native))
             is Step.Dialogue -> say(step.exchange.question(ui.target))
+            is Step.Type -> say(lang().pick("Напиши на ${ui.target.nameIn(Lang.BG)}: ", "Write it in ${ui.target.nameIn(Lang.EN)}: ") + step.word.text(ui.native))
             null -> Unit
         }
     }
