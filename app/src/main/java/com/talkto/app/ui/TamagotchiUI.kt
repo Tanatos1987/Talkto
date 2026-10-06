@@ -149,7 +149,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
-private enum class Sheet { NONE, CREATOR, AVATAR, SETTINGS, HISTORY, BACKGROUNDS, GAMES, LEARN, SHOP, HOUSE, FOOD }
+private enum class Sheet { NONE, CREATOR, AVATAR, SETTINGS, HISTORY, BACKGROUNDS, GAMES, LEARN, SHOP, HOUSE, FOOD, STORIES }
 
 @Composable
 fun TamagotchiScreen(vm: MainViewModel) {
@@ -291,6 +291,7 @@ fun TamagotchiScreen(vm: MainViewModel) {
             onSleep = vm::toggleSleep,
             onWardrobe = { sheet = Sheet.CREATOR },
             onLearn = { sheet = Sheet.LEARN },
+            onStories = { sheet = Sheet.STORIES },
         )
         Spacer(Modifier.height(12.dp))
         val voice by vm.voice.collectAsStateWithLifecycle()
@@ -358,8 +359,13 @@ fun TamagotchiScreen(vm: MainViewModel) {
             onSweets = { sheet = Sheet.NONE; vm.openArcade(MainViewModel.Arcade.SWEETS) },
         )
         Sheet.FOOD -> com.talkto.app.ui.food.FoodSheet(pet, onEat = { f -> sheet = Sheet.NONE; vm.feed(f) }, onDismiss = { sheet = Sheet.NONE })
+        Sheet.STORIES -> com.talkto.app.ui.story.StoriesSheet(vm, onDismiss = { sheet = Sheet.NONE })
         Sheet.NONE -> Unit
     }
+    val tale by vm.tales.state.collectAsStateWithLifecycle()
+    tale?.let { com.talkto.app.ui.story.TaleDialog(it, vm) }
+    val bedtime by vm.bedtime.collectAsStateWithLifecycle()
+    if (bedtime) com.talkto.app.ui.story.BedtimeDialog(vm, onDismiss = vm::dismissBedtime)
 
     val game by vm.games.state.collectAsStateWithLifecycle()
     game?.let { g ->
@@ -652,6 +658,7 @@ private fun ActionRow(
     onSleep: () -> Unit,
     onWardrobe: () -> Unit,
     onLearn: () -> Unit,
+    onStories: () -> Unit,
 ) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         ToyButton("🍎", stringResource(R.string.action_feed), TalktoColors.Tomato, onFeed)
@@ -663,6 +670,7 @@ private fun ActionRow(
         )
         ToyButton("👕", stringResource(R.string.action_wardrobe), TalktoColors.Sunflower, onWardrobe)
         ToyButton("📚", stringResource(R.string.action_learn), Color(0xFF9B5DE5), onLearn)
+        ToyButton("📖", com.talkto.app.i18n.tr("Приказки", "Stories"), Color(0xFFFF8FAB), onStories)
     }
 }
 
@@ -671,7 +679,8 @@ private fun ActionRow(
 private fun ToyButton(emoji: String, label: String, color: Color, onClick: () -> Unit) {
     Box(
         Modifier
-            .size(58.dp)
+            // Six buttons must fit a narrow phone (360 dp) next to each other.
+            .size(52.dp)
             .clip(CircleShape)
             .background(color)
             .border(3.dp, MaterialTheme.colorScheme.onBackground, CircleShape)
@@ -679,7 +688,7 @@ private fun ToyButton(emoji: String, label: String, color: Color, onClick: () ->
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) {
-        Text(emoji, fontSize = 28.sp)
+        Text(emoji, fontSize = 25.sp)
     }
 }
 

@@ -456,6 +456,14 @@ class ToolDispatcher(
                 p.app(AppCommand.Trivia(category))
                 done("the quiz is open on screen")
             }
+            "read_story" -> {
+                val request = PetToolWords.story(item) ?: throw TalktoError.InvalidInput("item must be fable, fairy_tale, bedtime, riddle or any")
+                p.story(request)
+                done(
+                    if (request.riddle) "a riddle is on screen and ZnaiKo is asking it aloud; do not give the answer"
+                    else "a tale is on screen and ZnaiKo is reading it aloud now; reply with one short line at most, do not retell it",
+                )
+            }
             else -> throw TalktoError.InvalidInput("Unknown pet action '$action'")
         }
     }

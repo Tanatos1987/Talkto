@@ -27,6 +27,8 @@ import com.talkto.core.learn.wordOfTheDay
 import com.talkto.core.history.HistoryRepository
 import com.talkto.core.history.Speaker
 import com.talkto.core.pet.Food
+import com.talkto.core.story.StoryCommands
+import com.talkto.core.story.StoryRequest
 import com.talkto.core.pet.KnowledgeSource
 import com.talkto.core.profile.ProfileRepository
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -122,6 +124,18 @@ class AgentSession(
         _lessonRequests.tryEmit(null)
     }
 
+    private val _storyRequests = MutableSharedFlow<StoryRequest>(extraBufferCapacity = 2)
+    /** A built-in tale or riddle to open in the reader (asked offline, or by Claude through the pet tool). */
+    val storyRequests: SharedFlow<StoryRequest> = _storyRequests.asSharedFlow()
+
+    /** Set when a tale started during this turn: ZnaiKo is reading it, so the reply is shown but not spoken over it. */
+    @Volatile private var storyThisTurn = false
+
+    fun requestStory(request: StoryRequest) {
+        storyThisTurn = true
+        _storyRequests.tryEmit(request)
+    }
+
     /** With the screen open the bite flies in; without it ZnaiKo simply eats. */
     fun requestFeed(food: Food) {
         if (_feedRequests.subscriptionCount.value == 0) pet.eat(food) else _feedRequests.tryEmit(food)
@@ -174,6 +188,16 @@ class AgentSession(
             _appRequests.tryEmit(cmd)
             return localReply(trimmed, appReply(cmd), cfg.voiceEnabled)
         }
+        // Offline, "разкажи ми приказка" opens the built-in library; online Claude tells the tale (or opens the library).
+        if (!online) StoryCommands.parse(command)?.let { req ->
+            _storyRequests.tryEmit(req)
+            val line = if (req.riddle) lang().pick("Ето една гатанка!", "Here's a riddle!") else lang().pick("Слушай!", "Listen!")
+            runCatching { history.record(Speaker.USER, trimmed, "offline") }
+            runCatching { history.record(Speaker.TALKTO, line, "offline") }
+            _state.update { it.copy(messages = it.messages + ChatMessage(true, trimmed, clock()) + ChatMessage(false, line, clock())) }
+            return
+        }
+        storyThisTurn = false
         if (online && !claudeSeeded) {
             claudeSeeded = true
             runCatching { claude.seed(history.recent(SEED_LINES).map { (it.speaker == Speaker.USER) to it.text }) }
@@ -212,7 +236,8 @@ class AgentSession(
                 if (avatar.pose.value.expression == Expression.THINKING) {
                     avatar.play(AnimationCommand(if (toolErrors == 0) Expression.HAPPY else Expression.CONFUSED, Gesture.NOD))
                 }
-                avatar.speak(reply.text, voice = settings.settings.value.voiceEnabled)
+                // A tale opened during this turn is being read aloud; the reply only shows in the bubble.
+                if (!storyThisTurn) avatar.speak(reply.text, voice = settings.settings.value.voiceEnabled)
             }
         } catch (t: Throwable) {
             avatar.play(AnimationCommand(Expression.CONFUSED, Gesture.SHAKE))

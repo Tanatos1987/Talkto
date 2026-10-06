@@ -159,6 +159,7 @@ class AppContainer(private val context: Context) {
         override fun app(command: AppCommand) { agentSession.requestApp(command) }
         override fun game(kind: GameKind) { agentSession.requestGame(kind) }
         override fun lessons() { agentSession.requestLessons() }
+        override fun story(request: com.talkto.core.story.StoryRequest) { agentSession.requestStory(request) }
     }
 
     private val dispatcher = ToolDispatcher(

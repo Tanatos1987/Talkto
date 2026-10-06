@@ -114,6 +114,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         onActivity = { c.activity.record(it) },
     )
 
+    /** Fables, fairy tales and riddles read by ZnaiKo. */
+    val tales = com.talkto.app.story.TaleController(
+        c.pet, c.avatar, { c.settings.settings.value.voiceEnabled }, { c.language.current }, viewModelScope,
+        onActivity = { c.activity.record(it) },
+    )
+
+    private val _bedtime = MutableStateFlow(false)
+    /** ZnaiKo is going to bed: offer a bedtime story. */
+    val bedtime: StateFlow<Boolean> = _bedtime.asStateFlow()
+
+    fun dismissBedtime() { _bedtime.value = false }
+
     private val _screens = MutableSharedFlow<AppCommand>(extraBufferCapacity = 4)
     /** Places asked for by voice or text (house, shop, creator, "get to know me"); the screen opens them. */
     val screens: SharedFlow<AppCommand> = _screens.asSharedFlow()
@@ -190,6 +202,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         viewModelScope.launch {
             c.agentSession.feedRequests.collect { food -> feed(food, speak = false) }
+        }
+        viewModelScope.launch {
+            c.agentSession.storyRequests.collect { req ->
+                comeOut()
+                if (req.riddle) tales.riddle() else tales.read(kind = req.kind, bedtime = req.bedtime)
+            }
+        }
+        // A long reply from Claude is a tale it made up: show it on a full page as well.
+        viewModelScope.launch {
+            c.agentSession.state.collect { s ->
+                val last = s.messages.lastOrNull() ?: return@collect
+                if (!last.fromUser && last.text.length > LONG_REPLY && last.atMs > shownTaleAt && System.currentTimeMillis() - last.atMs < 10_000) {
+                    shownTaleAt = last.atMs
+                    tales.show(last.text)
+                }
+            }
         }
         viewModelScope.launch {
             c.agentSession.appRequests.collect { cmd ->
@@ -282,7 +310,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         when {
             com.talkto.core.parent.ScreenTime.timeUp(limit, today) -> if (!restSaid) {
                 restSaid = true
-                lessons.close(); quiz.close(); games.close(); closeArcade()
+                lessons.close(); quiz.close(); games.close(); closeArcade(); tales.close(); _bedtime.value = false
                 c.pet.setSleeping(true)
                 sayText(l.pick("Р’СЂРµРјРµ Рµ Р·Р° РїРѕС‡РёРІРєР°! Р§СѓРґРµСЃРЅРѕ СЃРё РїРѕРёРіСЂР°С…РјРµ. Р•Р»Р° РїР°Рє СѓС‚СЂРµ!", "Time for a rest! We had a lovely time. Come back tomorrow!"), Expression.SLEEPY)
             }
@@ -495,7 +523,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         c.avatar.play(AnimationCommand(Expression.HAPPY, Gesture.SPIN, holdMs = 1_500))
     }
 
-    fun toggleSleep() = c.pet.toggleSleep()
+    /** Bedtime offers a story first; waking up just wakes. */
+    fun toggleSleep() {
+        val goingToBed = !c.pet.state.value.sleeping
+        c.pet.toggleSleep()
+        if (goingToBed && !timeUp.value) _bedtime.value = true
+    }
+
+    /** When the last long reply was put into the reader. */
+    private var shownTaleAt = 0L
 
     // ------------------------------------------------------------- house, shop
 
@@ -831,5 +867,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             .putExtra(Intent.EXTRA_SUBJECT, "ZnaiKo")
             .putExtra(Intent.EXTRA_TEXT, text)
         context.startActivity(Intent.createChooser(send, null))
+    }
+
+    private companion object {
+        /** A reply this long is a tale, not a chat line. */
+        const val LONG_REPLY = 400
     }
 }

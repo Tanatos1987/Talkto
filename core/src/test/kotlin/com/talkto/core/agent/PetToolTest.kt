@@ -34,6 +34,17 @@ class PetToolTest {
         override fun app(command: AppCommand) { done += command }
         override fun game(kind: GameKind) { done += kind }
         override fun lessons() { done += "lessons" }
+        override fun story(request: com.talkto.core.story.StoryRequest) { done += request }
+    }
+
+    @Test fun `reads a fable or asks a riddle`() = runTest {
+        dispatcher.dispatch("pet", args("""{"action":"read_story","item":"fable"}"""))
+        dispatcher.dispatch("pet", args("""{"action":"read_story","item":"riddle"}"""))
+        assertThat(done).containsExactly(
+            com.talkto.core.story.StoryRequest(com.talkto.core.story.TaleKind.FABLE),
+            com.talkto.core.story.StoryRequest(riddle = true),
+        ).inOrder()
+        assertThat(dispatcher.dispatch("pet", args("""{"action":"read_story","item":"novel"}""")).isError).isTrue()
     }
 
     private val dispatcher = ToolDispatcher(

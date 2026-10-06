@@ -238,12 +238,16 @@ object ToolProtocol {
             - start_math: maths tasks; grade = school year 1-7 (optional); item = mixed (default), algebra or geometry.
             - start_trivia: a ten-question quiz; item = animals, nature, space, science, geography, bulgaria, history, sport, art or
               everyday (optional).
+            - read_story: ZnaiKo reads a classic tale from its own library aloud, on a full page; item = fable, fairy_tale,
+              bedtime, riddle or any (optional). Use it when the child wants a known fable or tale, or a riddle; to make up a new
+              tale, just tell it yourself instead.
             The screen changes at once; after a game or quiz is opened, just say something short and encouraging.
         """.trimIndent(),
         properties = mapOf(
             "action" to enumProp(
                 "What to do.",
                 "status", "feed", "play", "sleep", "wake", "go_home", "come_out", "open_game", "open_place", "start_math", "start_trivia",
+                "read_story",
             ),
             "item" to strProp("The food, game, place, maths kind or quiz topic, as listed in the description."),
             "grade" to intProp("start_math: school year 1-7."),
