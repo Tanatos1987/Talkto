@@ -112,7 +112,42 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val quiz = QuizController(
         c.petStore, c.pet, c.avatar, c.profile, { c.settings.settings.value.voiceEnabled }, { c.language.current }, viewModelScope,
         onActivity = { c.activity.record(it) },
+        ask = { system, prompt -> askClaude(system, prompt) },
     )
+
+    /** One question to Claude, or null when Claude is off, unreachable or declines. */
+    private suspend fun askClaude(system: String, prompt: String): String? {
+        if (!c.settings.settings.value.claudeOn) return null
+        return runCatching { c.oneShot.ask(system, prompt) }.getOrNull()
+    }
+
+    /** Claude is on: the screens show the buttons that need it. */
+    fun claudeOn(): Boolean = c.settings.settings.value.claudeOn
+
+    /** Today's question of the day was answered already. */
+    fun dailyDone(): Boolean = quiz.data.value.dailyDay == c.activity.today()
+
+    fun startDaily() {
+        comeOut()
+        quiz.startDaily(c.activity.today())
+    }
+
+    /** Five questions Claude writes about what the child likes (from the profile); the built-in quiz without Claude. */
+    fun startSmartTrivia() {
+        comeOut()
+        val l = c.language.current
+        sayText(l.pick("Измислям въпроси специално за теб…", "I'm making up questions just for you…"), Expression.THINKING)
+        viewModelScope.launch {
+            val likes = runCatching { c.profile.all() }.getOrDefault(emptyList())
+                .filter { it.key.startsWith("likes:") || it.key.startsWith("favourite:") }
+                .map { it.value }
+            val age = c.settings.settings.value.childAge.takeIf { it > 0 }
+            val text = askClaude(com.talkto.core.quiz.SmartQuiz.system(l, age), com.talkto.core.quiz.SmartQuiz.prompt(l, likes))
+            val questions = text?.let { com.talkto.core.quiz.SmartQuiz.parse(it, l) }.orEmpty()
+            if (questions.isEmpty()) sayText(l.pick("Сега ще играем с моите въпроси.", "Let's play with my own questions this time."), Expression.HAPPY)
+            quiz.startTriviaWith(questions)
+        }
+    }
 
     /** Fables, fairy tales and riddles read by ZnaiKo. */
     val tales = com.talkto.app.story.TaleController(

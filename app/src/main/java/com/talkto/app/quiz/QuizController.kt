@@ -16,6 +16,9 @@ import com.talkto.core.quiz.QuizScore
 import com.talkto.core.quiz.Trivia
 import com.talkto.core.quiz.TriviaCard
 import com.talkto.core.quiz.TriviaCategory
+import com.talkto.core.quiz.AdaptiveGrade
+import com.talkto.core.quiz.DailyQuestion
+import com.talkto.core.quiz.TriviaQuestion
 import com.talkto.core.shop.CoinReason
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,6 +41,8 @@ data class QuizData(
     val bestMathStreak: Int = 0,
     val triviaRight: Int = 0,
     val bestTrivia: Int = 0,
+    /** Epoch day the question of the day was last answered. */
+    val dailyDay: Long = -1,
 )
 
 sealed interface QuizUi {
@@ -55,6 +60,9 @@ sealed interface QuizUi {
         val heard: String? = null,
         override val score: QuizScore = QuizScore(),
         override val coins: Int = 0,
+        /** Claude's step-by-step explanation, when the child asked for one. */
+        val help: String? = null,
+        val helpLoading: Boolean = false,
     ) : QuizUi {
         /** The answer is settled: right, or wrong twice and shown. */
         val settled: Boolean get() = result == true || (result == false && tries >= 2)
@@ -70,6 +78,9 @@ sealed interface QuizUi {
         val done: Boolean = false,
         override val score: QuizScore = QuizScore(),
         override val coins: Int = 0,
+        /** The question of the day (one card), or questions Claude wrote about the child's interests. */
+        val daily: Boolean = false,
+        val smart: Boolean = false,
     ) : QuizUi {
         val card: TriviaCard? get() = cards.getOrNull(index)
     }
@@ -91,9 +102,15 @@ class QuizController(
     private val random: Random = Random.Default,
     /** Counts answers for the parents' report. */
     private val onActivity: (com.talkto.core.parent.Activity) -> Unit = {},
+    /** One question to Claude (system, prompt); null without Claude. Used for explanations and smart quizzes. */
+    private val ask: (suspend (String, String) -> String?)? = null,
 ) {
     private val math = MathTasks(random)
     private val trivia = Trivia(random)
+
+    /** Right answers and missed tasks in a row, for [AdaptiveGrade]. */
+    private var rightRun = 0
+    private var wrongRun = 0
 
     private val _state = MutableStateFlow<QuizUi?>(null)
     val state: StateFlow<QuizUi?> = _state.asStateFlow()
@@ -111,6 +128,7 @@ class QuizController(
                 profile.get("age")?.filter(Char::isDigit)?.toIntOrNull(),
             )
             if (grade != null && grade != saved.grade) save { it.copy(grade = grade) }
+            rightRun = 0; wrongRun = 0
             _state.value = QuizUi.Math(math.next(g, lang(), topic), g, topic)
             avatar.play(AnimationCommand(Expression.THINKING, Gesture.NOD, holdMs = 1_200))
             announce()
@@ -120,7 +138,8 @@ class QuizController(
     fun setGrade(grade: Int) {
         val ui = _state.value as? QuizUi.Math ?: return
         save { it.copy(grade = grade) }
-        _state.value = ui.copy(task = math.next(grade, lang(), ui.topic), grade = grade, input = "", result = null, tries = 0, heard = null)
+        rightRun = 0; wrongRun = 0
+        _state.value = ui.copy(task = math.next(grade, lang(), ui.topic), grade = grade, input = "", result = null, tries = 0, heard = null, help = null)
         announce()
     }
 
@@ -156,6 +175,7 @@ class QuizController(
         val l = lang()
         if (ok) {
             onActivity(com.talkto.core.parent.Activity.MATH_RIGHT)
+            if (ui.tries == 0) { rightRun++; wrongRun = 0 }
             val score = ui.score.answer(true)
             pet.earn(CoinReason.QUIZ_ANSWER)
             pet.learn(KnowledgeSource.QUIZ_ANSWER)
@@ -171,7 +191,10 @@ class QuizController(
             say(praise(l) + " " + l.pick("Отговорът е ${ui.task.answer}.", "The answer is ${ui.task.answer}."))
         } else {
             val tries = ui.tries + 1
-            if (tries == 2) onActivity(com.talkto.core.parent.Activity.MATH_WRONG)
+            if (tries == 2) {
+                onActivity(com.talkto.core.parent.Activity.MATH_WRONG)
+                wrongRun++; rightRun = 0
+            }
             val score = if (tries >= 2) ui.score.answer(false) else ui.score
             _state.value = ui.copy(result = false, tries = tries, heard = heard, score = score)
             avatar.play(AnimationCommand(Expression.CONFUSED, Gesture.SHAKE, holdMs = 1_200))
@@ -184,9 +207,53 @@ class QuizController(
 
     fun nextMath() {
         val ui = _state.value as? QuizUi.Math ?: return
-        _state.value = ui.copy(task = math.next(ui.grade, lang(), ui.topic), input = "", result = null, tries = 0, heard = null)
-        announce()
+        // The tasks follow the child: a little harder after a good run, a little easier after two misses.
+        val moved = AdaptiveGrade.next(ui.grade, rightRun, wrongRun)
+        val grade = moved ?: ui.grade
+        if (moved != null) {
+            rightRun = 0; wrongRun = 0
+            save { it.copy(grade = moved) }
+        }
+        _state.value = ui.copy(task = math.next(grade, lang(), ui.topic), grade = grade, input = "", result = null, tries = 0, heard = null, help = null, helpLoading = false)
+        if (moved != null) {
+            val l = lang()
+            val label = MathTasks.gradeLabel(moved, l)
+            say(
+                if (moved > ui.grade) l.pick("Супер серия! Да опитаме по-трудни задачи: $label.", "What a streak! Let's try harder ones: $label.")
+                else l.pick("Да опитаме малко по-лесни задачи: $label. После пак ще се качим!", "Let's try some easier ones: $label. We'll climb back up soon!"),
+            )
+            scope.launch { kotlinx.coroutines.delay(2_500); announce() }
+        } else {
+            announce()
+        }
     }
+
+    /** Claude explains the task step by step, on the page and aloud. Without Claude the written solution stays. */
+    fun explainMore() {
+        val ui = _state.value as? QuizUi.Math ?: return
+        val ask = ask ?: return
+        if (!ui.settled || ui.helpLoading || ui.help != null) return
+        _state.value = ui.copy(helpLoading = true)
+        scope.launch {
+            val l = lang()
+            val prompt = l.pick(
+                "Задача за ${ui.grade} клас: ${ui.task.display} ${ui.task.prompt} Верният отговор е ${ui.task.answer}. Обясни ми стъпка по стъпка как се решава.",
+                "A task for year ${ui.grade}: ${ui.task.display} ${ui.task.prompt} The right answer is ${ui.task.answer}. Explain to me step by step how to solve it.",
+            )
+            val text = runCatching { ask(teacherSystem(l, ui.grade), prompt) }.getOrNull()
+            val now = _state.value as? QuizUi.Math ?: return@launch
+            if (now.task != ui.task) return@launch
+            val help = text ?: (l.pick("Сега не мога да попитам Claude. Ето решението: ", "I can't ask Claude right now. Here is the solution: ") + ui.task.explanation)
+            _state.value = now.copy(helpLoading = false, help = help)
+            say(help)
+        }
+    }
+
+    private fun teacherSystem(l: Lang, grade: Int) = """
+        You are ZnaiKo, a patient, cheerful maths teacher for a child in school year $grade. Reply in ${l.nameIn(Lang.EN)}.
+        Explain how to solve the task in 3 to 6 short numbered steps, with simple words a child of that age knows, and end
+        with one sentence of encouragement. Plain text only: no markdown, no asterisks, no LaTeX. Use the usual school notation.
+    """.trimIndent()
 
     // ------------------------------------------------------------------ trivia
 
@@ -197,6 +264,21 @@ class QuizController(
             avatar.play(AnimationCommand(Expression.HAPPY, Gesture.BOUNCE, holdMs = 1_200))
             announce()
         }
+    }
+
+    /** Today's one question; answering it is worth a round's bonus. */
+    fun startDaily(today: Long) {
+        _state.value = QuizUi.Quiz(listOf(trivia.card(DailyQuestion.of(today))), category = null, daily = true)
+        avatar.play(AnimationCommand(Expression.SURPRISED, Gesture.BOUNCE, holdMs = 1_200))
+        announce()
+    }
+
+    /** A round of questions Claude wrote about the child's interests. */
+    fun startTriviaWith(questions: List<TriviaQuestion>) {
+        if (questions.isEmpty()) return startTrivia(null)
+        _state.value = QuizUi.Quiz(questions.map(trivia::card), category = null, smart = true)
+        avatar.play(AnimationCommand(Expression.HAPPY, Gesture.BOUNCE, holdMs = 1_200))
+        announce()
     }
 
     fun choose(option: Int) {
@@ -235,7 +317,8 @@ class QuizController(
         _state.value = done
         save { d ->
             d.copy(
-                recentTrivia = (d.recentTrivia + ui.cards.map { it.question.id }).takeLast(RECENT),
+                dailyDay = if (ui.daily) java.time.LocalDate.now().toEpochDay() else d.dailyDay,
+                recentTrivia = (d.recentTrivia + ui.cards.map { it.question.id }.filter { !it.startsWith("ai:") }).takeLast(RECENT),
                 triviaRight = d.triviaRight + ui.score.correct,
                 bestTrivia = maxOf(d.bestTrivia, ui.score.correct),
             )

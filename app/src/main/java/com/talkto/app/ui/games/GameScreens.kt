@@ -93,6 +93,11 @@ fun GamesSheet(
     onTrivia: () -> Unit = {},
     onTetris: () -> Unit = {},
     onSweets: () -> Unit = {},
+    /** The question of the day; null hides it. [dailyDone]: already answered today. */
+    onDaily: (() -> Unit)? = null,
+    dailyDone: Boolean = false,
+    /** A quiz Claude writes about the child's interests; null without Claude. */
+    onSmartTrivia: (() -> Unit)? = null,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         val lang = screenLang()
@@ -104,6 +109,22 @@ fun GamesSheet(
                 style = MaterialTheme.typography.bodyMedium,
             )
             Spacer(Modifier.height(12.dp))
+            onDaily?.let { daily ->
+                GameRow(
+                    if (dailyDone) "✅" else "🌞",
+                    tr("Въпрос на деня", "Question of the day"),
+                    if (dailyDone) tr("Днешният е решен. Утре те чака нов!", "Today's is done. A new one tomorrow!")
+                    else tr("Един въпрос всеки ден и бонус монети за него.", "One question every day, with bonus coins."),
+                    daily,
+                )
+            }
+            onSmartTrivia?.let { smart ->
+                GameRow(
+                    "🤖", tr("Викторина за любимите ми неща", "A quiz about my favourite things"),
+                    tr("Знайко измисля въпроси за нещата, които обичаш.", "ZnaiKo makes up questions about the things you love."),
+                    smart,
+                )
+            }
             GameRow("🧊", tr("3D Тетрис", "3D Tetris"), tr("Нареди падащите кубчета в пълни редове. Плъзгай, докосни, за да завъртиш.", "Fit the falling cubes into full rows. Swipe, tap to turn.")) { onTetris() }
             GameRow("🍬", tr("Бонбонки", "Sweets"), tr("Размени две бонбонки и нареди три еднакви. Нива, комбота и звезди!", "Swap two sweets to line up three. Levels, combos and stars!")) { onSweets() }
             GameRow("❌⭕", GameKind.TIC_TAC_TOE.label(lang), stringResource(R.string.game_ttt_note)) { onPick(GameKind.TIC_TAC_TOE, 2) }

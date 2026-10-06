@@ -361,6 +361,9 @@ fun TamagotchiScreen(vm: MainViewModel) {
             onTrivia = { sheet = Sheet.NONE; vm.startTrivia() },
             onTetris = { sheet = Sheet.NONE; vm.openArcade(MainViewModel.Arcade.TETRIS) },
             onSweets = { sheet = Sheet.NONE; vm.openArcade(MainViewModel.Arcade.SWEETS) },
+            onDaily = { sheet = Sheet.NONE; vm.startDaily() },
+            dailyDone = vm.dailyDone(),
+            onSmartTrivia = if (settings.claudeOn) ({ sheet = Sheet.NONE; vm.startSmartTrivia() }) else null,
         )
         Sheet.FOOD -> com.talkto.app.ui.food.FoodSheet(pet, onEat = { f -> sheet = Sheet.NONE; vm.feed(f) }, onDismiss = { sheet = Sheet.NONE })
         Sheet.STORIES -> com.talkto.app.ui.story.StoriesSheet(vm, onDismiss = { sheet = Sheet.NONE })

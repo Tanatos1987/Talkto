@@ -80,7 +80,7 @@ fun QuizDialog(ui: QuizUi, vm: MainViewModel) {
                     IconButton(onClick = quiz::close) { Icon(Icons.Rounded.Close, contentDescription = tr("Затвори", "Close")) }
                 }
                 when (ui) {
-                    is QuizUi.Math -> MathScreen(ui, quiz, listen)
+                    is QuizUi.Math -> MathScreen(ui, quiz, listen, canExplain = vm.claudeOn())
                     is QuizUi.Quiz -> TriviaScreen(ui, quiz, listen)
                 }
             }
@@ -89,7 +89,7 @@ fun QuizDialog(ui: QuizUi, vm: MainViewModel) {
 }
 
 @Composable
-private fun MathScreen(ui: QuizUi.Math, quiz: QuizController, listen: () -> Unit) = Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+private fun MathScreen(ui: QuizUi.Math, quiz: QuizController, listen: () -> Unit, canExplain: Boolean) = Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         MathTopic.entries.forEach { t ->
             FilterChip(selected = ui.topic == t, onClick = { quiz.setTopic(t) }, label = { Text(t.label(screenLang()), fontWeight = FontWeight.Bold) })
@@ -134,6 +134,17 @@ private fun MathScreen(ui: QuizUi.Math, quiz: QuizController, listen: () -> Unit
                 else -> null
             }
             feedback?.let { Text(it, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp)) }
+            // A missed task can be explained step by step by Claude.
+            if (ui.settled && ui.result == false && canExplain && ui.help == null) {
+                OutlinedButton(onClick = quiz::explainMore, enabled = !ui.helpLoading, modifier = Modifier.padding(top = 8.dp)) {
+                    Text(if (ui.helpLoading) tr("Мисля…", "Thinking…") else tr("🧑‍🏫 Обясни ми стъпка по стъпка", "🧑‍🏫 Explain it step by step"))
+                }
+            }
+            ui.help?.let { help ->
+                Surface(shape = RoundedCornerShape(16.dp), color = TalktoColors.Mint.copy(alpha = 0.25f), modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
+                    Text(help, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(12.dp))
+                }
+            }
         }
     }
     Spacer(Modifier.height(12.dp))

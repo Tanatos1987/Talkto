@@ -187,6 +187,9 @@ class AppContainer(private val context: Context) {
 
     private val clientHolder = AnthropicClientHolder(settings)
 
+    /** Single questions to Claude outside the chat (maths explanations, quizzes about the child's interests). */
+    val oneShot = com.talkto.core.agent.ClaudeOneShot(clientHolder::get, { settings.settings.value.claudeModel })
+
     val agent = ClaudeAgent(
         client = clientHolder::get,
         dispatcher = dispatcher,
