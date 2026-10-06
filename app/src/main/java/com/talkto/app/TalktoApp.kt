@@ -148,17 +148,17 @@ class AppContainer(private val context: Context) {
     val confirmations = ConfirmationBroker(onWaitingInBackground = { AgentService.notifyConfirmationPending(context) })
 
     /** The pet tool: Claude feeds ZnaiKo and opens its games and quizzes. The session is created below and read only on use. */
-    private val petControls = object : PetControls {
+    private val petControls: PetControls = object : PetControls {
         override fun describe(): String = pet.state.value.let { it.feeling(language.current) + " " + it.progressText(language.current) }
-        override fun feed(food: Food) = agentSession.requestFeed(food)
+        override fun feed(food: Food) { agentSession.requestFeed(food) }
         override fun play() {
             pet.play()
             avatar.play(AnimationCommand(Expression.HAPPY, Gesture.SPIN, holdMs = 1_500))
         }
-        override fun sleep(asleep: Boolean) = pet.setSleeping(asleep)
-        override fun app(command: AppCommand) = agentSession.requestApp(command)
-        override fun game(kind: GameKind) = agentSession.requestGame(kind)
-        override fun lessons() = agentSession.requestLessons()
+        override fun sleep(asleep: Boolean) { pet.setSleeping(asleep) }
+        override fun app(command: AppCommand) { agentSession.requestApp(command) }
+        override fun game(kind: GameKind) { agentSession.requestGame(kind) }
+        override fun lessons() { agentSession.requestLessons() }
     }
 
     private val dispatcher = ToolDispatcher(
@@ -211,7 +211,7 @@ class AppContainer(private val context: Context) {
 
     val learning = LearnRepository(petStore, language, appScope)
 
-    val agentSession = AgentSession(
+    val agentSession: AgentSession = AgentSession(
         agent, offlineAgent, avatar, pet, settings, errors, profile, history, language, learning,
         onActivity = { activity.record(it) },
     )
