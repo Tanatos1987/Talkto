@@ -31,7 +31,7 @@ class ParentTest {
     }
 
     @Test fun `old days are forgotten`() {
-        val log = ActivityLog().record(1, Activity.GAME).record(1 + ActivityLog.KEEP_DAYS + 5, Activity.GAME)
+        val log = ActivityLog().record(1, Activity.GAME).record(1L + ActivityLog.KEEP_DAYS + 5, Activity.GAME)
         assertThat(log.days.map { it.day }).containsExactly(1L + ActivityLog.KEEP_DAYS + 5)
     }
 
