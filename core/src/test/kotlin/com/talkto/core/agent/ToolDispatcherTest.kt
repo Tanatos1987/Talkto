@@ -166,7 +166,7 @@ class ToolDispatcherTest {
     @Test fun `tool schemas are closed objects and strict ones fit the API budget`() {
         assertThat(ToolProtocol.all.map { it.name() }).containsExactly(
             "manage_file", "launch_app", "terminate_app", "generate_avatar_from_image", "animate_avatar",
-            "device", "notes", "reminders", "user_profile", "conversation_history",
+            "device", "notes", "reminders", "user_profile", "conversation_history", "pet",
         )
         ToolProtocol.all.forEach { t ->
             assertThat(t.inputSchema()._additionalProperties()["additionalProperties"].toString()).isEqualTo("false")
@@ -175,7 +175,7 @@ class ToolDispatcherTest {
         val strict = ToolProtocol.all.filter { it.strict().orElse(false) }
         val optional = strict.sumOf { t -> (t.inputSchema().properties().map { it._additionalProperties().size }.orElse(0)) - t.inputSchema().required().map { it.size }.orElse(0) }
         assertThat(optional).isAtMost(ToolProtocol.STRICT_OPTIONAL_LIMIT)
-        assertThat(strict.map { it.name() }).containsAtLeast("launch_app", "terminate_app", "animate_avatar", "notes", "reminders", "user_profile")
+        assertThat(strict.map { it.name() }).containsAtLeast("launch_app", "terminate_app", "animate_avatar", "notes", "reminders", "user_profile", "pet")
         assertThat(strict.map { it.name() }).doesNotContain("manage_file")
     }
 

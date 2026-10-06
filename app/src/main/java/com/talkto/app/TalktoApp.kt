@@ -33,7 +33,14 @@ import com.talkto.core.agent.AgentConfig
 import com.talkto.core.agent.ClaudeAgent
 import com.talkto.core.agent.OfflineAgent
 import com.talkto.core.agent.PetActions
+import com.talkto.core.agent.PetControls
 import com.talkto.core.agent.SystemPrompt
+import com.talkto.core.avatar.AnimationCommand
+import com.talkto.core.avatar.Expression
+import com.talkto.core.avatar.Gesture
+import com.talkto.core.commands.AppCommand
+import com.talkto.core.games.GameKind
+import com.talkto.core.pet.Food
 import com.talkto.core.agent.ToolDispatcher
 import com.talkto.core.i18n.Lang
 import com.talkto.core.avatar.AvatarGenerator
@@ -138,6 +145,20 @@ class AppContainer(private val context: Context) {
     // ---- agent
     val confirmations = ConfirmationBroker(onWaitingInBackground = { AgentService.notifyConfirmationPending(context) })
 
+    /** The pet tool: Claude feeds ZnaiKo and opens its games and quizzes. The session is created below and read only on use. */
+    private val petControls = object : PetControls {
+        override fun describe(): String = pet.state.value.let { it.feeling(language.current) + " " + it.progressText(language.current) }
+        override fun feed(food: Food) = agentSession.requestFeed(food)
+        override fun play() {
+            pet.play()
+            avatar.play(AnimationCommand(Expression.HAPPY, Gesture.SPIN, holdMs = 1_500))
+        }
+        override fun sleep(asleep: Boolean) = pet.setSleeping(asleep)
+        override fun app(command: AppCommand) = agentSession.requestApp(command)
+        override fun game(kind: GameKind) = agentSession.requestGame(kind)
+        override fun lessons() = agentSession.requestLessons()
+    }
+
     private val dispatcher = ToolDispatcher(
         files = files,
         apps = apps,
@@ -151,6 +172,7 @@ class AppContainer(private val context: Context) {
         profile = profile,
         history = history,
         disabled = storeDisabledTools,
+        pet = petControls,
     )
 
     private val clientHolder = AnthropicClientHolder(settings)
@@ -164,6 +186,7 @@ class AppContainer(private val context: Context) {
             disabledTools = storeDisabledTools,
             systemPrompt = SystemPrompt.build(if (BuildConfig.PLAY_STORE) SystemPrompt.PLAY else SystemPrompt.FULL),
         ),
+        model = { settings.settings.value.claudeModel },
     )
 
     /** No-key mode: simple commands on the same dispatcher, so every safety rule still applies. */

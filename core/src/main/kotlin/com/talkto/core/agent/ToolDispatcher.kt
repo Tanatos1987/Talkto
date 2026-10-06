@@ -1,6 +1,10 @@
 package com.talkto.core.agent
 
 import com.talkto.core.apps.AppController
+import com.talkto.core.commands.AppCommand
+import com.talkto.core.games.GameKind
+import com.talkto.core.pet.Food
+import com.talkto.core.quiz.MathTasks
 import com.talkto.core.apps.TerminateMethod
 import com.talkto.core.avatar.AnimationCommand
 import com.talkto.core.avatar.AvatarStyle
@@ -95,6 +99,8 @@ class ToolDispatcher(
     private val history: HistoryRepository? = null,
     /** Tools left out of this build; asking for one says so instead of failing on a missing permission. */
     private val disabled: Set<String> = emptySet(),
+    /** ZnaiKo itself (feeding, games, quizzes); null in tests that do not need it. */
+    private val pet: PetControls? = null,
 ) {
     private val json = Json { encodeDefaults = true; explicitNulls = false }
 
@@ -111,6 +117,7 @@ class ToolDispatcher(
             ToolProtocol.REMINDERS -> reminders(input)
             ToolProtocol.USER_PROFILE -> userProfile(input)
             ToolProtocol.CONVERSATION_HISTORY -> conversationHistory(input)
+            ToolProtocol.PET -> pet(input)
             else -> throw TalktoError.InvalidInput("Unknown tool '$name'")
         }
         ToolOutcome(result.toString(), isError = false)
@@ -392,6 +399,64 @@ class ToolDispatcher(
             "search" -> json.encodeToJsonElement(h.search(a.req("query"), limit))
             "recent" -> json.encodeToJsonElement(h.recent(limit))
             else -> throw TalktoError.InvalidInput("Unknown conversation_history action '$action'")
+        }
+    }
+
+    // -------------------------------------------------------------------- pet
+
+    private fun pet(a: JsonObject): JsonElement {
+        val p = pet ?: throw TalktoError.CapabilityUnavailable("ZnaiKo's own controls are not available")
+        val item = a.str("item")?.lowercase()
+        fun done(what: String) = buildJsonObject { put("ok", true); put("done", what) }
+        return when (val action = a.req("action")) {
+            "status" -> buildJsonObject { put("status", p.describe()) }
+            "feed" -> {
+                val food = if (item == null) Food.APPLE
+                else PetToolWords.food(item) ?: throw TalktoError.InvalidInput("Unknown food '$item'. Pick one from the list in the tool description.")
+                p.feed(food)
+                buildJsonObject {
+                    put("ok", true)
+                    put("ate", food.name.lowercase())
+                    put("healthy", food.healthy)
+                }
+            }
+            "play" -> { p.play(); done("played") }
+            "sleep" -> { p.sleep(true); done("ZnaiKo went to bed in its house") }
+            "wake" -> { p.sleep(false); done("ZnaiKo woke up") }
+            "go_home" -> { p.app(AppCommand.GoHome); done("ZnaiKo is inside its house") }
+            "come_out" -> { p.app(AppCommand.ComeOut); done("ZnaiKo came out") }
+            "open_game" -> {
+                when (val g = PetToolWords.game(item)) {
+                    is GameKind -> p.game(g)
+                    is AppCommand -> p.app(g)
+                    else -> throw TalktoError.InvalidInput("item must be one of tic_tac_toe, connect_four, ludo, chess, memory, tetris, sweets")
+                }
+                done("the game is open on screen")
+            }
+            "open_place" -> {
+                when (item) {
+                    "shop" -> p.app(AppCommand.OpenShop)
+                    "house" -> p.app(AppCommand.OpenHouse)
+                    "creator" -> p.app(AppCommand.OpenCreator)
+                    "about_me" -> p.app(AppCommand.AboutMe)
+                    "lessons" -> p.lessons()
+                    else -> throw TalktoError.InvalidInput("item must be shop, house, creator, lessons or about_me")
+                }
+                done("$item is open on screen")
+            }
+            "start_math" -> {
+                val grade = a.long("grade")?.toInt()
+                if (grade != null && grade !in 1..MathTasks.MAX_GRADE) throw TalktoError.InvalidInput("grade must be 1-${MathTasks.MAX_GRADE}")
+                p.app(AppCommand.Math(grade, algebra = item == "algebra", geometry = item == "geometry"))
+                done("maths tasks are open on screen")
+            }
+            "start_trivia" -> {
+                val category = PetToolWords.category(item)
+                if (item != null && category == null) throw TalktoError.InvalidInput("Unknown quiz topic '$item'")
+                p.app(AppCommand.Trivia(category))
+                done("the quiz is open on screen")
+            }
+            else -> throw TalktoError.InvalidInput("Unknown pet action '$action'")
         }
     }
 

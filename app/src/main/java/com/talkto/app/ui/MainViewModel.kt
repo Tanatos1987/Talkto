@@ -179,6 +179,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             c.agentSession.gameRequests.collect { kind -> comeOut(); games.start(kind) }
         }
         viewModelScope.launch {
+            c.agentSession.feedRequests.collect { food -> feed(food, speak = false) }
+        }
+        viewModelScope.launch {
             c.agentSession.appRequests.collect { cmd ->
                 when (cmd) {
                     AppCommand.GoHome -> goHome()
@@ -259,8 +262,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** Each food as it is given, for the bite flying to ZnaiKo on screen. */
     val meals: SharedFlow<com.talkto.core.pet.Food> = _meals
 
-    /** Gives [food]: it flies to ZnaiKo, who chews, then says how it feels; the body changes with what it eats. */
-    fun feed(food: com.talkto.core.pet.Food) {
+    /**
+     * Gives [food]: it flies to ZnaiKo, who chews, then says how it feels; the body changes with what it eats.
+     * When Claude fed it ([speak] false), Claude's own reply is the words, so ZnaiKo only chews.
+     */
+    fun feed(food: com.talkto.core.pet.Food, speak: Boolean = true) {
         comeOut()
         _meals.tryEmit(food)
         viewModelScope.launch {
@@ -274,7 +280,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 else -> Expression.TONGUE to Gesture.NOD
             }
             c.avatar.play(AnimationCommand(face, move, holdMs = 1_500))
-            c.avatar.speak(com.talkto.core.pet.Nutrition.line(food, s.fat, s.vitality, c.language.current), voice = c.settings.settings.value.voiceEnabled)
+            if (speak) c.avatar.speak(com.talkto.core.pet.Nutrition.line(food, s.fat, s.vitality, c.language.current), voice = c.settings.settings.value.voiceEnabled)
         }
     }
 

@@ -1334,6 +1334,7 @@ private fun toolLabel(tool: String) = when (tool) {
     ToolProtocol.DEVICE -> stringResource(R.string.tool_device)
     ToolProtocol.NOTES -> stringResource(R.string.tool_notes)
     ToolProtocol.REMINDERS -> stringResource(R.string.tool_reminders)
+    ToolProtocol.PET -> com.talkto.app.i18n.tr("грижа за Знайко", "looking after ZnaiKo")
     else -> tool
 }
 

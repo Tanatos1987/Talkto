@@ -23,6 +23,7 @@ object ToolProtocol {
     const val REMINDERS = "reminders"
     const val USER_PROFILE = "user_profile"
     const val CONVERSATION_HISTORY = "conversation_history"
+    const val PET = "pet"
 
     /** One tool before it is built: what the strict budget needs to know. */
     class Spec(val name: String, val description: String, val properties: Map<String, Any>, val required: List<String>) {
@@ -32,7 +33,7 @@ object ToolProtocol {
     private val specs: List<Spec> by lazy {
         listOf(
             manageFile(), launchApp(), terminateApp(), generateAvatar(), animateAvatar(), device(), notes(), reminders(),
-            userProfile(), conversationHistory(),
+            userProfile(), conversationHistory(), pet(),
         )
     }
 
@@ -217,6 +218,35 @@ object ToolProtocol {
             "action" to enumProp("What to do.", "search", "recent"),
             "query" to strProp("search: words to look for."),
             "limit" to intProp("How many lines, default 20, at most 100."),
+        ),
+        required = listOf("action"),
+    )
+
+    private fun pet() = tool(
+        name = PET,
+        description = """
+            ZnaiKo itself: care for it and open its games, places and quizzes on screen, exactly as if the child had tapped the button.
+            Use it when the child asks ("eat some broccoli", "let's play chess", "give me maths for year 2"), or offer it when it fits
+            (a hungry ZnaiKo can ask for food). Actions:
+            - status: how ZnaiKo feels, its level and progress.
+            - feed: item = a food (apple, carrot, broccoli, banana, milk, fish, salad, burger, fries, pizza, doughnut, lollipop, soda,
+              cake). Healthy food keeps ZnaiKo fit; junk food makes it round and pale, so gently prefer healthy food.
+            - play: a quick play together. sleep / wake: bedtime and morning. go_home / come_out: into or out of its little house.
+            - open_game: item = tic_tac_toe, connect_four, ludo, chess, memory, tetris or sweets.
+            - open_place: item = shop, house, creator (change how ZnaiKo looks), lessons (language lessons) or about_me (ZnaiKo asks
+              about the child).
+            - start_math: maths tasks; grade = school year 1-7 (optional); item = mixed (default), algebra or geometry.
+            - start_trivia: a ten-question quiz; item = animals, nature, space, science, geography, bulgaria, history, sport, art or
+              everyday (optional).
+            The screen changes at once; after a game or quiz is opened, just say something short and encouraging.
+        """.trimIndent(),
+        properties = mapOf(
+            "action" to enumProp(
+                "What to do.",
+                "status", "feed", "play", "sleep", "wake", "go_home", "come_out", "open_game", "open_place", "start_math", "start_trivia",
+            ),
+            "item" to strProp("The food, game, place, maths kind or quiz topic, as listed in the description."),
+            "grade" to intProp("start_math: school year 1-7."),
         ),
         required = listOf("action"),
     )

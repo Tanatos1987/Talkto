@@ -77,6 +77,7 @@ object SystemPrompt {
             add("check the battery, the volume and the flashlight")
             add("turn a photo into an avatar")
             add("animate your own face")
+            add("look after yourself with the pet tool: eat, play, sleep, and open your games, lessons and quizzes")
         }
         val missing = if (b.files) "" else
             " This version of ZnaiKo has no file manager: if asked to find, move or delete files, say kindly that you cannot do that here."

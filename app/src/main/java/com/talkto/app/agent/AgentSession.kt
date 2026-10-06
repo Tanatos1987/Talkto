@@ -26,6 +26,7 @@ import com.talkto.core.commands.AppCommands
 import com.talkto.core.learn.wordOfTheDay
 import com.talkto.core.history.HistoryRepository
 import com.talkto.core.history.Speaker
+import com.talkto.core.pet.Food
 import com.talkto.core.pet.KnowledgeSource
 import com.talkto.core.profile.ProfileRepository
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -97,6 +98,28 @@ class AgentSession(
     private val _appRequests = MutableSharedFlow<AppCommand>(extraBufferCapacity = 4)
     /** "Прибери се", "магазин", "тривия", "задачи за 3 клас": the screen does them. */
     val appRequests: SharedFlow<AppCommand> = _appRequests.asSharedFlow()
+
+    private val _feedRequests = MutableSharedFlow<Food>(extraBufferCapacity = 4)
+    /** Food Claude gave ZnaiKo through the pet tool; the screen shows the bite flying in. */
+    val feedRequests: SharedFlow<Food> = _feedRequests.asSharedFlow()
+
+    /** The pet tool: open a place, an arcade game or a quiz, as if the child had asked for it. */
+    fun requestApp(command: AppCommand) {
+        _appRequests.tryEmit(command)
+    }
+
+    fun requestGame(kind: GameKind) {
+        _gameRequests.tryEmit(kind)
+    }
+
+    fun requestLessons() {
+        _lessonRequests.tryEmit(null)
+    }
+
+    /** With the screen open the bite flies in; without it ZnaiKo simply eats. */
+    fun requestFeed(food: Food) {
+        if (_feedRequests.subscriptionCount.value == 0) pet.eat(food) else _feedRequests.tryEmit(food)
+    }
 
     private val _practice = MutableStateFlow<Lang?>(null)
     /** Chat practice in this language is on (Claude then speaks it simply and corrects gently). */

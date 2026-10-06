@@ -56,6 +56,8 @@ data class Settings(
     val clearBulgarian: Boolean = true,
     /** The story of ZnaiKo and the friends was shown once, at the first start. */
     val storySeen: Boolean = false,
+    /** The Claude model; a parent picks it in the parents' corner. */
+    val claudeModel: String = com.talkto.core.agent.AgentConfig.MODEL_EVERYDAY,
     /** False only for the placeholder before DataStore delivered its first value. */
     val loaded: Boolean = false,
 ) {
@@ -84,6 +86,7 @@ class SettingsRepository(private val store: DataStore<Preferences>, private val 
             ttsVoice = p[TTS_VOICE],
             clearBulgarian = p[CLEAR_BG] ?: true,
             storySeen = p[STORY_SEEN] ?: false,
+            claudeModel = p[CLAUDE_MODEL]?.takeIf { it in com.talkto.core.agent.AgentConfig.MODELS } ?: com.talkto.core.agent.AgentConfig.MODEL_EVERYDAY,
             loaded = true,
         )
     }.stateIn(scope, SharingStarted.Eagerly, Settings())
@@ -112,6 +115,8 @@ class SettingsRepository(private val store: DataStore<Preferences>, private val 
 
     suspend fun setStorySeen() = store.edit { it[STORY_SEEN] = true }
 
+    suspend fun setClaudeModel(model: String) = store.edit { it[CLAUDE_MODEL] = model }
+
     suspend fun awaitLoaded(): Settings = settings.first { it.loaded }
 
     private companion object {
@@ -126,6 +131,7 @@ class SettingsRepository(private val store: DataStore<Preferences>, private val 
         val TTS_VOICE = stringPreferencesKey("tts_voice")
         val CLEAR_BG = booleanPreferencesKey("clear_bulgarian")
         val STORY_SEEN = booleanPreferencesKey("story_seen")
+        val CLAUDE_MODEL = stringPreferencesKey("claude_model")
     }
 }
 

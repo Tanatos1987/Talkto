@@ -26,7 +26,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 
 data class AgentConfig(
-    val model: String = "claude-opus-5-5",
+    /** The default model; a parent can switch it in the parents' corner (see [ClaudeAgent]'s model supplier). */
+    val model: String = MODEL_EVERYDAY,
     val maxTokens: Long = 16_000,
     /** Short, spoken replies and simple tool chains: medium keeps latency low on a phone. Raise for heavier tasks. */
     val effort: OutputConfig.Effort = OutputConfig.Effort.MEDIUM,
@@ -39,7 +40,15 @@ data class AgentConfig(
     val disabledTools: Set<String> = emptySet(),
     /** The static instructions; built once per app build so the cached prefix never changes. */
     val systemPrompt: String = SystemPrompt.build(),
-)
+) {
+    companion object {
+        /** Short spoken replies for a child: fast and about half the price of Opus. Supports effort and the fallbacks used here. */
+        const val MODEL_EVERYDAY = "claude-sonnet-5-5"
+        /** The strongest model, for families who want the best answers and accept the higher cost. */
+        const val MODEL_SMART = "claude-opus-5-5"
+        val MODELS = listOf(MODEL_EVERYDAY, MODEL_SMART)
+    }
+}
 
 sealed interface AgentEvent {
     data object Thinking : AgentEvent
@@ -82,8 +91,12 @@ class ClaudeAgent(
     private val liveContext: suspend () -> String,
     private val config: AgentConfig = AgentConfig(),
     private val io: CoroutineDispatcher = Dispatchers.IO,
+    /** The model for the next turn, read every turn so a parent's choice applies at once. */
+    private val model: () -> String = { config.model },
 ) : Assistant {
     private val history = ArrayList<MessageParam>()
+    /** Thinking blocks belong to the model that wrote them: a new model starts a fresh conversation. */
+    private var lastModel: String? = null
     private val lock = Mutex()
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -118,6 +131,9 @@ class ClaudeAgent(
 
     override suspend fun send(userText: String, onEvent: suspend (AgentEvent) -> Unit): AgentReply = lock.withLock {
         require(userText.isNotBlank()) { "Empty message" }
+        val m = model().ifBlank { config.model }
+        if (lastModel != null && lastModel != m) history.clear()
+        lastModel = m
         trimHistory()
         val checkpoint = history.size
         val user = MessageParam.builder().role(MessageParam.Role.USER).content(userText.trim()).build()
@@ -184,7 +200,7 @@ class ClaudeAgent(
 
     private suspend fun call(system: List<TextBlockParam>): Message {
         val params = MessageCreateParams.builder()
-            .model(config.model)
+            .model(lastModel ?: config.model)
             .maxTokens(config.maxTokens)
             .systemOfTextBlockParams(system)
             .outputConfig(OutputConfig.builder().effort(config.effort).build())
