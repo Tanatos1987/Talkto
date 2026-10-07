@@ -604,9 +604,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun dismissUpdate() = _pendingUpdates.update { it.drop(1) }
 
-    // -------------------------------------------------------------- arcade: 3D Tetris and sweets
+    // -------------------------------------------------------------- arcade: 3D Tetris, sweets and the mini-games
 
-    enum class Arcade { TETRIS, SWEETS }
+    enum class Arcade { TETRIS, SWEETS, FEED, LETTERS }
 
     private val _arcade = MutableStateFlow<Arcade?>(null)
     /** The arcade game on screen, or null. */
@@ -619,17 +619,29 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun closeArcade() { _arcade.value = null }
 
-    /** A round is over: coins for playing, more for lines or a won level, and ZnaiKo is happy about it. */
+    /** Says one word aloud: each word finished in the letter rain. */
+    fun sayWord(word: String) {
+        viewModelScope.launch { c.avatar.speak(word, voice = c.settings.settings.value.voiceEnabled) }
+    }
+
+    /**
+     * A round is over: coins for playing, more for lines (healthy bites, built words) and a won round, and ZnaiKo is
+     * happy about it. Words built in the letter rain also count as learning.
+     */
     fun arcadeFinished(game: Arcade, points: Int, lines: Int = 0, won: Boolean = false) = viewModelScope.launch {
         c.pet.play()
         c.pet.earn(com.talkto.core.shop.CoinReason.GAME_PLAYED)
         if (lines > 0) c.pet.earn(com.talkto.core.shop.CoinReason.TASK, lines.coerceAtMost(20))
         if (won) { c.pet.earn(com.talkto.core.shop.CoinReason.GAME_WON); c.pet.gameWon() }
+        if (game == Arcade.LETTERS && lines > 0) c.pet.learn(com.talkto.core.pet.KnowledgeSource.QUIZ)
         val l = c.language.current
         val line = when {
-            won -> l.pick("Р‘СЂР°РІРѕ! РњРёРЅР° РЅРёРІРѕС‚Рѕ СЃ $points С‚РѕС‡РєРё!", "Well done! You passed the level with $points points!")
-            game == Arcade.TETRIS -> l.pick("РљСЂР°Р№! $points С‚РѕС‡РєРё Рё $lines СЂРµРґР°. РҐР°Р№РґРµ РїР°Рє?", "Game over! $points points and $lines lines. Again?")
-            else -> l.pick("РҐРѕРґРѕРІРµС‚Рµ СЃРІСЉСЂС€РёС…Р°. $points С‚РѕС‡РєРё! РћРїРёС‚Р°Р№ РїР°Рє.", "Out of moves. $points points! Try again.")
+            game == Arcade.FEED && won -> l.pick("Ммм, коремчето ми е пълно! $points точки и $lines здравословни хапки!", "Yum, my tummy is full! $points points and $lines healthy bites!")
+            game == Arcade.FEED -> l.pick("Ох, много вредна храна. $points точки! Хайде пак?", "Oh, too much junk food. $points points! Again?")
+            game == Arcade.LETTERS -> l.pick("Браво! Нареди $lines думи и спечели $points точки!", "Well done! You built $lines words and won $points points!")
+            won -> l.pick("Браво! Мина нивото с $points точки!", "Well done! You passed the level with $points points!")
+            game == Arcade.TETRIS -> l.pick("Край! $points точки и $lines реда. Хайде пак?", "Game over! $points points and $lines lines. Again?")
+            else -> l.pick("Ходовете свършиха. $points точки! Опитай пак.", "Out of moves. $points points! Try again.")
         }
         c.avatar.play(AnimationCommand(if (won) Expression.HAPPY else Expression.THINKING, Gesture.BOUNCE, holdMs = 1_200))
         c.avatar.speak(line, voice = c.settings.settings.value.voiceEnabled)

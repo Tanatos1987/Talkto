@@ -93,6 +93,8 @@ fun GamesSheet(
     onTrivia: () -> Unit = {},
     onTetris: () -> Unit = {},
     onSweets: () -> Unit = {},
+    onFeed: () -> Unit = {},
+    onLetters: () -> Unit = {},
     /** The question of the day; null hides it. [dailyDone]: already answered today. */
     onDaily: (() -> Unit)? = null,
     dailyDone: Boolean = false,
@@ -127,6 +129,8 @@ fun GamesSheet(
             }
             GameRow("🧊", tr("3D Тетрис", "3D Tetris"), tr("Нареди падащите кубчета в пълни редове. Плъзгай, докосни, за да завъртиш.", "Fit the falling cubes into full rows. Swipe, tap to turn.")) { onTetris() }
             GameRow("🍬", tr("Бонбонки", "Sweets"), tr("Размени две бонбонки и нареди три еднакви. Нива, комбота и звезди!", "Swap two sweets to line up three. Levels, combos and stars!")) { onSweets() }
+            GameRow("🍎", tr("Нахрани Знайко", "Feed ZnaiKo"), tr("Храната пада от небето. Мести Знайко, хващай здравословната и бягай от вредната!", "Food falls from the sky. Move ZnaiKo, catch the healthy food and dodge the junk!")) { onFeed() }
+            GameRow("🔤", tr("Дъжд от букви", "Letter rain"), tr("Докосвай падащите букви по ред и нареди думата от картинката.", "Tap the falling letters in order to build the word in the picture.")) { onLetters() }
             GameRow("❌⭕", GameKind.TIC_TAC_TOE.label(lang), stringResource(R.string.game_ttt_note)) { onPick(GameKind.TIC_TAC_TOE, 2) }
             GameRow("🟡🟢", GameKind.CONNECT_FOUR.label(lang), stringResource(R.string.game_four_note)) { onPick(GameKind.CONNECT_FOUR, 2) }
             GameRow("🎲", GameKind.LUDO.label(lang), stringResource(R.string.game_ludo_note)) { onPick(GameKind.LUDO, 2) }

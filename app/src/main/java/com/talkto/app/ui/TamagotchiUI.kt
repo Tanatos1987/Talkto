@@ -361,6 +361,8 @@ fun TamagotchiScreen(vm: MainViewModel) {
             onTrivia = { sheet = Sheet.NONE; vm.startTrivia() },
             onTetris = { sheet = Sheet.NONE; vm.openArcade(MainViewModel.Arcade.TETRIS) },
             onSweets = { sheet = Sheet.NONE; vm.openArcade(MainViewModel.Arcade.SWEETS) },
+            onFeed = { sheet = Sheet.NONE; vm.openArcade(MainViewModel.Arcade.FEED) },
+            onLetters = { sheet = Sheet.NONE; vm.openArcade(MainViewModel.Arcade.LETTERS) },
             onDaily = { sheet = Sheet.NONE; vm.startDaily() },
             dailyDone = vm.dailyDone(),
             onSmartTrivia = if (settings.claudeOn) ({ sheet = Sheet.NONE; vm.startSmartTrivia() }) else null,
@@ -390,6 +392,16 @@ fun TamagotchiScreen(vm: MainViewModel) {
     when (arcade) {
         MainViewModel.Arcade.TETRIS -> com.talkto.app.ui.games.TetrisDialog(onClose = vm::closeArcade, onFinish = { p, l -> vm.arcadeFinished(MainViewModel.Arcade.TETRIS, p, lines = l) })
         MainViewModel.Arcade.SWEETS -> com.talkto.app.ui.games.SweetsDialog(onClose = vm::closeArcade, onFinish = { p, w -> vm.arcadeFinished(MainViewModel.Arcade.SWEETS, p, won = w) })
+        MainViewModel.Arcade.FEED -> com.talkto.app.ui.games.CatchFoodDialog(
+            onClose = vm::closeArcade,
+            onFinish = { p, healthy, w -> vm.arcadeFinished(MainViewModel.Arcade.FEED, p, lines = healthy, won = w) },
+        )
+        MainViewModel.Arcade.LETTERS -> com.talkto.app.ui.games.LetterRainDialog(
+            target = vm.learnTarget(),
+            onClose = vm::closeArcade,
+            onFinish = { p, words -> vm.arcadeFinished(MainViewModel.Arcade.LETTERS, p, lines = words) },
+            onWord = vm::sayWord,
+        )
         null -> Unit
     }
     // The story of ZnaiKo and the friends: once at the first start, and again from Settings.

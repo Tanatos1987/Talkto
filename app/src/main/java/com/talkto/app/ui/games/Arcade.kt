@@ -148,7 +148,7 @@ fun TetrisDialog(onClose: () -> Unit, onFinish: (points: Int, lines: Int) -> Uni
 }
 
 @Composable
-private fun Chip(text: String) {
+internal fun Chip(text: String) {
     Surface(shape = RoundedCornerShape(50), color = Color(0x33FFFFFF)) {
         Text(text, color = Color.White, fontWeight = FontWeight.Black, fontSize = 16.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
     }
