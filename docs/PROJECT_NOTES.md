@@ -95,7 +95,7 @@ CI е в `.github/workflows/android.yml`. Всеки push на клона `claud
 
 5. **Предупреждение за неподдържан API (hiddenapibypass)**: може да се продължи въпреки него. 1.1.57 го маха изцяло.
 6. **Препоръки към 1.1.55 (октомври 2026)**:
-   - DEX оптимизация 22% при праг 25% (краен срок февруари 2027). Причината беше ред `-keep class com.anthropic.** { *; }` в `proguard-rules.pro`, който пазеше целия Anthropic SDK (~12 600 класа). Сега важат собствените правила на SDK-то (`META-INF/proguard/anthropic-java-core.pro`); добавени са `-repackageclasses` и `android.r8.optimizedResourceShrinking=true`. Jackson засега се пази цял. AGP 9.0 е отделна следваща стъпка.
+   - DEX оптимизация 22% при праг 25% (краен срок февруари 2027). Причината беше ред `-keep class com.anthropic.** { *; }` в `proguard-rules.pro`, който пазеше целия Anthropic SDK (~12 600 класа). Сега важат собствените правила на SDK-то (`META-INF/proguard/anthropic-java-core.pro`); добавени са `-repackageclasses` и `android.r8.optimizedResourceShrinking=true`. Jackson засега се пази цял. После: AGP 9.4.1 и Gradle 9.6.1; AGP 9 компилира Kotlin сам, затова плъгинът `org.jetbrains.kotlin.android` е махнат.
    - 16 KB страници: `libdatastore_shared_counter.so` от datastore 1.2.0; обновено до 1.2.1. CI отпечатва размера на DEX и подравняването на всяка 64-битова `.so` (стъпка „Bundle report“).
    - Edge-to-edge: махнати `statusBarColor`/`navigationBarColor` от темата, `androidx.activity` 1.13.0. CI качва `mapping.txt` (артефакт `talkto-mapping`): качете го в Play Console към версията, за да се виждат истинските имена на класовете.
    - **Преди качване в Play:** инсталирайте `talkto-release-apk` (минава през R8 като Play версията) и проверете разговор с Claude, приказка от Claude и смяна на модела.

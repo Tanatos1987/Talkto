@@ -8,7 +8,7 @@ ZnaiKo (Знайко) is an Android virtual pet for children that is also an AI 
 
 ## Stack
 
-- Kotlin 2.3 + Jetpack Compose, AGP 8.13, minSdk 30, targetSdk 36.
+- Kotlin 2.3 + Jetpack Compose, AGP 9.4 (built-in Kotlin: no `org.jetbrains.kotlin.android` plugin), Gradle 9.6, minSdk 30, targetSdk 36.
 - `:core`: pure Kotlin business logic with fast JVM tests. `:app`: Android UI, services, Room, DataStore, ML Kit, Shizuku.
 - Product flavors:
   - `full`: package `com.talkto.app`, every feature;
