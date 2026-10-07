@@ -9,9 +9,10 @@ okhttp = "4.12.0"
 anthropic = "2.65.0"
 
 androidx-core = "1.17.0"
-androidx-activity = "1.12.0"
+androidx-activity = "1.13.0"
 androidx-lifecycle = "2.10.0"
-androidx-datastore = "1.2.0"
+# The shared-counter .so in 1.2.0 was built with an NDK older than r28 (Play: 16 KB page risk); CI checks the alignment.
+androidx-datastore = "1.2.1"
 androidx-room = "2.8.4"
 compose-bom = "2025.12.00"
 desugar = "2.1.5"

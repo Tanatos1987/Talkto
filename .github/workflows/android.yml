@@ -68,6 +68,27 @@ jobs:
           path: app/build/outputs/bundle/playRelease/*.aab
           if-no-files-found: error
 
+      # What Play Console checks, seen before uploading: the DEX size, and 16 KB pages for every 64-bit native library
+      # in the bundle (each LOAD segment aligned to 0x4000 or more). A misaligned library is a warning, not a failure,
+      # so the bundle is still there.
+      - name: Bundle report (DEX size, 16 KB pages)
+        run: |
+          aab=$(ls app/build/outputs/bundle/playRelease/*.aab | head -n1)
+          unzip -l "$aab" 'base/dex/*' | awk '/\.dex$/ {s+=$1} END {printf "Uncompressed DEX: %.1f MB\n", s/1048576}'
+          rm -rf aab-lib && mkdir aab-lib && unzip -o -q "$aab" 'base/lib/arm64-v8a/*' 'base/lib/x86_64/*' -d aab-lib || true
+          for f in $(find aab-lib -name '*.so' | sort); do
+            min=$(readelf -lW "$f" | awk '$1=="LOAD" {print $NF}' | while read a; do printf '%d\n' "$a"; done | sort -n | head -n1)
+            if [ -n "$min" ] && [ "$min" -ge 16384 ]; then echo "OK    16 KB  ${f#aab-lib/}"; else echo "::warning::Not 16 KB aligned (LOAD align $min): ${f#aab-lib/}"; fi
+          done
+
+      # R8's map from the short names back to the real ones: upload it to Play Console with the bundle so crash
+      # reports and warnings (like "b.q.b") show real class names.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: talkto-mapping
+          path: app/build/outputs/mapping/playRelease/mapping.txt
+          if-no-files-found: warn
+
       - uses: actions/upload-artifact@v4
         if: env.HAS_KEYSTORE == 'true'
         with:

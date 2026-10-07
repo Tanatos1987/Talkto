@@ -1,12 +1,14 @@
-# --- Anthropic Java SDK: Jackson-based (de)serialisation via reflection -------------------------
--keep class com.anthropic.** { *; }
+# --- Anthropic Java SDK ------------------------------------------------------------------------------
+# The SDK ships its own R8 rules (META-INF/proguard/anthropic-java-core.pro): the Jackson-annotated constructors and
+# members of its models, TypeReference, kotlin.reflect and kotlin.Metadata. That is all its reflection needs, so the
+# rest of its ~12,600 classes (APIs ZnaiKo never calls) can be removed and renamed. A blanket keep here used to hold
+# the whole SDK and was most of the app's code that R8 could not touch.
 -keepattributes Signature, InnerClasses, EnclosingMethod, *Annotation*, RuntimeVisibleAnnotations, RuntimeVisibleParameterAnnotations
+# Jackson itself has no rules of its own and loads parts of itself by name; it stays whole (it is small next to the SDK).
 -keep class com.fasterxml.jackson.** { *; }
 -dontwarn com.fasterxml.jackson.databind.ext.**
 -dontwarn java.beans.**
 -dontwarn org.w3c.dom.bootstrap.DOMImplementationRegistry
--keep class kotlin.Metadata { *; }
--keep class kotlin.reflect.** { *; }
 
 # --- OkHttp / Okio ---------------------------------------------------------------------------------
 -dontwarn okhttp3.internal.platform.**
@@ -40,3 +42,6 @@
 -dontwarn java.lang.reflect.AnnotatedArrayType
 -dontwarn java.lang.reflect.AnnotatedWildcardType
 -dontwarn java.lang.reflect.AnnotatedTypeVariable
+
+# --- Everything R8 may rename goes into one package: smaller and harder to read back. -------------
+-repackageclasses
