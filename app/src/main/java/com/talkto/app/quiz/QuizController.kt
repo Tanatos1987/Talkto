@@ -63,6 +63,8 @@ sealed interface QuizUi {
         /** Claude's step-by-step explanation, when the child asked for one. */
         val help: String? = null,
         val helpLoading: Boolean = false,
+        /** [help] was written by Claude (not the built-in solution), so it can be flagged. */
+        val helpFromClaude: Boolean = false,
     ) : QuizUi {
         /** The answer is settled: right, or wrong twice and shown. */
         val settled: Boolean get() = result == true || (result == false && tries >= 2)
@@ -244,9 +246,16 @@ class QuizController(
             val now = _state.value as? QuizUi.Math ?: return@launch
             if (now.task != ui.task) return@launch
             val help = text ?: (l.pick("Сега не мога да попитам Claude. Ето решението: ", "I can't ask Claude right now. Here is the solution: ") + ui.task.explanation)
-            _state.value = now.copy(helpLoading = false, help = help)
+            _state.value = now.copy(helpLoading = false, help = help, helpFromClaude = text != null)
             say(help)
         }
+    }
+
+    /** A flagged explanation: the built-in solution takes its place. */
+    fun hideHelp() {
+        val ui = _state.value as? QuizUi.Math ?: return
+        if (!ui.helpFromClaude) return
+        _state.value = ui.copy(help = lang().pick("Скрих това обяснение. Ето решението: ", "I've hidden that explanation. Here is the solution: ") + ui.task.explanation, helpFromClaude = false)
     }
 
     private fun teacherSystem(l: Lang, grade: Int) = """
@@ -311,6 +320,26 @@ class QuizController(
             announce()
             return
         }
+        finishTrivia(ui)
+    }
+
+    /** A flagged question Claude wrote leaves the round; the next one comes up. */
+    fun dropCard() {
+        val ui = _state.value as? QuizUi.Quiz ?: return
+        if (!ui.smart || ui.done || ui.card == null) return
+        if (ui.chosen != null) return nextTrivia() // answered and counted already: just move on
+        val cards = ui.cards.filterIndexed { i, _ -> i != ui.index }
+        when {
+            cards.isEmpty() -> close()
+            ui.index < cards.size -> {
+                _state.value = ui.copy(cards = cards, chosen = null, heard = null)
+                scope.launch { kotlinx.coroutines.delay(4_000); announce() } // after ZnaiKo's thank-you
+            }
+            else -> finishTrivia(ui.copy(cards = cards))
+        }
+    }
+
+    private fun finishTrivia(ui: QuizUi.Quiz) {
         pet.earn(CoinReason.QUIZ_DONE)
         pet.learn(KnowledgeSource.QUIZ)
         val done = ui.copy(done = true, coins = ui.coins + CoinReason.QUIZ_DONE.coins)

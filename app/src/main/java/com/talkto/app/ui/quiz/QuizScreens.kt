@@ -34,6 +34,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -79,9 +83,17 @@ fun QuizDialog(ui: QuizUi, vm: MainViewModel) {
                     IconButton(onClick = quiz::replay) { Icon(Icons.AutoMirrored.Rounded.VolumeUp, contentDescription = tr("Прочети пак", "Read again")) }
                     IconButton(onClick = quiz::close) { Icon(Icons.Rounded.Close, contentDescription = tr("Затвори", "Close")) }
                 }
+                // 🚩 on what Claude wrote here: the step-by-step help and the questions about the child's interests.
+                var flagging by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
                 when (ui) {
-                    is QuizUi.Math -> MathScreen(ui, quiz, listen, canExplain = vm.claudeOn())
-                    is QuizUi.Quiz -> TriviaScreen(ui, quiz, listen)
+                    is QuizUi.Math -> MathScreen(ui, quiz, listen, canExplain = vm.claudeOn(), onFlag = { flagging = it to quiz::hideHelp })
+                    is QuizUi.Quiz -> TriviaScreen(ui, quiz, listen, onFlag = { flagging = it to quiz::dropCard })
+                }
+                flagging?.let { (text, after) ->
+                    com.talkto.app.ui.safety.FlagDialog(
+                        onFlag = { reason -> vm.flagReply(text, reason, question = ""); after() },
+                        onDismiss = { flagging = null },
+                    )
                 }
             }
         }
@@ -89,7 +101,7 @@ fun QuizDialog(ui: QuizUi, vm: MainViewModel) {
 }
 
 @Composable
-private fun MathScreen(ui: QuizUi.Math, quiz: QuizController, listen: () -> Unit, canExplain: Boolean) = Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+private fun MathScreen(ui: QuizUi.Math, quiz: QuizController, listen: () -> Unit, canExplain: Boolean, onFlag: (String) -> Unit) = Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         MathTopic.entries.forEach { t ->
             FilterChip(selected = ui.topic == t, onClick = { quiz.setTopic(t) }, label = { Text(t.label(screenLang()), fontWeight = FontWeight.Bold) })
@@ -142,7 +154,10 @@ private fun MathScreen(ui: QuizUi.Math, quiz: QuizController, listen: () -> Unit
             }
             ui.help?.let { help ->
                 Surface(shape = RoundedCornerShape(16.dp), color = TalktoColors.Mint.copy(alpha = 0.25f), modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
-                    Text(help, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(12.dp))
+                    Row(verticalAlignment = Alignment.Top) {
+                        Text(help, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f).padding(12.dp))
+                        if (ui.helpFromClaude) com.talkto.app.ui.safety.FlagButton(onClick = { onFlag(help) })
+                    }
                 }
             }
         }
@@ -187,7 +202,7 @@ private fun Keypad(onKey: (Char) -> Unit, onOk: () -> Unit, onMic: () -> Unit, o
 }
 
 @Composable
-private fun TriviaScreen(ui: QuizUi.Quiz, quiz: QuizController, listen: () -> Unit) {
+private fun TriviaScreen(ui: QuizUi.Quiz, quiz: QuizController, listen: () -> Unit, onFlag: (String) -> Unit) {
     val lang = screenLang()
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
         if (ui.done) {
@@ -217,7 +232,18 @@ private fun TriviaScreen(ui: QuizUi.Quiz, quiz: QuizController, listen: () -> Un
         )
         Spacer(Modifier.height(8.dp))
         Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
-            Text(card.question.question(lang), style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center, modifier = Modifier.padding(20.dp))
+            Row(verticalAlignment = Alignment.Top) {
+                Text(card.question.question(lang), style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center, modifier = Modifier.weight(1f).padding(20.dp))
+                // Claude wrote this question: it can be flagged, with its options and fact.
+                if (ui.smart) {
+                    com.talkto.app.ui.safety.FlagButton(onClick = {
+                        onFlag(
+                            card.question.question(lang) + "\n" + card.options(lang).joinToString(" | ") +
+                                card.question.fact(lang).let { if (it.isBlank()) "" else "\n$it" },
+                        )
+                    })
+                }
+            }
         }
         Spacer(Modifier.height(12.dp))
         val letters = if (lang == com.talkto.core.i18n.Lang.BG) "АБВГ" else "ABCD"
