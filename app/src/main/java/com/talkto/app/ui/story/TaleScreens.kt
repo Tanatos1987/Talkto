@@ -98,6 +98,8 @@ fun StoriesSheet(vm: MainViewModel, onDismiss: () -> Unit) {
                 }
             }
 
+            ChaptersShelf(vm.chaptersDone(), onOpen = { ch -> onDismiss(); vm.rereadChapter(ch) })
+
             TaleKind.entries.forEach { kind ->
                 Spacer(Modifier.height(14.dp))
                 Text(kind.emoji + " " + kind.label(lang), style = MaterialTheme.typography.titleMedium)

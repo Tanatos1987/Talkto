@@ -29,6 +29,9 @@ import kotlinx.coroutines.flow.map
 import com.talkto.core.missions.Missions
 import com.talkto.core.missions.MissionsToday
 import com.talkto.core.missions.SeasonEvent
+import com.talkto.core.story.Challenge
+import com.talkto.core.story.Chapter
+import com.talkto.core.story.Visits
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -74,6 +77,12 @@ data class PermissionState(
     val accessibility: Boolean = false,
     val shizuku: Boolean = false,
 )
+
+/**
+ * A friend's visit from "The stolen colours": knocking ([left] null), waiting for the help ([left] tasks still to do),
+ * saying thank you ([won]), or a finished chapter read again ([reread]).
+ */
+data class VisitUi(val chapter: Chapter, val left: Int? = null, val won: Boolean = false, val reread: Boolean = false)
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -606,6 +615,112 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ------------------------------------------------------- friends' visits ("The stolen colours")
+
+    /** The help the child agreed to give today: the challenge counts from [start]. Kept for the process, not saved. */
+    private data class FriendHelp(val day: Long, val chapter: Int, val start: Int)
+
+    private val _help = MutableStateFlow(friendHelp)
+    private val _thanks = MutableStateFlow<Chapter?>(null)
+    private val _reread = MutableStateFlow<Chapter?>(null)
+
+    /** Today's visit, or null when no friend is due (one chapter a day, until the book is finished). */
+    val visit: StateFlow<VisitUi?> = combine(c.pet.state, c.pet.ready, c.activity.log, _help, _thanks) { p, ready, log, help, thanks ->
+        val today = c.activity.today()
+        when {
+            thanks != null -> VisitUi(thanks, left = 0, won = true)
+            !ready || !Visits.due(p.storyChapter, p.friendDay, today) -> null
+            else -> {
+                val ch = Visits.next(p.storyChapter) ?: return@combine null
+                val h = help?.takeIf { it.day == today && it.chapter == ch.number }
+                VisitUi(ch, left = h?.let { (ch.challenge.goal - (ch.challenge.count(log.on(today)) - it.start)).coerceAtLeast(0) })
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** A finished chapter opened again from the stories. */
+    val reread: StateFlow<Chapter?> = _reread.asStateFlow()
+
+    /** Chapters already won, for reading again. */
+    fun chaptersDone(): List<Chapter> = Visits.done(c.pet.state.value.storyChapter)
+
+    fun rereadChapter(chapter: Chapter) { _reread.value = chapter }
+
+    fun closeChapter() {
+        c.avatar.stopSpeaking()
+        _reread.value = null
+    }
+
+    fun readAloud(text: String) = viewModelScope.launch { c.avatar.speak(text, voice = c.settings.settings.value.voiceEnabled) }
+
+    /**
+     * The child says yes to the friend: the count starts now (the first time) and the help opens. The lesson is picked
+     * in the lessons sheet, so for [Challenge.LESSON] the screen opens it.
+     */
+    fun helpFriend(): Challenge? {
+        val v = visit.value ?: return null
+        if (v.won) return null
+        val today = c.activity.today()
+        if (v.left == null) {
+            val start = v.chapter.challenge.count(c.activity.log.value.on(today))
+            FriendHelp(today, v.chapter.number, start).also { friendHelp = it; _help.value = it }
+        }
+        c.avatar.stopSpeaking()
+        comeOut()
+        when (v.chapter.challenge) {
+            Challenge.MATHS -> startMath()
+            Challenge.TALE -> tales.read()
+            Challenge.RIDDLE -> tales.riddle()
+            Challenge.LESSON -> Unit
+        }
+        return v.chapter.challenge
+    }
+
+    /** The thank-you page was closed. */
+    fun closeThanks() {
+        c.avatar.stopSpeaking()
+        _thanks.value = null
+    }
+
+    fun closeVisit() = c.avatar.stopSpeaking()
+
+    init {
+        // The help is done: the chapter is won and paid once; the thanks waits until the tale, the lesson or the sums
+        // are closed, so it is seen and heard and does not talk over them.
+        viewModelScope.launch {
+            c.activity.ready.first { it }
+            c.pet.ready.first { it }
+            combine(c.activity.log, _help) { log, help -> log to help }.collect { (log, help) ->
+                if (help == null) return@collect
+                val today = c.activity.today()
+                if (help.day != today) { friendHelp = null; _help.value = null; return@collect }
+                val ch = Visits.CHAPTERS.getOrNull(help.chapter - 1) ?: return@collect
+                if (!ch.challenge.done(help.start, log.on(today))) return@collect
+                friendHelp = null
+                _help.value = null
+                if (!c.pet.chapterWon(ch.number, today)) return@collect
+                viewModelScope.launch {
+                    combine(tales.state, quiz.state, lessons.state) { t, q, l -> t == null && q == null && l == null }.first { it }
+                    delay(700)
+                    _thanks.value = ch
+                }
+            }
+        }
+        // A friend at the door: ZnaiKo says so once a day, after the greetings (the holiday one comes at 14 s).
+        viewModelScope.launch {
+            c.activity.ready.first { it }
+            c.pet.ready.first { it }
+            val today = c.activity.today()
+            if (friendKnockSaid == today) return@launch
+            delay(18_000)
+            val v = visit.value ?: return@launch
+            if (v.left != null || v.won || c.pet.state.value.sleeping || c.pet.state.value.atHome) return@launch
+            friendKnockSaid = today
+            val l = c.language.current
+            sayText(v.chapter.friend.knock(l) + l.pick(" Натисни вратичката долу.", " Tap the little door below."), Expression.SURPRISED)
+        }
+    }
+
     fun refreshPermissions() {
         val ctx = getApplication<Application>()
         _permissions.value = PermissionState(
@@ -1073,5 +1188,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
         /** The epoch day of the last holiday greeting, the same way. */
         @Volatile var holidaySaid: Long = -1L
+
+        /** The epoch day ZnaiKo last said a friend is knocking, the same way. */
+        @Volatile var friendKnockSaid: Long = -1L
+
+        /** The friend's help agreed to; process-wide, so a rebuilt screen keeps counting from the same start. */
+        @Volatile private var friendHelp: FriendHelp? = null
     }
 }

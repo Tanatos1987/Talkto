@@ -67,6 +67,10 @@ data class PetState(
     val badges: Set<String> = emptySet(),
     /** Epoch day of ZnaiKo's last weekly praise; 0 before the first week. */
     val weeklyPraiseDay: Long = 0,
+    /** Chapters of "The stolen colours" won so far. */
+    val storyChapter: Int = 0,
+    /** Epoch day the last chapter was won; the next friend knocks the day after. */
+    val friendDay: Long = 0,
 ) {
     val wallet: Wallet get() = Wallet(coins, owned)
 
@@ -263,6 +267,20 @@ class PetEngine(
     fun setWeeklyPraiseDay(day: Long) {
         _state.update { it.copy(weeklyPraiseDay = day) }
         scope.launch { persist() }
+    }
+
+    /** The child helped the friend of [chapter] on [day]: the chapter is won once (repeats are ignored) and paid. */
+    fun chapterWon(chapter: Int, day: Long): Boolean {
+        var won = false
+        _state.update { s ->
+            if (s.storyChapter != chapter - 1) s
+            else { won = true; s.copy(storyChapter = chapter, friendDay = day, happiness = (s.happiness + 8f).cap(), bond = (s.bond + 2f).cap()) }
+        }
+        if (!won) return false
+        earn(CoinReason.CHAPTER)
+        learn(KnowledgeSource.QUIZ)
+        scope.launch { persist() }
+        return true
     }
 
     /** A task finished successfully: helping makes ZnaiKo happy and strengthens the bond. */

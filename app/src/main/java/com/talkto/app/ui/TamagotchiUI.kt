@@ -191,6 +191,10 @@ fun TamagotchiScreen(vm: MainViewModel) {
     // An answer Claude wrote can be flagged with 🚩 while it is in the bubble.
     val flaggable: String? = lastReply?.takeIf { !systemNewer && !agent.busy && it.fromClaude }?.text
     var flagging by remember { mutableStateOf<String?>(null) }
+    val visit by vm.visit.collectAsStateWithLifecycle()
+    var visitOpen by rememberSaveable { mutableStateOf(false) }
+    // The thank-you opens by itself once the help is done.
+    LaunchedEffect(visit?.won) { if (visit?.won == true) visitOpen = true }
 
     Column(
         Modifier
@@ -266,6 +270,10 @@ fun TamagotchiScreen(vm: MainViewModel) {
                 ),
             )
             com.talkto.app.ui.food.FeedingOverlay(vm.meals, stageModifier)
+            // A friend from the story knocks once a day; the door waits while ZnaiKo sleeps or is at home.
+            visit?.takeIf { it.won || (!pet.sleeping && !pet.atHome && settings.storySeen) }?.let { v ->
+                com.talkto.app.ui.story.VisitChip(v, onClick = { visitOpen = true }, modifier = Modifier.align(Alignment.BottomStart).padding(14.dp))
+            }
             SpeechBubble(
                 text = when {
                     agent.busy && agent.activeTool != null -> stringResource(R.string.tool_running, toolLabel(agent.activeTool!!))
@@ -408,6 +416,25 @@ fun TamagotchiScreen(vm: MainViewModel) {
     // The story of ZnaiKo and the friends: once at the first start, and again from Settings.
     val storyReplay by vm.storyReplay.collectAsStateWithLifecycle()
     if ((settings.loaded && !settings.storySeen) || storyReplay) com.talkto.app.ui.story.StoryDialog(vm)
+
+    // The friend's chapter: the knock and the help, or the thank-you.
+    val v = visit
+    if (visitOpen && v != null) {
+        com.talkto.app.ui.story.VisitDialog(
+            v, vm,
+            onHelp = {
+                visitOpen = false
+                if (vm.helpFriend() == com.talkto.core.story.Challenge.LESSON) sheet = Sheet.LEARN
+            },
+            onDismiss = {
+                visitOpen = false
+                if (v.won) vm.closeThanks() else vm.closeVisit()
+            },
+        )
+    }
+    LaunchedEffect(v == null) { if (v == null) visitOpen = false }
+    val reread by vm.reread.collectAsStateWithLifecycle()
+    reread?.let { ch -> com.talkto.app.ui.story.VisitDialog(VisitUi(ch, reread = true), vm, onHelp = vm::closeChapter, onDismiss = vm::closeChapter) }
 
     flagging?.let { text ->
         com.talkto.app.ui.safety.FlagDialog(onFlag = { reason -> vm.flagReply(text, reason) }, onDismiss = { flagging = null })
