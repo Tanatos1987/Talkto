@@ -25,6 +25,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import com.talkto.core.missions.Missions
+import com.talkto.core.missions.MissionsToday
+import com.talkto.core.missions.SeasonEvent
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -412,10 +416,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 restSaid = true
                 lessons.close(); quiz.close(); games.close(); closeArcade(); tales.close(); _bedtime.value = false
                 c.pet.setSleeping(true)
-                sayText(l.pick("Р’СЂРµРјРµ Рµ Р·Р° РїРѕС‡РёРІРєР°! Р§СѓРґРµСЃРЅРѕ СЃРё РїРѕРёРіСЂР°С…РјРµ. Р•Р»Р° РїР°Рє СѓС‚СЂРµ!", "Time for a rest! We had a lovely time. Come back tomorrow!"), Expression.SLEEPY)
+                sayText(l.pick("Време е за почивка! Чудесно си поиграхме. Ела пак утре!", "Time for a rest! We had a lovely time. Come back tomorrow!"), Expression.SLEEPY)
             }
             com.talkto.core.parent.ScreenTime.warnNow(limit, today) ->
-                sayText(l.pick("РћС‰Рµ РїРµС‚ РјРёРЅСѓС‚РєРё Рё С‰Рµ С‚СЂСЏР±РІР° РґР° СЃРё РїРѕС‡РёРЅР°.", "Five more minutes, then I need a rest."), Expression.SLEEPY)
+                sayText(l.pick("Още пет минутки и ще трябва да си почина.", "Five more minutes, then I need a rest."), Expression.SLEEPY)
             else -> restSaid = false
         }
     }
@@ -511,8 +515,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val l = c.language.current
                 val first = fresh.first()
                 val more = fresh.size - 1
-                val line = l.pick("РќРѕРІР° Р·РЅР°С‡РєР°: ${first.emoji} ${first.bg}!", "New badge: ${first.emoji} ${first.en}!") +
-                    if (more > 0) l.pick(" Р РѕС‰Рµ $more!", " And $more more!") else ""
+                val line = l.pick("Нова значка: ${first.emoji} ${first.bg}!", "New badge: ${first.emoji} ${first.en}!") +
+                    if (more > 0) l.pick(" И още $more!", " And $more more!") else ""
                 sayText(line, Expression.LOVE)
             }
         }
@@ -547,6 +551,58 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val name = runCatching { c.profile.get("name") }.getOrNull()
             val line = com.talkto.core.routine.Routines.line(kind, now.toLocalDate(), c.language.current, name)
             sayText(line, if (kind == com.talkto.core.routine.RoutineKind.MORNING) Expression.HAPPY else Expression.SLEEPY)
+        }
+    }
+
+    // ------------------------------------------------------- daily missions and holidays
+
+    /** Today's three missions with their progress, and the holiday when today is one. */
+    val missions: StateFlow<MissionsToday> = c.activity.log
+        .map { missionsFor(it) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, missionsFor(c.activity.log.value))
+
+    private fun missionsFor(log: com.talkto.core.parent.ActivityLog): MissionsToday {
+        val day = c.activity.today()
+        return Missions.today(day, java.time.LocalDate.ofEpochDay(day), log.on(day))
+    }
+
+    init {
+        // Each mission done is cheered; all three pay the reward once a day (double on a holiday).
+        viewModelScope.launch {
+            c.activity.ready.first { it }
+            c.pet.ready.first { it }
+            // What was done before the app opened is not announced again.
+            val start = missionsFor(c.activity.log.value)
+            var seenDay = start.day
+            var seen = start.done.toSet()
+            var paidDay = -1L
+            missions.collect { m ->
+                if (m.day != seenDay) { seenDay = m.day; seen = emptySet() }
+                val fresh = m.done.filter { it !in seen }
+                seen = seen + fresh
+                val l = c.language.current
+                if (m.allDone && !m.claimed && paidDay != m.day) {
+                    paidDay = m.day
+                    c.activity.missionsDone()
+                    val times = Missions.rewardTimes(m.event)
+                    c.pet.earn(com.talkto.core.shop.CoinReason.MISSIONS, times)
+                    val coins = com.talkto.core.shop.CoinReason.MISSIONS.coins * times
+                    sayText(Missions.doneLine(m.missions.last(), 0, l) + l.pick(" Печелиш $coins монети!", " You win $coins coins!"), Expression.LOVE)
+                } else {
+                    fresh.lastOrNull()?.let { sayText(Missions.doneLine(it, m.missions.size - m.done.size, l), Expression.HAPPY) }
+                }
+            }
+        }
+        // A holiday: ZnaiKo's greeting once a day, after the hello and the morning words.
+        viewModelScope.launch {
+            c.activity.ready.first { it }
+            val today = java.time.LocalDate.now()
+            val event = SeasonEvent.on(today) ?: return@launch
+            if (holidaySaid == today.toEpochDay()) return@launch
+            holidaySaid = today.toEpochDay()
+            delay(14_000)
+            val name = runCatching { c.profile.get("name") }.getOrNull()
+            sayText(event.greeting(c.language.current, name), Expression.LOVE)
         }
     }
 
@@ -629,6 +685,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * happy about it. Words built in the letter rain also count as learning.
      */
     fun arcadeFinished(game: Arcade, points: Int, lines: Int = 0, won: Boolean = false) = viewModelScope.launch {
+        c.activity.record(com.talkto.core.parent.Activity.GAME)
         c.pet.play()
         c.pet.earn(com.talkto.core.shop.CoinReason.GAME_PLAYED)
         if (lines > 0) c.pet.earn(com.talkto.core.shop.CoinReason.TASK, lines.coerceAtMost(20))
@@ -684,8 +741,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun buy(item: ShopItem): Boolean {
         val l = c.language.current
         val ok = c.pet.buy(item)
-        val line = if (ok) l.pick("Р‘Р»Р°РіРѕРґР°СЂСЏ! РљСѓРїРёС… ${item.label(l)}.", "Thank you! I bought the ${item.label(l).lowercase()}.")
-        else l.pick("РўСЂСЏР±РІР°С‚ РјРё РѕС‰Рµ ${item.price - c.pet.state.value.coins} РјРѕРЅРµС‚Рё.", "I need ${item.price - c.pet.state.value.coins} more coins.")
+        val line = if (ok) l.pick("Благодаря! Купих ${item.label(l)}.", "Thank you! I bought the ${item.label(l).lowercase()}.")
+        else l.pick("Трябват ми още ${item.price - c.pet.state.value.coins} монети.", "I need ${item.price - c.pet.state.value.coins} more coins.")
         _systemLine.value = SystemLine(0, System.currentTimeMillis(), text = line)
         c.avatar.play(AnimationCommand(if (ok) Expression.LOVE else Expression.SAD, if (ok) Gesture.SPIN else Gesture.SHAKE, holdMs = 1_500))
         viewModelScope.launch { c.avatar.speak(line, voice = c.settings.settings.value.voiceEnabled) }
@@ -1013,5 +1070,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
         /** The day and routine ZnaiKo last greeted for; process-wide, so a rebuilt screen does not repeat it. */
         @Volatile var routineSaid: String? = null
+
+        /** The epoch day of the last holiday greeting, the same way. */
+        @Volatile var holidaySaid: Long = -1L
     }
 }

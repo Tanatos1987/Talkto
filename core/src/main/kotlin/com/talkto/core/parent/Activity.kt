@@ -28,6 +28,8 @@ data class DayActivity(
     val stories: Int = 0,
     val chats: Int = 0,
     val bonusMinutes: Int = 0,
+    /** The reward for all of the day's missions was paid. */
+    val missionsDone: Boolean = false,
 ) {
     fun plus(a: Activity, times: Int = 1): DayActivity = when (a) {
         Activity.MINUTE -> copy(minutes = minutes + times)
@@ -65,6 +67,8 @@ data class ActivityLog(val days: List<DayActivity> = emptyList()) {
     fun record(day: Long, a: Activity, times: Int = 1): ActivityLog = change(day) { it.plus(a, times) }
 
     fun addBonus(day: Long, minutes: Int): ActivityLog = change(day) { it.copy(bonusMinutes = it.bonusMinutes + minutes) }
+
+    fun missionsDone(day: Long): ActivityLog = change(day) { it.copy(missionsDone = true) }
 
     /** The seven days ending with [lastDay], oldest first, with empty days filled in. */
     fun week(lastDay: Long): List<DayActivity> = (lastDay - 6..lastDay).map(::on)

@@ -49,6 +49,9 @@ class ActivityRepository(
     /** Extra minutes a parent gave for today. */
     fun addBonus(minutes: Int) = save { it.addBonus(today(), minutes) }
 
+    /** All of today's missions are done and paid for. */
+    fun missionsDone() = save { it.missionsDone(today()) }
+
     private fun save(f: (ActivityLog) -> ActivityLog) {
         if (!loaded) return
         _log.update(f)

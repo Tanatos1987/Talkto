@@ -100,6 +100,8 @@ fun GamesSheet(
     dailyDone: Boolean = false,
     /** A quiz Claude writes about the child's interests; null without Claude. */
     onSmartTrivia: (() -> Unit)? = null,
+    /** Today's missions, shown on top; null hides them. */
+    missions: com.talkto.core.missions.MissionsToday? = null,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         val lang = screenLang()
@@ -111,6 +113,7 @@ fun GamesSheet(
                 style = MaterialTheme.typography.bodyMedium,
             )
             Spacer(Modifier.height(12.dp))
+            missions?.let { MissionsCard(it, lang) }
             onDaily?.let { daily ->
                 GameRow(
                     if (dailyDone) "✅" else "🌞",
@@ -142,6 +145,45 @@ fun GamesSheet(
             GameRow("🔢", tr("Математика, алгебра и геометрия", "Maths, algebra and geometry"), tr("Сметки, уравнения и фигури за 1. до 7. клас. Отговаряй с цифри или на глас.", "Sums, equations and shapes for years 1 to 7. Answer with the keypad or out loud."), onMath)
             GameRow("❓", tr("Тривия", "Trivia"), tr("Въпроси от обща култура: животни, космос, България, история и още.", "General knowledge: animals, space, Bulgaria, history and more."), onTrivia)
             GameRow("⚽", stringResource(R.string.game_quick), stringResource(R.string.game_quick_note), onQuickPlay)
+        }
+    }
+}
+
+/** Today's three missions with a bar each; a holiday shows its name and the double coins. */
+@Composable
+private fun MissionsCard(m: com.talkto.core.missions.MissionsToday, lang: com.talkto.core.i18n.Lang) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = if (m.claimed) TalktoColors.Mint.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Text(
+                if (m.claimed) tr("🎯 Мисиите за днес са изпълнени! ✅", "🎯 Today's missions are done! ✅")
+                else tr("🎯 Днешни мисии", "🎯 Today's missions"),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            m.event?.let { e ->
+                Text(
+                    "${e.emoji} ${e.label(lang)}: " + tr("двойно повече монети за мисиите!", "double coins for the missions!"),
+                    style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold,
+                )
+            }
+            m.missions.forEach { mission ->
+                val progress = mission.progress(m.activity)
+                Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (mission.done(m.activity)) "✅" else mission.emoji, fontSize = 20.sp, modifier = Modifier.width(32.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(mission.label(lang), style = MaterialTheme.typography.bodyMedium)
+                        LinearProgressIndicator(
+                            progress = { progress / mission.goal.toFloat() },
+                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp).height(8.dp).clip(RoundedCornerShape(4.dp)),
+                            color = TalktoColors.Mint, drawStopIndicator = {},
+                        )
+                    }
+                    Text("$progress/${mission.goal}", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 8.dp))
+                }
+            }
         }
     }
 }
