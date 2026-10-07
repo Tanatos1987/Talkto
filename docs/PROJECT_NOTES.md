@@ -66,6 +66,7 @@ ZnaiKo (Знайко) е виртуален любимец в стил Тама�
 CI е в `.github/workflows/android.yml`. Всеки push на клона `claude/talkto-android-app-k5s2jz` пуска тестове и подписан `bundlePlayRelease`.
 
 - versionCode = номерът на CI run-а, versionName = `1.1.<run>`.
+- Задача `launch`: CI инсталира debug и release APK на емулатор с Android 15, отваря ги и чака 30 секунди. Ако приложението падне, run-ът е червен, а в лога е stack trace-ът с истинските имена (през `mapping.txt` на release APK-то). Не пускайте в Play версия с червен `launch`.
 - AAB файлът се сваля от страницата на run-а в GitHub Actions, секция Artifacts.
 - GitHub secrets: `TALKTO_KEYSTORE_B64`, `TALKTO_KEYSTORE_PASSWORD`, `TALKTO_KEY_ALIAS` (= `znaiko`), `TALKTO_KEY_PASSWORD`.
 - Keystore файлът и паролите **никога** не влизат в репото. Шаблонът за локален билд е `keystore.properties.example`.
@@ -98,7 +99,8 @@ CI е в `.github/workflows/android.yml`. Всеки push на клона `claud
    - DEX оптимизация 22% при праг 25% (краен срок февруари 2027). Причината беше ред `-keep class com.anthropic.** { *; }` в `proguard-rules.pro`, който пазеше целия Anthropic SDK (~12 600 класа). Сега важат собствените правила на SDK-то (`META-INF/proguard/anthropic-java-core.pro`); добавени са `-repackageclasses` и `android.r8.optimizedResourceShrinking=true`. Jackson засега се пази цял. После: AGP 9.4.1 и Gradle 9.6.1; AGP 9 компилира Kotlin сам, затова плъгинът `org.jetbrains.kotlin.android` е махнат.
    - 16 KB страници: `libdatastore_shared_counter.so` от datastore 1.2.0; обновено до 1.2.1. CI отпечатва размера на DEX и подравняването на всяка 64-битова `.so` (стъпка „Bundle report“).
    - Edge-to-edge: махнати `statusBarColor`/`navigationBarColor` от темата, `androidx.activity` 1.13.0. CI качва `mapping.txt` (артефакт `talkto-mapping`): качете го в Play Console към версията, за да се виждат истинските имена на класовете.
-   - **Преди качване в Play:** инсталирайте `talkto-release-apk` (минава през R8 като Play версията) и проверете разговор с Claude, приказка от Claude и смяна на модела.
+   - **1.1.94 не се отваряше** (release и Play версията; debug работеше). AGP 9 пуска R8 в строг режим (`android.r8.strictFullModeForKeepRules`): `-keep class X` в правилата на библиотека вече не пази празния конструктор на X. ML Kit създава компонентите си по име, загуби ги и `FaceDetection.getClient` хвърляше NullPointerException още в `TalktoApp.onCreate`. Поправка: строгият режим е изключен в `gradle.properties`, в `proguard-rules.pro` има правило за регистраторите на ML Kit, а `FaceAnchorDetector` вече не може да спре стартирането.
+   - **Преди качване в Play:** инсталирайте `talkto-release-apk` (минава през R8 като Play версията) и проверете разговор с Claude, приказка от Claude и смяна на модела. Дали приложението изобщо се отваря, CI вече проверява сам (задача `launch`, вижте по-горе).
 
 ## Сигнали за отговори 🚩 (правилото на Google Play за AI съдържание)
 

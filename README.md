@@ -510,6 +510,8 @@ Release build-ът е с R8 (`isMinifyEnabled`, `isShrinkResources`). Прави
 - `talkto-apk`: debug APK за директно инсталиране;
 - `talkto-aab`: Android App Bundle (`app-release.aab`) за Google Play.
 
+Задачата `launch` отваря debug и release APK-то на емулатор и пада, ако ZnaiKo се срине при старт, със stack trace в лога. R8 проблемите иначе се виждат чак на телефона.
+
 `versionCode` е номерът на CI сборката, така че всеки bundle е ново обновление. Без ключ bundle-ът е неподписан и трябва да се подпише преди качване в Play Console. За подписан APK и AAB добавете в GitHub Secrets: `TALKTO_KEYSTORE_B64` (`base64 -w0 keys/talkto-release.jks`), `TALKTO_KEYSTORE_PASSWORD`, `TALKTO_KEY_ALIAS`, `TALKTO_KEY_PASSWORD`. Тогава CI качва и `talkto-release-apk`.
 
 Локално bundle-ът за Google Play се прави с `./gradlew :app:bundlePlayRelease`, а резултатът е в `app/build/outputs/bundle/playRelease/`.

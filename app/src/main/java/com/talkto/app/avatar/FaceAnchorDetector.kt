@@ -1,8 +1,10 @@
 package com.talkto.app.avatar
 
 import android.graphics.Bitmap
+import android.util.Log
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.face.FaceDetection
+import com.google.mlkit.vision.face.FaceDetector
 import com.google.mlkit.vision.face.FaceDetectorOptions
 import com.google.mlkit.vision.face.FaceLandmark
 import com.talkto.core.avatar.FaceAnchors
@@ -16,15 +18,23 @@ import kotlin.coroutines.resume
  */
 class FaceAnchorDetector {
 
-    private val detector = FaceDetection.getClient(
-        FaceDetectorOptions.Builder()
-            .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE)
-            .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_ALL)
-            .setMinFaceSize(0.2f)
-            .build(),
-    )
+    /**
+     * Null when ML Kit cannot start (in 1.1.94 R8 had removed what it needs): ZnaiKo still opens, and every avatar gets
+     * the default anchors. This is created while the app starts, so a failure here must never be thrown.
+     */
+    private val detector: FaceDetector? = runCatching {
+        FaceDetection.getClient(
+            FaceDetectorOptions.Builder()
+                .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE)
+                .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_ALL)
+                .setMinFaceSize(0.2f)
+                .build(),
+        )
+    }.onFailure { Log.w("ZnaiKo", "Face detection unavailable", it) }.getOrNull()
 
-    suspend fun detect(bitmap: Bitmap): FaceAnchors = suspendCancellableCoroutine { cont ->
+    suspend fun detect(bitmap: Bitmap): FaceAnchors = detector?.let { detect(it, bitmap) } ?: FaceAnchors()
+
+    private suspend fun detect(detector: FaceDetector, bitmap: Bitmap): FaceAnchors = suspendCancellableCoroutine { cont ->
         val w = bitmap.width.toFloat()
         val h = bitmap.height.toFloat()
         detector.process(InputImage.fromBitmap(bitmap, 0))
@@ -66,5 +76,5 @@ class FaceAnchorDetector {
             .addOnFailureListener { cont.resume(FaceAnchors()) }
     }
 
-    fun close() = detector.close()
+    fun close() = detector?.close()
 }

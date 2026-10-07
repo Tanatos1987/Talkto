@@ -13,10 +13,11 @@ ZnaiKo (Знайко) is an Android virtual pet for children that is also an AI 
 - Product flavors:
   - `full`: package `com.talkto.app`, every feature;
   - `play`: package `znaiKo.app`, the Google Play build. Its manifest removes all-files access, QUERY_ALL_PACKAGES, the accessibility service and the gallery permissions (photos only through the system picker); hiddenapibypass is a `full`-only dependency loaded by reflection.
-- CI (`.github/workflows/android.yml`): core tests, Robolectric tests, lint, a debug APK, and a signed `bundlePlayRelease` AAB built from repository secrets (TALKTO_KEYSTORE_B64, TALKTO_KEYSTORE_PASSWORD, TALKTO_KEY_ALIAS, TALKTO_KEY_PASSWORD). versionCode is the CI run number, versionName `1.1.<run>`.
+- CI (`.github/workflows/android.yml`): core tests, Robolectric tests, lint, a debug APK, a `launch` job that opens the debug and release APKs on an emulator and fails on a start-up crash, and a signed `bundlePlayRelease` AAB built from repository secrets (TALKTO_KEYSTORE_B64, TALKTO_KEYSTORE_PASSWORD, TALKTO_KEY_ALIAS, TALKTO_KEY_PASSWORD). versionCode is the CI run number, versionName `1.1.<run>`.
 
 ## Rules
 
 - Never commit keystores, passwords or API keys.
 - Never write the owner's email into the repo.
 - Any change to the `play` flavor must keep restricted permissions out of its merged manifest.
+- R8 problems show only in release builds: a red `launch` job means the build does not open on a phone.

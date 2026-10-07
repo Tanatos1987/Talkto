@@ -32,6 +32,11 @@
 -dontwarn org.lsposed.hiddenapibypass.**
 -dontwarn android.app.IActivityManager**
 
+# --- ML Kit: its parts are registered by class name in the manifest and made with their no-argument constructor.
+#     AGP 9's stricter R8 no longer keeps that constructor for a bare "-keep class" in ML Kit's own rules, so 1.1.94
+#     crashed on start (FaceDetection.getClient found no face detector).
+-keep class * implements com.google.firebase.components.ComponentRegistrar { <init>(); }
+
 # --- Accessibility service referenced from XML ----------------------------------------------------
 -keep class com.talkto.app.apps.TalktoAccessibilityService { *; }
 
