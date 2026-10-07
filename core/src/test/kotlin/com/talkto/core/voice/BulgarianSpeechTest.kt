@@ -116,11 +116,11 @@ class BulgarianSpeechTest {
         assertThat(n("Войната е 1941-1945 г.")).isEqualTo("Войната е от хиляда деветстотин четиридесет и първа до хиляда деветстотин четиридесет и пета година")
         assertThat(n("Живял е там 5-6 години.")).isEqualTo("Живял е там 5 до 6 години.")
         assertThat(n("от 1000-2000 точки")).isEqualTo("от 1000 до 2000 точки")
-        assertThat(n("Прочети стр. 5-10.")).isEqualTo("Прочети страница 5 до 10.")
+        assertThat(n("Прочети стр. 5-10.")).isEqualTo("Прочети страница 5 до десет.")
         assertThat(n("Колко е 3-7?")).isEqualTo("Колко е 3 минус 7?")
         assertThat(n("През учебната 2025/2026 година")).isEqualTo("През учебната две хиляди двадесет и пета - двадесет и шеста година")
         assertThat(n("Сезон 2025/2026")).isEqualTo("Сезон две хиляди двадесет и пета - двадесет и шеста година")
-        assertThat(n("Брои до 1000.")).isEqualTo("Брои до 1000.")
+        assertThat(n("Брои до 1000.")).isEqualTo("Брои до хиляда.")
         assertThat(n("Кое число е след 1999?")).isEqualTo("Кое число е след 1999?")
         assertThat(n("Живял е до 1878.")).isEqualTo("Живял е до хиляда осемстотин седемдесет и осма година.")
         assertThat(n("преди 2 века")).isEqualTo("преди два века")
@@ -156,13 +156,24 @@ class BulgarianSpeechTest {
     @Test fun `the settings sample says everything in words`() {
         assertThat(n(Speakable.clean(BulgarianSpeech.SAMPLE))).isEqualTo(
             "Здравей! Аз съм Знайко. Днес е двадесет и четвърти май, празникът на буквите. Връх Мусала е висок " +
-                "две хиляди деветстотин двадесет и пет метра, а в трети клас знаем, че 7 по 8 е равно на 56.",
+                "две хиляди деветстотин двадесет и пет метра, а в трети клас знаем, че 7 по 8 е равно на петдесет и шест.",
         )
+    }
+
+    @Test fun `a number before a full stop is a count, not an ordinal`() {
+        assertThat(n(Speakable.clean("Браво! 7 + 2 = 9."))).isEqualTo("Браво! 7 плюс 2 е равно на девет.")
+        assertThat(n("Отговорът е 21. Чудесно!")).isEqualTo("Отговорът е двадесет и едно. Чудесно!")
+        assertThat(n("Имам 2.")).isEqualTo("Имам две.")
+        assertThat(n("Ниво 12, опит 340.")).isEqualTo("Ниво 12, опит триста и четиридесет.")
+        // Ordinals, list numbers and decimals stay as they were.
+        assertThat(n("Учи в 9. клас")).isEqualTo("Учи в девети клас")
+        assertThat(n("1. Купи мляко")).isEqualTo("1. Купи мляко")
+        assertThat(n("Пи е 3.14.")).isEqualTo("Пи е 3.14.")
     }
 
     @Test fun `ordinary sentences are left alone`() {
         listOf(
-            "Колко е 7 плюс 5?", "Ниво 12, опит 340.", "Болт пробяга 100 метра за 9,58 секунди.", "Имам 3 любими игри.",
+            "Колко е 7 плюс 5?", "Ниво 12, опит 340 точки.", "Болт пробяга 100 метра за 9,58 секунди.", "Имам 3 любими игри.",
             "Среща в 14:30.", "Куче на английски е dog.", "Колко е 2 на квадрат?",
         ).forEach { assertThat(n(it)).isEqualTo(it) }
     }

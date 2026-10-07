@@ -35,8 +35,20 @@ object BulgarianSpeech {
         t = orderedNouns(t)
         t = kings(t)
         t = math(t)
+        t = beforeFullStop(t)
         return t.replace(Regex(" {2,}"), " ").trim()
     }
+
+    /**
+     * "Отговорът е 9." -> "Отговорът е девет.": Bulgarian voices read a number right before a full stop as an ordinal
+     * ("девети", as in "9. клас"), and every maths answer ends that way. Only a number inside a sentence (after a word
+     * or a sign); a list number at the start of a line ("1. Купи мляко") stays. Counted the way children count: "едно",
+     * "две".
+     */
+    private fun beforeFullStop(t: String): String =
+        Regex("(?<=[\\p{L}=+−×÷)%]\\s{1,3})(\\d{1,9})\\.(?=\\s|$)").replace(t) { m ->
+            cardinal(m.groupValues[1].toLong(), Gender.N) + "."
+        }
 
     // ------------------------------------------------------------------ numbers in words
 

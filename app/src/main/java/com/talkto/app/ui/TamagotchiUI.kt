@@ -64,7 +64,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -537,61 +536,42 @@ private fun CoinGain(gains: kotlinx.coroutines.flow.Flow<Int>, modifier: Modifie
     }
 }
 
+/**
+ * ZnaiKo's needs as five rings that fill like a clock, big enough to read at a glance. A need that runs low turns
+ * red, pulses and shows a sad face; a tap shows its name for a moment.
+ */
 @Composable
 private fun StatsRow(pet: PetState) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Stat("🍗", stringResource(R.string.stat_satiety), pet.satiety, TalktoColors.Tomato, Modifier.weight(1f))
-        Stat("⚡", stringResource(R.string.stat_energy), pet.energy, TalktoColors.Sunflower, Modifier.weight(1f))
-        Stat("😊", stringResource(R.string.stat_happiness), pet.happiness, TalktoColors.Mint, Modifier.weight(1f))
-        Stat("💞", stringResource(R.string.stat_bond), pet.bond, TalktoColors.Denim, Modifier.weight(1f))
-        Stat("💪", com.talkto.app.i18n.tr("Здраве", "Health"), pet.vitality, Color(0xFF9B5DE5), Modifier.weight(1f))
+    Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+        StatRing("🍗", "😫", stringResource(R.string.stat_satiety), pet.satiety, TalktoColors.Tomato)
+        StatRing("⚡", "😴", stringResource(R.string.stat_energy), pet.energy, TalktoColors.Sunflower)
+        StatRing("😊", "😢", stringResource(R.string.stat_happiness), pet.happiness, TalktoColors.Mint)
+        StatRing("💞", "💔", stringResource(R.string.stat_bond), pet.bond, TalktoColors.Denim)
+        StatRing("💪", "🤒", com.talkto.app.i18n.tr("Здраве", "Health"), pet.vitality, Color(0xFF9B5DE5))
     }
     LevelRow(pet)
 }
 
-/** Level, life stage and daily streak, with progress to the next level. */
+/** Level and life stage, knowledge towards the next update, and the daily streak, in one line with small rings. */
 @Composable
 private fun LevelRow(pet: PetState) {
-    val progress by animateFloatAsState(pet.levelProgress, label = "level")
-    Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    val level by animateFloatAsState(pet.levelProgress, label = "level")
+    val knowledge by animateFloatAsState(pet.knowledgeProgress, label = "knowledge")
+    Row(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        MiniRing("⭐", level, Color(0xFF9B5DE5))
+        Spacer(Modifier.width(6.dp))
         Text(
             stringResource(R.string.level_short, pet.level, stageLabel(pet.stage)),
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.labelMedium, maxLines = 1,
         )
-        Spacer(Modifier.width(8.dp))
-        LinearProgressIndicator(
-            progress = { progress },
-            modifier = Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(3.dp)),
-            color = Color(0xFF9B5DE5),
-            trackColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.1f),
-            drawStopIndicator = {},
-        )
+        Spacer(Modifier.weight(1f))
+        MiniRing("🧠", knowledge, TalktoColors.Sunflower)
+        Spacer(Modifier.width(6.dp))
+        Text("v${pet.version}", style = MaterialTheme.typography.labelMedium, maxLines = 1)
         if (pet.streakDays > 1) {
-            Spacer(Modifier.width(8.dp))
-            Text(stringResource(R.string.streak_short, pet.streakDays), style = MaterialTheme.typography.labelSmall)
-        }
-    }
-    KnowledgeRow(pet)
-}
-
-/** Version, knowledge towards the next update, and age. */
-@Composable
-private fun KnowledgeRow(pet: PetState) {
-    val progress by animateFloatAsState(pet.knowledgeProgress, label = "knowledge")
-    Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(stringResource(R.string.knowledge_short, pet.version), style = MaterialTheme.typography.labelSmall)
-        Spacer(Modifier.width(8.dp))
-        LinearProgressIndicator(
-            progress = { progress },
-            modifier = Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(3.dp)),
-            color = TalktoColors.Sunflower,
-            trackColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.1f),
-            drawStopIndicator = {},
-        )
-        val age = pet.ageDays(System.currentTimeMillis())
-        if (age > 0) {
-            Spacer(Modifier.width(8.dp))
-            Text(stringResource(R.string.age_days, age), style = MaterialTheme.typography.labelSmall)
+            val streak = stringResource(R.string.streak_short, pet.streakDays)
+            Spacer(Modifier.width(12.dp))
+            Text("🔥 ${pet.streakDays}", style = MaterialTheme.typography.labelMedium, modifier = Modifier.semantics { contentDescription = streak })
         }
     }
 }
@@ -607,20 +587,61 @@ private fun stageLabel(stage: LifeStage) = stringResource(
     },
 )
 
+/** A ring filled to [progress] (0..1), from the top, clockwise, over a faint full ring. */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.ring(progress: Float, color: Color, track: Color, width: Float) {
+    val topLeft = Offset(width / 2, width / 2)
+    val arc = androidx.compose.ui.geometry.Size(size.width - width, size.height - width)
+    drawArc(track, startAngle = 0f, sweepAngle = 360f, useCenter = false, topLeft = topLeft, size = arc, style = androidx.compose.ui.graphics.drawscope.Stroke(width))
+    drawArc(
+        color, startAngle = -90f, sweepAngle = 360f * progress.coerceIn(0f, 1f), useCenter = false, topLeft = topLeft, size = arc,
+        style = androidx.compose.ui.graphics.drawscope.Stroke(width, cap = androidx.compose.ui.graphics.StrokeCap.Round),
+    )
+}
+
 @Composable
-private fun Stat(emoji: String, label: String, value: Float, color: Color, modifier: Modifier) {
+private fun StatRing(emoji: String, lowEmoji: String, label: String, value: Float, color: Color) {
     val animated by animateFloatAsState(value / 100f, label = "stat")
-    // An emoji instead of a word, so children who cannot read yet understand it; the word stays for TalkBack.
-    Row(modifier.semantics(mergeDescendants = true) { contentDescription = "$label ${value.toInt()}%" }, verticalAlignment = Alignment.CenterVertically) {
-        Text(emoji, fontSize = 18.sp)
-        Spacer(Modifier.width(4.dp))
-        LinearProgressIndicator(
-            progress = { animated },
-            modifier = Modifier.weight(1f).height(10.dp).clip(RoundedCornerShape(5.dp)),
-            color = if (value < 25f) TalktoColors.Tomato else color,
-            trackColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.1f),
-            drawStopIndicator = {},
+    val low = value < 25f
+    // Low: the ring blinks softly, so the child sees what ZnaiKo needs.
+    val alpha = if (low) {
+        androidx.compose.animation.core.rememberInfiniteTransition(label = "low").animateFloat(
+            initialValue = 1f, targetValue = 0.35f,
+            animationSpec = androidx.compose.animation.core.infiniteRepeatable(tween(700), androidx.compose.animation.core.RepeatMode.Reverse),
+            label = "pulse",
+        ).value
+    } else {
+        1f
+    }
+    var named by remember { mutableStateOf(false) }
+    LaunchedEffect(named) {
+        if (named) { kotlinx.coroutines.delay(2_000); named = false }
+    }
+    val track = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.1f)
+    val ringColor = (if (low) TalktoColors.Tomato else color).copy(alpha = alpha)
+    // The emoji, so children who cannot read yet understand it; the word for TalkBack and after a tap.
+    Column(
+        Modifier.semantics(mergeDescendants = true) { contentDescription = "$label ${value.toInt()}%" }
+            .clip(RoundedCornerShape(12.dp)).clickable { named = true }.padding(horizontal = 2.dp, vertical = 2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(Modifier.size(46.dp), contentAlignment = Alignment.Center) {
+            Canvas(Modifier.fillMaxSize()) { ring(animated, ringColor, track, 5.dp.toPx()) }
+            Text(if (low) lowEmoji else emoji, fontSize = 20.sp)
+        }
+        Text(
+            if (named) label else "${value.toInt()}%",
+            style = MaterialTheme.typography.labelSmall, maxLines = 1,
+            color = if (low) TalktoColors.Tomato else MaterialTheme.colorScheme.onBackground,
         )
+    }
+}
+
+@Composable
+private fun MiniRing(emoji: String, progress: Float, color: Color) {
+    val track = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.1f)
+    Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+        Canvas(Modifier.fillMaxSize()) { ring(progress, color, track, 3.dp.toPx()) }
+        Text(emoji, fontSize = 11.sp)
     }
 }
 
