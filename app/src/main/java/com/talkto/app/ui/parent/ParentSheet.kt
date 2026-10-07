@@ -359,6 +359,7 @@ private fun Report(log: ActivityLog, today: Long, limit: Int, wordsLearned: Int,
                 tr("➗ Задачи: ${total.mathRight} верни от ${total.mathRight + total.mathWrong}", "➗ Maths: ${total.mathRight} right of ${total.mathRight + total.mathWrong}"),
                 tr("❓ Викторина: ${total.triviaRight} верни от ${total.triviaRight + total.triviaWrong}", "❓ Quiz: ${total.triviaRight} right of ${total.triviaRight + total.triviaWrong}"),
                 tr("🎮 Игри: ${total.games}   💬 Разговори: ${total.chats}   📖 Приказки: ${total.stories}", "🎮 Games: ${total.games}   💬 Chats: ${total.chats}   📖 Stories: ${total.stories}"),
+                tr("🎨 Рисунки: ${total.drawings}", "🎨 Drawings: ${total.drawings}"),
                 tr("🌟 Научени думи общо: $wordsLearned; Знайко е ниво $level", "🌟 Words learned in all: $wordsLearned; ZnaiKo is level $level") +
                     if (streak > 1) tr(", $streak дни подред", ", $streak days in a row") else "",
             )

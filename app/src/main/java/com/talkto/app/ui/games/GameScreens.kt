@@ -95,6 +95,7 @@ fun GamesSheet(
     onSweets: () -> Unit = {},
     onFeed: () -> Unit = {},
     onLetters: () -> Unit = {},
+    onDraw: () -> Unit = {},
     /** The question of the day; null hides it. [dailyDone]: already answered today. */
     onDaily: (() -> Unit)? = null,
     dailyDone: Boolean = false,
@@ -130,6 +131,7 @@ fun GamesSheet(
                     smart,
                 )
             }
+            GameRow("🎨", tr("Рисувай", "Draw"), tr("Рисувай с пръст, а Знайко ще ти каже какво вижда. Рисунките остават в галерията.", "Draw with your finger and ZnaiKo will say what it sees. Your drawings stay in the gallery.")) { onDraw() }
             GameRow("🧊", tr("3D Тетрис", "3D Tetris"), tr("Нареди падащите кубчета в пълни редове. Плъзгай, докосни, за да завъртиш.", "Fit the falling cubes into full rows. Swipe, tap to turn.")) { onTetris() }
             GameRow("🍬", tr("Бонбонки", "Sweets"), tr("Размени две бонбонки и нареди три еднакви. Нива, комбота и звезди!", "Swap two sweets to line up three. Levels, combos and stars!")) { onSweets() }
             GameRow("🍎", tr("Нахрани Знайко", "Feed ZnaiKo"), tr("Храната пада от небето. Мести Знайко, хващай здравословната и бягай от вредната!", "Food falls from the sky. Move ZnaiKo, catch the healthy food and dodge the junk!")) { onFeed() }

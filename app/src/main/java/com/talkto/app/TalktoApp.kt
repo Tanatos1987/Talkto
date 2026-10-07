@@ -152,6 +152,8 @@ class AppContainer(private val context: Context) {
         }
     }
     val backgrounds = BackgroundLibrary(context, petStore)
+    /** The child's drawings, only in the app's own storage. */
+    val drawings = com.talkto.app.draw.DrawingStore(context)
 
     // ---- agent
     val confirmations = ConfirmationBroker(onWaitingInBackground = { AgentService.notifyConfirmationPending(context) })

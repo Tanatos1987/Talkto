@@ -56,6 +56,8 @@ enum class CoinReason(val coins: Int) {
     MISSIONS(30),
     /** A friend's chapter of "The stolen colours" won. */
     CHAPTER(25),
+    /** A drawing saved; paid for the first few of the day only. */
+    DRAWING(8),
 }
 
 /** Everything for sale: the paid cosmetics of every kind, cheapest first on each shelf. */

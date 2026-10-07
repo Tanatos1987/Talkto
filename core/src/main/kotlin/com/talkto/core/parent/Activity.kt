@@ -10,6 +10,8 @@ enum class Activity {
     MATH_RIGHT, MATH_WRONG,
     TRIVIA_RIGHT, TRIVIA_WRONG,
     GAME, STORY, CHAT,
+    /** A drawing saved in the gallery. */
+    DRAWING,
 }
 
 /** One day of activity; [day] is the epoch day. [bonusMinutes] is extra time a parent gave on that day. */
@@ -30,6 +32,7 @@ data class DayActivity(
     val bonusMinutes: Int = 0,
     /** The reward for all of the day's missions was paid. */
     val missionsDone: Boolean = false,
+    val drawings: Int = 0,
 ) {
     fun plus(a: Activity, times: Int = 1): DayActivity = when (a) {
         Activity.MINUTE -> copy(minutes = minutes + times)
@@ -43,6 +46,7 @@ data class DayActivity(
         Activity.GAME -> copy(games = games + times)
         Activity.STORY -> copy(stories = stories + times)
         Activity.CHAT -> copy(chats = chats + times)
+        Activity.DRAWING -> copy(drawings = drawings + times)
     }
 
     /** All counters added up (the day of the result is this one's). */
@@ -50,12 +54,13 @@ data class DayActivity(
         day, minutes + o.minutes, lessons + o.lessons, wordsRight + o.wordsRight, wordsWrong + o.wordsWrong,
         mathRight + o.mathRight, mathWrong + o.mathWrong, triviaRight + o.triviaRight, triviaWrong + o.triviaWrong,
         games + o.games, stories + o.stories, chats + o.chats, bonusMinutes + o.bonusMinutes,
+        drawings = drawings + o.drawings,
     )
 
     val answersRight: Int get() = wordsRight + mathRight + triviaRight
     val answers: Int get() = answersRight + wordsWrong + mathWrong + triviaWrong
     /** Did anything happen at all? */
-    val active: Boolean get() = minutes > 0 || lessons > 0 || answers > 0 || games > 0 || stories > 0 || chats > 0
+    val active: Boolean get() = minutes > 0 || lessons > 0 || answers > 0 || games > 0 || stories > 0 || chats > 0 || drawings > 0
 }
 
 /** The last [KEEP_DAYS] days, oldest first. Immutable: every change returns a new log. */

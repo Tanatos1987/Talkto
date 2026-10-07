@@ -424,6 +424,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             com.talkto.core.parent.ScreenTime.timeUp(limit, today) -> if (!restSaid) {
                 restSaid = true
                 lessons.close(); quiz.close(); games.close(); closeArcade(); tales.close(); _bedtime.value = false
+                closeDrawing(); _reread.value = null
                 c.pet.setSleeping(true)
                 sayText(l.pick("Време е за почивка! Чудесно си поиграхме. Ела пак утре!", "Time for a rest! We had a lovely time. Come back tomorrow!"), Expression.SLEEPY)
             }
@@ -613,6 +614,87 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val name = runCatching { c.profile.get("name") }.getOrNull()
             sayText(event.greeting(c.language.current, name), Expression.LOVE)
         }
+    }
+
+    // ------------------------------------------------------- drawing
+
+    private val _drawingOpen = MutableStateFlow(false)
+    /** The drawing page is open. */
+    val drawingOpen: StateFlow<Boolean> = _drawingOpen.asStateFlow()
+
+    /** The gallery, newest first. */
+    val drawings = c.drawings.drawings
+
+    private val _drawPrompt = MutableStateFlow<com.talkto.core.learn.Word?>(null)
+    /** What ZnaiKo asked the child to draw, if anything. */
+    val drawPrompt: StateFlow<com.talkto.core.learn.Word?> = _drawPrompt.asStateFlow()
+
+    private val _drawLine = MutableStateFlow<String?>(null)
+    /** What ZnaiKo just said on the drawing page. */
+    val drawLine: StateFlow<String?> = _drawLine.asStateFlow()
+
+    fun openDrawing() {
+        comeOut()
+        _drawingOpen.value = true
+        viewModelScope.launch { runCatching { c.drawings.load() } }
+        val l = c.language.current
+        drawSay(l.pick("Какво ще нарисуваш днес? Ако искаш идея, натисни 💡.", "What will you draw today? Tap 💡 if you'd like an idea."), Expression.HAPPY)
+    }
+
+    fun closeDrawing() {
+        c.avatar.stopSpeaking()
+        _drawingOpen.value = false
+        _drawPrompt.value = null
+        _drawLine.value = null
+    }
+
+    /** ZnaiKo asks for something to draw, with its word in the language being learned. */
+    fun newDrawPrompt() {
+        val w = com.talkto.core.draw.Drawing.prompt(not = _drawPrompt.value)
+        _drawPrompt.value = w
+        val l = c.language.current
+        val target = c.learning.target
+        val learn = if (target != l) l.pick(" На ${target.nameIn(l)} е „${w.text(target)}“.", " In ${target.nameIn(l)} it's \"${w.text(target)}\".") else ""
+        drawSay(com.talkto.core.draw.Drawing.promptLine(w, l) + learn, Expression.THINKING)
+    }
+
+    /**
+     * The child finished a drawing and named it ([title] may be empty): it is kept in the gallery, ZnaiKo says what it
+     * sees, and the first few of the day earn coins. [onSaved] runs when it was kept, so the page can be cleared.
+     */
+    fun saveDrawing(strokes: List<com.talkto.core.draw.Stroke>, width: Int, height: Int, title: String, onSaved: () -> Unit) = viewModelScope.launch {
+        val l = c.language.current
+        if (com.talkto.core.draw.Drawing.coverage(strokes) < com.talkto.core.draw.Drawing.MIN_COVERAGE) {
+            drawSay(l.pick("Листът е още почти празен. Нарисувай нещо!", "The page is still almost empty. Draw something!"), Expression.CONFUSED)
+            return@launch
+        }
+        val saved = runCatching { c.drawings.save(strokes, width, height, title) }.isSuccess
+        if (!saved) {
+            drawSay(l.pick("Ох, не успях да запазя рисунката. Опитай пак.", "Oh, I couldn't keep the drawing. Please try again."), Expression.SAD)
+            return@launch
+        }
+        onSaved()
+        val paid = c.activity.todayActivity().drawings < com.talkto.core.draw.Drawing.PAID_PER_DAY
+        c.activity.record(com.talkto.core.parent.Activity.DRAWING)
+        c.pet.touched(6f, 1f)
+        if (paid) c.pet.earn(com.talkto.core.shop.CoinReason.DRAWING)
+        val coins = com.talkto.core.shop.CoinReason.DRAWING.coins
+        val line = com.talkto.core.draw.Drawing.reaction(strokes, title, _drawPrompt.value, l, c.learning.target) +
+            if (paid) l.pick(" Печелиш $coins монети!", " You win $coins coins!") else ""
+        _drawPrompt.value = null
+        drawSay(line, Expression.LOVE)
+    }
+
+    fun deleteDrawing(d: com.talkto.app.draw.SavedDrawing) = viewModelScope.launch { runCatching { c.drawings.delete(d) } }
+
+    /** A copy of [d] about [size] pixels wide, for the gallery. */
+    suspend fun drawingImage(d: com.talkto.app.draw.SavedDrawing, size: Int): android.graphics.Bitmap? =
+        runCatching { c.drawings.thumbnail(d, size) }.getOrNull()
+
+    private fun drawSay(text: String, expression: Expression) {
+        _drawLine.value = text
+        c.avatar.play(AnimationCommand(expression, Gesture.BOUNCE, holdMs = 1_500))
+        viewModelScope.launch { c.avatar.speak(text, voice = c.settings.settings.value.voiceEnabled) }
     }
 
     // ------------------------------------------------------- friends' visits ("The stolen colours")

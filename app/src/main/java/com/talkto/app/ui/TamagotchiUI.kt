@@ -193,8 +193,11 @@ fun TamagotchiScreen(vm: MainViewModel) {
     var flagging by remember { mutableStateOf<String?>(null) }
     val visit by vm.visit.collectAsStateWithLifecycle()
     var visitOpen by rememberSaveable { mutableStateOf(false) }
-    // The thank-you opens by itself once the help is done.
-    LaunchedEffect(visit?.won) { if (visit?.won == true) visitOpen = true }
+    val timeUp by vm.timeUp.collectAsStateWithLifecycle()
+    // The thank-you opens by itself once the help is done; when today's time is up the visit waits.
+    LaunchedEffect(visit?.won, timeUp) {
+        if (timeUp) visitOpen = false else if (visit?.won == true) visitOpen = true
+    }
 
     Column(
         Modifier
@@ -371,6 +374,7 @@ fun TamagotchiScreen(vm: MainViewModel) {
             onSweets = { sheet = Sheet.NONE; vm.openArcade(MainViewModel.Arcade.SWEETS) },
             onFeed = { sheet = Sheet.NONE; vm.openArcade(MainViewModel.Arcade.FEED) },
             onLetters = { sheet = Sheet.NONE; vm.openArcade(MainViewModel.Arcade.LETTERS) },
+            onDraw = { sheet = Sheet.NONE; vm.openDrawing() },
             onDaily = { sheet = Sheet.NONE; vm.startDaily() },
             dailyDone = vm.dailyDone(),
             onSmartTrivia = if (settings.claudeOn) ({ sheet = Sheet.NONE; vm.startSmartTrivia() }) else null,
@@ -413,6 +417,8 @@ fun TamagotchiScreen(vm: MainViewModel) {
         )
         null -> Unit
     }
+    val drawing by vm.drawingOpen.collectAsStateWithLifecycle()
+    if (drawing) com.talkto.app.ui.draw.DrawingDialog(vm)
     // The story of ZnaiKo and the friends: once at the first start, and again from Settings.
     val storyReplay by vm.storyReplay.collectAsStateWithLifecycle()
     if ((settings.loaded && !settings.storySeen) || storyReplay) com.talkto.app.ui.story.StoryDialog(vm)
@@ -444,7 +450,6 @@ fun TamagotchiScreen(vm: MainViewModel) {
     if (parentGate) com.talkto.app.ui.parent.ParentGate(vm, onUnlocked = { parentGate = false; parentOpen = true }, onDismiss = { parentGate = false })
     if (parentOpen) com.talkto.app.ui.parent.ParentSheet(vm, onDismiss = { parentOpen = false })
     // Today's time is used up: last, so it covers everything else.
-    val timeUp by vm.timeUp.collectAsStateWithLifecycle()
     if (timeUp && !parentOpen) com.talkto.app.ui.parent.RestOverlay(vm)
 }
 
