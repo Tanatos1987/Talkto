@@ -136,6 +136,7 @@ fun LearnSheet(vm: MainViewModel, onLesson: (Topic?, Boolean) -> Unit, onPractic
     val native = target.other
     val today = remember { LocalDate.now().toEpochDay() }
     val st = data.state
+    val rules by vm.ageRules.collectAsStateWithLifecycle()
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp).verticalScroll(rememberScrollState())) {
             Text(stringResource(R.string.learn_title), style = MaterialTheme.typography.headlineSmall)
@@ -154,12 +155,14 @@ fun LearnSheet(vm: MainViewModel, onLesson: (Topic?, Boolean) -> Unit, onPractic
             }
             Text(stringResource(R.string.learn_stats, st.learned(target), st.due(target, today), st.stars), style = MaterialTheme.typography.bodyMedium)
             if (st.streak > 1) Text(stringResource(R.string.learn_streak, st.streak), style = MaterialTheme.typography.bodyMedium)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    com.talkto.app.i18n.tr("✍️ Упражнения с писане", "✍️ Writing exercises"),
-                    style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f),
-                )
-                Switch(checked = data.writing, onCheckedChange = vm::setLearnWriting)
+            if (rules.allows(com.talkto.core.age.Feature.WRITING)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        com.talkto.app.i18n.tr("✍️ Упражнения с писане", "✍️ Writing exercises"),
+                        style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f),
+                    )
+                    Switch(checked = data.writing, onCheckedChange = vm::setLearnWriting)
+                }
             }
 
             // Badges: earned ones shine, the rest wait faded.
@@ -209,7 +212,8 @@ fun LearnSheet(vm: MainViewModel, onLesson: (Topic?, Boolean) -> Unit, onPractic
             Text(stringResource(R.string.learn_topics), style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(6.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Topic.entries.forEach { t ->
+                // A child who cannot read yet gets the topics with pictures only: hear the word, tap the picture.
+                Topic.entries.filter { rules.reads || it.pictures }.forEach { t ->
                     TopicCard(t, st.learnedIn(t, target), Vocabulary.of(t).size, lang) { onLesson(t, true) }
                 }
             }
@@ -220,13 +224,17 @@ fun LearnSheet(vm: MainViewModel, onLesson: (Topic?, Boolean) -> Unit, onPractic
                 modifier = Modifier.fillMaxWidth(),
             ) { Text(stringResource(R.string.learn_review)) }
 
-            Spacer(Modifier.height(16.dp))
-            Button(onClick = onPractice, modifier = Modifier.fillMaxWidth()) {
-                Text("💬 " + stringResource(R.string.learn_practice, target.nameIn(lang)))
+            if (rules.allows(com.talkto.core.age.Feature.LANGUAGE_CHAT)) {
+                Spacer(Modifier.height(16.dp))
+                Button(onClick = onPractice, modifier = Modifier.fillMaxWidth()) {
+                    Text("💬 " + stringResource(R.string.learn_practice, target.nameIn(lang)))
+                }
+                Text(stringResource(R.string.learn_practice_note), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp))
             }
-            Text(stringResource(R.string.learn_practice_note), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp))
-            Spacer(Modifier.height(8.dp))
-            Text(stringResource(R.string.learn_dictionary_hint), style = MaterialTheme.typography.bodyMedium)
+            if (rules.reads) {
+                Spacer(Modifier.height(8.dp))
+                Text(stringResource(R.string.learn_dictionary_hint), style = MaterialTheme.typography.bodyMedium)
+            }
         }
     }
 }

@@ -70,6 +70,8 @@ import com.talkto.core.games.ConnectFour
 import com.talkto.core.games.GameKind
 import com.talkto.core.games.GameOutcome
 import com.talkto.core.games.LudoLayout
+import com.talkto.core.age.AgeRules
+import com.talkto.core.age.Feature
 import com.talkto.core.games.Memory
 import com.talkto.core.games.Skill
 import com.talkto.core.pet.Knowledge
@@ -103,6 +105,8 @@ fun GamesSheet(
     onSmartTrivia: (() -> Unit)? = null,
     /** Today's missions, shown on top; null hides them. */
     missions: com.talkto.core.missions.MissionsToday? = null,
+    /** The child's age: games for older children are not shown (a parent can open them in the parents' corner). */
+    rules: AgeRules = AgeRules.ALL,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         val lang = screenLang()
@@ -132,20 +136,42 @@ fun GamesSheet(
                 )
             }
             GameRow("🎨", tr("Рисувай", "Draw"), tr("Рисувай с пръст, а Знайко ще ти каже какво вижда. Рисунките остават в галерията.", "Draw with your finger and ZnaiKo will say what it sees. Your drawings stay in the gallery.")) { onDraw() }
-            GameRow("🧊", tr("3D Тетрис", "3D Tetris"), tr("Нареди падащите кубчета в пълни редове. Плъзгай, докосни, за да завъртиш.", "Fit the falling cubes into full rows. Swipe, tap to turn.")) { onTetris() }
-            GameRow("🍬", tr("Бонбонки", "Sweets"), tr("Размени две бонбонки и нареди три еднакви. Нива, комбота и звезди!", "Swap two sweets to line up three. Levels, combos and stars!")) { onSweets() }
-            GameRow("🍎", tr("Нахрани Знайко", "Feed ZnaiKo"), tr("Храната пада от небето. Мести Знайко, хващай здравословната и бягай от вредната!", "Food falls from the sky. Move ZnaiKo, catch the healthy food and dodge the junk!")) { onFeed() }
-            GameRow("🔤", tr("Дъжд от букви", "Letter rain"), tr("Докосвай падащите букви по ред и нареди думата от картинката.", "Tap the falling letters in order to build the word in the picture.")) { onLetters() }
-            GameRow("❌⭕", GameKind.TIC_TAC_TOE.label(lang), stringResource(R.string.game_ttt_note)) { onPick(GameKind.TIC_TAC_TOE, 2) }
-            GameRow("🟡🟢", GameKind.CONNECT_FOUR.label(lang), stringResource(R.string.game_four_note)) { onPick(GameKind.CONNECT_FOUR, 2) }
-            GameRow("🎲", GameKind.LUDO.label(lang), stringResource(R.string.game_ludo_note)) { onPick(GameKind.LUDO, 2) }
-            Row(Modifier.padding(start = 56.dp, bottom = 6.dp)) {
-                OutlinedButton(onClick = { onPick(GameKind.LUDO, 4) }) { Text(stringResource(R.string.game_ludo_four)) }
+            if (rules.allows(Feature.TETRIS)) {
+                GameRow("🧊", tr("3D Тетрис", "3D Tetris"), tr("Нареди падащите кубчета в пълни редове. Плъзгай, докосни, за да завъртиш.", "Fit the falling cubes into full rows. Swipe, tap to turn.")) { onTetris() }
             }
-            GameRow("♞", GameKind.CHESS.label(lang), stringResource(R.string.game_chess_note)) { onPick(GameKind.CHESS, 2) }
+            if (rules.allows(Feature.SWEETS)) {
+                GameRow("🍬", tr("Бонбонки", "Sweets"), tr("Размени две бонбонки и нареди три еднакви. Нива, комбота и звезди!", "Swap two sweets to line up three. Levels, combos and stars!")) { onSweets() }
+            }
+            GameRow("🍎", tr("Нахрани Знайко", "Feed ZnaiKo"), tr("Храната пада от небето. Мести Знайко, хващай здравословната и бягай от вредната!", "Food falls from the sky. Move ZnaiKo, catch the healthy food and dodge the junk!")) { onFeed() }
+            if (rules.allows(Feature.LETTER_RAIN)) {
+                GameRow("🔤", tr("Дъжд от букви", "Letter rain"), tr("Докосвай падащите букви по ред и нареди думата от картинката.", "Tap the falling letters in order to build the word in the picture.")) { onLetters() }
+            }
             GameRow("🃏", GameKind.MEMORY.label(lang), stringResource(R.string.game_memory_note)) { onPick(GameKind.MEMORY, 2) }
-            GameRow("🔢", tr("Математика, алгебра и геометрия", "Maths, algebra and geometry"), tr("Сметки, уравнения и фигури за 1. до 7. клас. Отговаряй с цифри или на глас.", "Sums, equations and shapes for years 1 to 7. Answer with the keypad or out loud."), onMath)
-            GameRow("❓", tr("Тривия", "Trivia"), tr("Въпроси от обща култура: животни, космос, България, история и още.", "General knowledge: animals, space, Bulgaria, history and more."), onTrivia)
+            if (rules.allows(Feature.TIC_TAC_TOE)) {
+                GameRow("❌⭕", GameKind.TIC_TAC_TOE.label(lang), stringResource(R.string.game_ttt_note)) { onPick(GameKind.TIC_TAC_TOE, 2) }
+            }
+            if (rules.allows(Feature.CONNECT_FOUR)) {
+                GameRow("🟡🟢", GameKind.CONNECT_FOUR.label(lang), stringResource(R.string.game_four_note)) { onPick(GameKind.CONNECT_FOUR, 2) }
+            }
+            if (rules.allows(Feature.LUDO)) {
+                GameRow("🎲", GameKind.LUDO.label(lang), stringResource(R.string.game_ludo_note)) { onPick(GameKind.LUDO, 2) }
+                Row(Modifier.padding(start = 56.dp, bottom = 6.dp)) {
+                    OutlinedButton(onClick = { onPick(GameKind.LUDO, 4) }) { Text(stringResource(R.string.game_ludo_four)) }
+                }
+            }
+            if (rules.allows(Feature.CHESS)) {
+                GameRow("♞", GameKind.CHESS.label(lang), stringResource(R.string.game_chess_note)) { onPick(GameKind.CHESS, 2) }
+            }
+            if (rules.allows(Feature.MATHS)) {
+                if (rules.mathGrades.last <= 1) {
+                    GameRow("🔢", tr("Да броим!", "Let's count!"), tr("Броим картинки и смятаме до 10. Знайко казва задачата, ти отговаряш на глас или с цифра.", "Count pictures and add up to 10. ZnaiKo says the task, you answer out loud or with a number."), onMath)
+                } else {
+                    GameRow("🔢", tr("Математика, алгебра и геометрия", "Maths, algebra and geometry"), tr("Сметки, уравнения и фигури за 1. до 7. клас. Отговаряй с цифри или на глас.", "Sums, equations and shapes for years 1 to 7. Answer with the keypad or out loud."), onMath)
+                }
+            }
+            if (rules.allows(Feature.TRIVIA)) {
+                GameRow("❓", tr("Тривия", "Trivia"), tr("Въпроси от обща култура: животни, космос, България, история и още.", "General knowledge: animals, space, Bulgaria, history and more."), onTrivia)
+            }
             GameRow("⚽", stringResource(R.string.game_quick), stringResource(R.string.game_quick_note), onQuickPlay)
         }
     }

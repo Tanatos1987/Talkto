@@ -10,7 +10,8 @@ class VisitsTest {
     @Test fun `ten chapters in order, each friend visits and every text has both languages`() {
         assertThat(Visits.CHAPTERS.map { it.number }).isEqualTo((1..10).toList())
         assertThat(Visits.CHAPTERS.map { it.friend }.toSet()).isEqualTo(Friend.entries.toSet())
-        assertThat(Visits.CHAPTERS.map { it.challenge }.toSet()).isEqualTo(Challenge.entries.toSet())
+        // DRAW is never asked by a chapter itself: it stands in for sums when the child is too young for them.
+        assertThat(Visits.CHAPTERS.map { it.challenge }.toSet()).isEqualTo(Challenge.entries.toSet() - Challenge.DRAW)
         // UTF-8 Bulgarian read as cp1251 ("Р‘СЂР°") must never end up in a chapter.
         val mojibake = Regex("[РС][ЂЃ‚ѓ„…†‡€‰Љ‹ЊЌЋЏђ‘’“”•–—™љ›њќћџ°ѕ]")
         Visits.CHAPTERS.forEach { ch ->

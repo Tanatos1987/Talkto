@@ -1,6 +1,9 @@
 package com.talkto.core.agent
 
 import com.google.common.truth.Truth.assertThat
+import com.talkto.core.age.AgeGroup
+import com.talkto.core.age.AgeRules
+import com.talkto.core.age.Feature
 import com.talkto.core.apps.AppActionResult
 import com.talkto.core.apps.AppController
 import com.talkto.core.apps.AppInfo
@@ -25,6 +28,7 @@ import java.nio.file.Files
 class PetToolTest {
 
     private val done = mutableListOf<Any>()
+    private var rules = AgeRules.ALL
 
     private val controls = object : PetControls {
         override fun describe() = "I'm fine."
@@ -35,6 +39,7 @@ class PetToolTest {
         override fun game(kind: GameKind) { done += kind }
         override fun lessons() { done += "lessons" }
         override fun story(request: com.talkto.core.story.StoryRequest) { done += request }
+        override fun allows(feature: Feature) = rules.allows(feature)
     }
 
     @Test fun `reads a fable or asks a riddle`() = runTest {
@@ -97,6 +102,23 @@ class PetToolTest {
         dispatcher.dispatch("pet", args("""{"action":"sleep"}"""))
         assertThat(done).containsExactly(AppCommand.OpenShop, "lessons", "sleep").inOrder()
         assertThat(dispatcher.dispatch("pet", args("""{"action":"status"}""")).content).contains("I'm fine.")
+    }
+
+    @Test fun `what is not for the child's age stays closed, and Claude hears why`() = runTest {
+        rules = AgeRules(AgeGroup.LITTLE)
+        val chess = dispatcher.dispatch("pet", args("""{"action":"open_game","item":"chess"}"""))
+        assertThat(chess.isError).isFalse()
+        assertThat(chess.content).contains("not_for_this_age")
+        dispatcher.dispatch("pet", args("""{"action":"open_game","item":"tetris"}"""))
+        dispatcher.dispatch("pet", args("""{"action":"start_math"}"""))
+        dispatcher.dispatch("pet", args("""{"action":"start_trivia"}"""))
+        dispatcher.dispatch("pet", args("""{"action":"read_story","item":"riddle"}"""))
+        assertThat(done).isEmpty()
+        // Memory and stories are for everyone; a parent can open chess to a younger child.
+        dispatcher.dispatch("pet", args("""{"action":"open_game","item":"memory"}"""))
+        rules = AgeRules(AgeGroup.LITTLE, unlocked = setOf(Feature.CHESS))
+        dispatcher.dispatch("pet", args("""{"action":"open_game","item":"chess"}"""))
+        assertThat(done).containsExactly(GameKind.MEMORY, GameKind.CHESS).inOrder()
     }
 
     @Test fun `without controls the tool says it is unavailable`() = runTest {

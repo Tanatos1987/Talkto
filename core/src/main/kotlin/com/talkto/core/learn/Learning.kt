@@ -102,8 +102,17 @@ data class Lesson(val target: Lang, val topic: Topic?, val steps: List<Step>) {
  */
 class LessonPlanner(private val random: Random = Random.Default) {
 
-    fun plan(target: Lang, topic: Topic?, state: LearningState, today: Long, speaking: Boolean = true, words: Int = 5, writing: Boolean = false): Lesson {
-        val pool = topic?.let(Vocabulary::of) ?: Vocabulary.words.filter { state.of(it, target) != null }.ifEmpty { Vocabulary.of(Topic.ANIMALS) }
+    /**
+     * [reads] false is a child who cannot read yet: only topics with pictures, every question is heard and answered by
+     * picking a picture, and nothing is written.
+     */
+    fun plan(
+        target: Lang, topic: Topic?, state: LearningState, today: Long, speaking: Boolean = true, words: Int = 5,
+        writing: Boolean = false, reads: Boolean = true,
+    ): Lesson {
+        val shown = topic?.takeIf { reads || it.pictures }
+        val pool = (shown?.let(Vocabulary::of) ?: Vocabulary.words.filter { state.of(it, target) != null }.ifEmpty { Vocabulary.of(Topic.ANIMALS) })
+            .filter { reads || it.topic.pictures }.ifEmpty { Vocabulary.of(Topic.ANIMALS) }
         val due = pool.filter { w -> state.of(w, target)?.let { it.seen > 0 && it.dueDay <= today } == true }
             .sortedWith(compareBy({ state.of(it, target)?.box ?: 0 }, { state.of(it, target)?.dueDay ?: 0 }))
         val fresh = pool.filter { state.of(it, target) == null }
@@ -120,7 +129,7 @@ class LessonPlanner(private val random: Random = Random.Default) {
         val steps = ArrayList<Step>()
         val questions = ArrayList<Step>()
         chosen.forEachIndexed { i, w ->
-            val kinds = if (w.topic.pictures) PICTURE_KINDS else TEXT_KINDS
+            val kinds = if (!reads) LISTEN_ONLY else if (w.topic.pictures) PICTURE_KINDS else TEXT_KINDS
             val isNew = state.of(w, target) == null
             if (isNew) steps += Step.Intro(w)
             val first = kinds[(i + random.nextInt(kinds.size)) % kinds.size]
@@ -132,13 +141,13 @@ class LessonPlanner(private val random: Random = Random.Default) {
         questions.shuffle(random)
         steps += questions
         // Writing: a word the learner has met before when there is one, otherwise the last new one (shown just now).
-        if (writing) {
+        if (writing && reads) {
             val writable = chosen.filter { !it.bg.contains('…') && !it.en.contains('…') }
             (writable.firstOrNull { state.of(it, target) != null } ?: writable.lastOrNull())?.let { steps += Step.Type(it) }
         }
         if (speaking) chosen.firstOrNull { !it.bg.contains('…') }?.let { steps += Step.Speak(it) }
-        if (topic == Topic.GREETINGS) repeat(2) { steps += dialogue(target) }
-        return Lesson(target, topic, steps)
+        if (reads && topic == Topic.GREETINGS) repeat(2) { steps += dialogue(target) }
+        return Lesson(target, shown ?: topic.takeIf { reads }, steps)
     }
 
     /** A four-option question; distractors come from the same topic and never look or sound like the answer. */
@@ -163,6 +172,7 @@ class LessonPlanner(private val random: Random = Random.Default) {
         const val MIN_WORDS = 3
         val PICTURE_KINDS = listOf(QuizKind.PICTURE_TO_WORD, QuizKind.LISTEN, QuizKind.NATIVE_TO_WORD, QuizKind.WORD_TO_NATIVE)
         val TEXT_KINDS = listOf(QuizKind.NATIVE_TO_WORD, QuizKind.WORD_TO_NATIVE, QuizKind.LISTEN)
+        val LISTEN_ONLY = listOf(QuizKind.LISTEN)
     }
 }
 

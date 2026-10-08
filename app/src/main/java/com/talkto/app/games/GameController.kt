@@ -83,6 +83,8 @@ class GameController(
     private val scope: CoroutineScope,
     private val random: Random = Random.Default,
     private val lang: () -> Lang = { Lang.BG },
+    /** Memory cards for the child's age: fewer pairs for the youngest. */
+    private val memoryPairs: () -> Int = { 8 },
 ) {
     private val _state = MutableStateFlow<GameUi?>(null)
     val state: StateFlow<GameUi?> = _state.asStateFlow()
@@ -106,7 +108,7 @@ class GameController(
             GameKind.CONNECT_FOUR -> four = ConnectFour(skill, random)
             GameKind.CHESS -> chess = ChessGame(skill, random)
             GameKind.LUDO -> ludo = Ludo(players, skill, random)
-            GameKind.MEMORY -> memory = Memory(8, skill, random)
+            GameKind.MEMORY -> memory = Memory(memoryPairs(), skill, random)
         }
         pet.play()
         avatar.play(AnimationCommand(Expression.HAPPY, Gesture.BOUNCE, holdMs = 1_500))

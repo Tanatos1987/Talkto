@@ -26,6 +26,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import com.talkto.core.age.AgeRules
+import com.talkto.core.age.Birth
+import com.talkto.core.age.Feature
 import com.talkto.core.missions.Missions
 import com.talkto.core.missions.MissionsToday
 import com.talkto.core.missions.SeasonEvent
@@ -82,7 +85,14 @@ data class PermissionState(
  * A friend's visit from "The stolen colours": knocking ([left] null), waiting for the help ([left] tasks still to do),
  * saying thank you ([won]), or a finished chapter read again ([reread]).
  */
-data class VisitUi(val chapter: Chapter, val left: Int? = null, val won: Boolean = false, val reread: Boolean = false)
+data class VisitUi(
+    val chapter: Chapter,
+    val left: Int? = null,
+    val won: Boolean = false,
+    val reread: Boolean = false,
+    /** What the friend asks this child for: the chapter's own help, or a drawing or a tale for a younger child. */
+    val challenge: Challenge = chapter.challenge,
+)
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -112,13 +122,36 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _systemLine = MutableStateFlow<SystemLine?>(null)
     val systemLine: StateFlow<SystemLine?> = _systemLine.asStateFlow()
 
+    /** What the child may open, by the birth month a parent entered (everything until then) and what a parent opened. */
+    val ageRules: StateFlow<AgeRules> = c.settings.settings.map { it.ageRules() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, c.settings.settings.value.ageRules())
+
+    fun rules(): AgeRules = c.settings.settings.value.ageRules()
+
+    /**
+     * The one check every way into an activity passes: the buttons, what the child says or types, Claude's pet tool and
+     * the friends' visits. True when [feature] fits the child's age or a parent opened it; otherwise nothing opens and
+     * ZnaiKo says kindly that it is for bigger children.
+     */
+    private fun allowed(feature: Feature?): Boolean {
+        if (feature == null || rules().allows(feature)) return true
+        val l = c.language.current
+        val name = feature.label(l)
+        sayText(l.pick("„$name“ е за по-големи деца. Хайде да изберем нещо друго!", "\"$name\" is for bigger children. Let's pick something else!"), Expression.THINKING)
+        return false
+    }
+
     /** Board and card games against ZnaiKo. */
-    val games = GameController(c.pet, c.avatar, { c.settings.settings.value.voiceEnabled }, viewModelScope, lang = { c.language.current })
+    val games = GameController(
+        c.pet, c.avatar, { c.settings.settings.value.voiceEnabled }, viewModelScope, lang = { c.language.current },
+        memoryPairs = { rules().memoryPairs },
+    )
 
     /** Language lessons with ZnaiKo. */
     val lessons = LessonController(
         c.learning, c.pet, c.avatar, { c.settings.settings.value.voiceEnabled }, { c.language.current }, viewModelScope,
         onActivity = { c.activity.record(it) },
+        rules = ::rules,
     )
 
     /** Maths tasks and trivia. */
@@ -126,6 +159,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         c.petStore, c.pet, c.avatar, c.profile, { c.settings.settings.value.voiceEnabled }, { c.language.current }, viewModelScope,
         onActivity = { c.activity.record(it) },
         ask = { system, prompt -> askClaude(system, prompt) },
+        rules = ::rules,
     )
 
     /** One question to Claude, or null when Claude is off, unreachable or declines. */
@@ -141,12 +175,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun dailyDone(): Boolean = quiz.data.value.dailyDay == c.activity.today()
 
     fun startDaily() {
+        if (!allowed(Feature.TRIVIA)) return
         comeOut()
         quiz.startDaily(c.activity.today())
     }
 
     /** Five questions Claude writes about what the child likes (from the profile); the built-in quiz without Claude. */
     fun startSmartTrivia() {
+        if (!allowed(Feature.TRIVIA)) return
         comeOut()
         val l = c.language.current
         sayText(l.pick("Измислям въпроси специално за теб…", "I'm making up questions just for you…"), Expression.THINKING)
@@ -154,7 +190,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val likes = runCatching { c.profile.all() }.getOrDefault(emptyList())
                 .filter { it.key.startsWith("likes:") || it.key.startsWith("favourite:") }
                 .map { it.value }
-            val age = c.settings.settings.value.childAge.takeIf { it > 0 }
+            val age = c.settings.settings.value.age()
             val text = askClaude(com.talkto.core.quiz.SmartQuiz.system(l, age), com.talkto.core.quiz.SmartQuiz.prompt(l, likes))
             val questions = text?.let { com.talkto.core.quiz.SmartQuiz.parse(it, l) }.orEmpty()
             if (questions.isEmpty()) sayText(l.pick("Сега ще играем с моите въпроси.", "Let's play with my own questions this time."), Expression.HAPPY)
@@ -218,7 +254,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         c.voice.start(if (target == Lang.EN) VoiceLanguage.EN else VoiceLanguage.BG) { heard -> lessons.onHeard(heard) }
     }
 
-    fun startPractice() = viewModelScope.launch { c.agentSession.beginPractice(c.learning.target) }
+    fun startPractice() {
+        if (allowed(Feature.LANGUAGE_CHAT)) viewModelScope.launch { c.agentSession.beginPractice(c.learning.target) }
+    }
 
     fun stopPractice() = c.agentSession.stopPractice()
 
@@ -246,13 +284,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             c.pet.levelUps.collect { level -> say(R.string.level_up, Expression.LOVE, level) }
         }
         viewModelScope.launch {
-            c.agentSession.gameRequests.collect { kind -> comeOut(); games.start(kind) }
+            c.agentSession.gameRequests.collect { kind -> if (allowed(Feature.of(kind))) { comeOut(); games.start(kind) } }
         }
         viewModelScope.launch {
             c.agentSession.feedRequests.collect { food -> feed(food, speak = false) }
         }
         viewModelScope.launch {
             c.agentSession.storyRequests.collect { req ->
+                if (req.riddle && !allowed(Feature.RIDDLES)) return@collect
                 comeOut()
                 if (req.riddle) tales.riddle() else tales.read(kind = req.kind, bedtime = req.bedtime)
             }
@@ -269,6 +308,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         viewModelScope.launch {
             c.agentSession.appRequests.collect { cmd ->
+                if (!allowed(Feature.of(cmd))) return@collect
                 when (cmd) {
                     AppCommand.GoHome -> goHome()
                     AppCommand.ComeOut -> comeOut()
@@ -472,7 +512,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         restSaid = false
     }
 
-    fun setChildAge(age: Int) = viewModelScope.launch { c.settings.setChildAge(age) }
+    /** The child's month and year of birth, from the first-start screen or the parents' corner. */
+    fun setBirth(year: Int, month: Int) = viewModelScope.launch {
+        val today = java.time.LocalDate.now()
+        c.settings.setBirth(Birth(year, month))
+        // Entered in the birth month itself: no congratulations for a birthday that may be weeks away or long past.
+        if (today.monthValue == month) c.settings.setBirthdayGreeted(today.year)
+    }
+
+    /** A parent opens [feature] to a child younger than it is meant for, or closes it again. */
+    fun setUnlocked(feature: Feature, on: Boolean) = viewModelScope.launch { c.settings.setUnlocked(feature, on) }
 
     /** Morning and evening notes (minutes after midnight, -1 off); armed at once. */
     fun setRoutines(morning: Int, evening: Int) = viewModelScope.launch {
@@ -567,13 +616,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ------------------------------------------------------- daily missions and holidays
 
     /** Today's three missions with their progress, and the holiday when today is one. */
-    val missions: StateFlow<MissionsToday> = c.activity.log
-        .map { missionsFor(it) }
+    val missions: StateFlow<MissionsToday> = combine(c.activity.log, ageRules) { log, rules -> missionsFor(log, rules) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, missionsFor(c.activity.log.value))
 
-    private fun missionsFor(log: com.talkto.core.parent.ActivityLog): MissionsToday {
+    /** Only missions the child's age can do: drawing instead of sums for the youngest. */
+    private fun missionsFor(log: com.talkto.core.parent.ActivityLog, rules: AgeRules = rules()): MissionsToday {
         val day = c.activity.today()
-        return Missions.today(day, java.time.LocalDate.ofEpochDay(day), log.on(day))
+        return Missions.today(day, java.time.LocalDate.ofEpochDay(day), log.on(day), rules)
     }
 
     init {
@@ -602,6 +651,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     fresh.lastOrNull()?.let { sayText(Missions.doneLine(it, m.missions.size - m.done.size, l), Expression.HAPPY) }
                 }
             }
+        }
+        // The birth month: ZnaiKo congratulates once a year, after the hello.
+        viewModelScope.launch {
+            val s = c.settings.awaitLoaded()
+            val today = java.time.LocalDate.now()
+            val birth = s.birth ?: return@launch
+            if (!birth.birthdayMonth(today) || s.birthdayGreetedYear >= today.year) return@launch
+            c.settings.setBirthdayGreeted(today.year)
+            delay(6_000)
+            val l = c.language.current
+            val age = birth.age(today)
+            sayText(l.pick("Честит рожден ден! Този месец ставаш на $age години!", "Happy birthday! You turn $age this month!"), Expression.LOVE)
         }
         // A holiday: ZnaiKo's greeting once a day, after the hello and the morning words.
         viewModelScope.launch {
@@ -699,8 +760,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ------------------------------------------------------- friends' visits ("The stolen colours")
 
-    /** The help the child agreed to give today: the challenge counts from [start]. Kept for the process, not saved. */
-    private data class FriendHelp(val day: Long, val chapter: Int, val start: Int)
+    /**
+     * The help the child agreed to give today: [challenge] (the one that fit the child's age then) counts from [start].
+     * Kept for the process, not saved.
+     */
+    private data class FriendHelp(val day: Long, val chapter: Int, val start: Int, val challenge: Challenge)
 
     private val _help = MutableStateFlow(friendHelp)
     private val _thanks = MutableStateFlow<Chapter?>(null)
@@ -715,7 +779,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             else -> {
                 val ch = Visits.next(p.storyChapter) ?: return@combine null
                 val h = help?.takeIf { it.day == today && it.chapter == ch.number }
-                VisitUi(ch, left = h?.let { (ch.challenge.goal - (ch.challenge.count(log.on(today)) - it.start)).coerceAtLeast(0) })
+                val ask = h?.challenge ?: ch.challengeFor(rules())
+                VisitUi(ch, left = h?.let { (ask.goal - (ask.count(log.on(today)) - it.start)).coerceAtLeast(0) }, challenge = ask)
             }
         }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
@@ -744,18 +809,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (v.won) return null
         val today = c.activity.today()
         if (v.left == null) {
-            val start = v.chapter.challenge.count(c.activity.log.value.on(today))
-            FriendHelp(today, v.chapter.number, start).also { friendHelp = it; _help.value = it }
+            val start = v.challenge.count(c.activity.log.value.on(today))
+            FriendHelp(today, v.chapter.number, start, v.challenge).also { friendHelp = it; _help.value = it }
         }
         c.avatar.stopSpeaking()
         comeOut()
-        when (v.chapter.challenge) {
+        when (v.challenge) {
             Challenge.MATHS -> startMath()
             Challenge.TALE -> tales.read()
             Challenge.RIDDLE -> tales.riddle()
+            Challenge.DRAW -> openDrawing()
             Challenge.LESSON -> Unit
         }
-        return v.chapter.challenge
+        return v.challenge
     }
 
     /** The thank-you page was closed. */
@@ -777,12 +843,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val today = c.activity.today()
                 if (help.day != today) { friendHelp = null; _help.value = null; return@collect }
                 val ch = Visits.CHAPTERS.getOrNull(help.chapter - 1) ?: return@collect
-                if (!ch.challenge.done(help.start, log.on(today))) return@collect
+                if (!help.challenge.done(help.start, log.on(today))) return@collect
                 friendHelp = null
                 _help.value = null
                 if (!c.pet.chapterWon(ch.number, today)) return@collect
                 viewModelScope.launch {
-                    combine(tales.state, quiz.state, lessons.state) { t, q, l -> t == null && q == null && l == null }.first { it }
+                    combine(tales.state, quiz.state, lessons.state, _drawingOpen) { t, q, l, d -> t == null && q == null && l == null && !d }.first { it }
                     delay(700)
                     _thanks.value = ch
                 }
@@ -797,6 +863,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             delay(18_000)
             val v = visit.value ?: return@launch
             if (v.left != null || v.won || c.pet.state.value.sleeping || c.pet.state.value.atHome) return@launch
+            // Not while a parent is still entering the child's age or the first-start story is open.
+            if (c.settings.settings.value.needsAge || !c.settings.settings.value.storySeen) return@launch
             friendKnockSaid = today
             val l = c.language.current
             sayText(v.chapter.friend.knock(l) + l.pick(" Натисни вратичката долу.", " Tap the little door below."), Expression.SURPRISED)
@@ -866,6 +934,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val arcade: StateFlow<Arcade?> = _arcade
 
     fun openArcade(game: Arcade) {
+        val feature = when (game) {
+            Arcade.TETRIS -> Feature.TETRIS
+            Arcade.SWEETS -> Feature.SWEETS
+            Arcade.LETTERS -> Feature.LETTER_RAIN
+            Arcade.FEED -> null
+        }
+        if (!allowed(feature)) return
         comeOut()
         _arcade.value = game
     }
@@ -902,6 +977,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun startGame(kind: GameKind, players: Int = 2) {
+        if (!allowed(Feature.of(kind))) return
         comeOut()
         games.start(kind, players)
     }
@@ -953,13 +1029,29 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // -------------------------------------------------------------- quizzes
 
     fun startMath(grade: Int? = null, algebra: Boolean = false, topic: com.talkto.core.quiz.MathTopic? = null) {
+        if (!allowed(Feature.MATHS)) return
         comeOut()
         quiz.startMath(grade, algebra, topic ?: if (algebra) com.talkto.core.quiz.MathTopic.ALGEBRA else com.talkto.core.quiz.MathTopic.MIXED)
     }
 
     fun startTrivia(category: com.talkto.core.quiz.TriviaCategory? = null) {
+        if (!allowed(Feature.TRIVIA)) return
         comeOut()
         quiz.startTrivia(category)
+    }
+
+    /** A riddle: the child says the answer instead of typing it. */
+    fun riddleListen(dialogOnly: Boolean = false) {
+        c.avatar.stopSpeaking()
+        if (dialogOnly) c.voice.preferDialog = true
+        c.voice.start(if (c.language.current == Lang.EN) VoiceLanguage.EN else VoiceLanguage.BG) { heard -> tales.guess(heard) }
+    }
+
+    /** A riddle from the library or the 🦊 button, when the child's age has riddles. */
+    fun riddle() {
+        if (!allowed(Feature.RIDDLES)) return
+        comeOut()
+        tales.riddle()
     }
 
     /** Listens for a quiz answer in ZnaiKo's language. */

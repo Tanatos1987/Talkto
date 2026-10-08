@@ -171,6 +171,7 @@ class AppContainer(private val context: Context) {
         override fun game(kind: GameKind) { agentSession.requestGame(kind) }
         override fun lessons() { agentSession.requestLessons() }
         override fun story(request: com.talkto.core.story.StoryRequest) { agentSession.requestStory(request) }
+        override fun allows(feature: com.talkto.core.age.Feature) = settings.settings.value.ageRules().allows(feature)
     }
 
     private val dispatcher = ToolDispatcher(
@@ -258,7 +259,8 @@ class AppContainer(private val context: Context) {
         return buildString {
             appendLine("now: ${now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm EEEE", Locale.ENGLISH))} (${now.zone})")
             appendLine("speak_language: ${language.current.code}")
-            settings.settings.value.childAge.takeIf { it > 0 }?.let { appendLine("child_age: $it") }
+            settings.settings.value.age()?.let { appendLine("child_age: $it") }
+            settings.settings.value.ageRules().claudeNote().takeIf { it.isNotEmpty() }?.let { appendLine(it) }
             appendLine("device_locale: ${Locale.getDefault().toLanguageTag()}")
             appendLine("pet: ${pet.state.value.describe()}")
             appendLine("all_files_access: ${if (StorageAccess.hasAllFilesAccess()) "granted" else "NOT granted - file tools will fail until the user enables it"}")

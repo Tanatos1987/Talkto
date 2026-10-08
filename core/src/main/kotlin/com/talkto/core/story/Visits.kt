@@ -1,5 +1,7 @@
 package com.talkto.core.story
 
+import com.talkto.core.age.AgeRules
+import com.talkto.core.age.Feature
 import com.talkto.core.i18n.Lang
 import com.talkto.core.parent.DayActivity
 
@@ -10,6 +12,8 @@ enum class Challenge(val goal: Int, private val count: (DayActivity) -> Int) {
     TALE(1, { it.stories }),
     /** A riddle guessed or told: any answer counts, the fox only wants company. */
     RIDDLE(1, { it.triviaRight + it.triviaWrong }),
+    /** A drawing for the friend: what the youngest children do instead of sums or riddles. */
+    DRAW(1, { it.drawings }),
     ;
 
     fun count(day: DayActivity): Int = count.invoke(day)
@@ -22,6 +26,14 @@ enum class Challenge(val goal: Int, private val count: (DayActivity) -> Int) {
         LESSON -> lang.pick("📚 Да минем един урок", "📚 Let's do a lesson")
         TALE -> lang.pick("📖 Да чуем приказка", "📖 Let's hear a story")
         RIDDLE -> lang.pick("🦊 Дай гатанка", "🦊 Give me a riddle")
+        DRAW -> lang.pick("🎨 Да нарисуваме нещо", "🎨 Let's draw something")
+    }
+
+    /** The help this child can give: no sums or riddles before the age for them, a drawing or a tale instead. */
+    fun forAge(rules: AgeRules): Challenge = when {
+        this == MATHS && !rules.allows(Feature.MATHS) -> DRAW
+        this == RIDDLE && !rules.allows(Feature.RIDDLES) -> TALE
+        else -> this
     }
 }
 
@@ -51,6 +63,25 @@ data class Chapter(
 ) {
     fun text(lang: Lang) = lang.pick(bg, en)
     fun thanks(lang: Lang) = lang.pick(thanksBg, thanksEn)
+
+    /** What the friend asks of this child: [challenge], or the help that suits a younger child. */
+    fun challengeFor(rules: AgeRules): Challenge = challenge.forAge(rules)
+
+    /**
+     * The chapter as read to this child. When the help had to change for a younger child, the friend says so at the end,
+     * so the story does not ask for sums the child cannot do yet.
+     */
+    fun textFor(rules: AgeRules, lang: Lang): String = when (challengeFor(rules)) {
+        challenge -> text(lang)
+        Challenge.DRAW -> text(lang) + " " + lang.pick(
+            "${friend.bg} се усмихва: „А знаеш ли, че и една рисунка има вълшебна сила? Нарисувай ми нещо весело!“",
+            "${friend.en} smiles: \"Did you know a drawing has magic too? Draw me something happy!\"",
+        )
+        else -> text(lang) + " " + lang.pick(
+            "${friend.bg} се усмихва: „А може и просто да чуем една приказка заедно. Приказките също помагат!“",
+            "${friend.en} smiles: \"Or we could just listen to a story together. Stories help too!\"",
+        )
+    }
     fun title(lang: Lang) = lang.pick("Глава $number: ${friend.bg} идва на гости", "Chapter $number: ${friend.en} comes to visit")
 }
 

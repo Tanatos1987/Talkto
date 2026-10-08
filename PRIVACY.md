@@ -16,6 +16,7 @@
 
 - състоянието на любимеца: ситост, настроение, монети, покупки, външен вид, къщичка;
 - това, което детето е казало за себе си (например име, любим цвят, рожден ден), за да може Знайко да го помни;
+- месецът и годината на раждане, въведени от родител, по които Знайко показва игри и задачи за възрастта (към Claude отива само възрастта в години);
 - историята на разговорите, бележките и напомнянията;
 - напредъкът в уроците, задачите и викторината;
 - дневникът за родителите: минути в приложението, уроци, отговори, игри и приказки по дни, за последните 60 дни;
@@ -75,6 +76,7 @@ These are stored only in the app's storage on the phone and are not sent anywher
 
 - the pet's state: food, mood, coins, purchases, looks, house;
 - what the child has told ZnaiKo about themselves (for example a name, a favourite colour, a birthday), so ZnaiKo can remember it;
+- the month and year of birth a parent entered, by which ZnaiKo shows games and tasks for the age (only the age in years goes to Claude);
 - conversation history, notes and reminders;
 - progress in lessons, maths tasks and trivia;
 - the parents' log: minutes in the app, lessons, answers, games and stories per day, for the last 60 days;

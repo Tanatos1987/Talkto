@@ -179,8 +179,15 @@ class AgentSession(
         // Every conversation teaches ZnaiKo a little; learning something about the user teaches it more.
         pet.learn(KnowledgeSource.CHAT)
         pet.learn(KnowledgeSource.FACT, facts.size)
+        // What is not for the child's age stays closed, whoever asks for it; ZnaiKo says so instead of opening it.
+        val rules = cfg.ageRules()
+        fun tooYoung(feature: com.talkto.core.age.Feature?): String? = feature?.takeIf { !rules.allows(it) }?.let { f ->
+            val l = lang()
+            l.pick("„${f.label(l)}“ е за по-големи деца. Хайде да изберем нещо друго!", "\"${f.label(l)}\" is for bigger children. Let's pick something else!")
+        }
         // "Да играем шах" opens the game in both modes; there is nothing for Claude to add.
         GameCommands.parse(command)?.let { kind ->
+            tooYoung(com.talkto.core.age.Feature.of(kind))?.let { return localReply(trimmed, it, cfg.voiceEnabled) }
             _gameRequests.tryEmit(kind)
             return localReply(trimmed, lang().pick("Отварям „${kind.bg}“. Да видим кой ще спечели!", "Opening ${kind.en}. Let's see who wins!"), cfg.voiceEnabled)
         }
@@ -188,11 +195,13 @@ class AgentSession(
         LearnCommands.parse(command)?.let { cmd -> return localReply(trimmed, learn(cmd, online), cfg.voiceEnabled) }
         // The house, the shop, the creator and the quizzes are the app's own places too.
         AppCommands.parse(command)?.let { cmd ->
+            tooYoung(com.talkto.core.age.Feature.of(cmd))?.let { return localReply(trimmed, it, cfg.voiceEnabled) }
             _appRequests.tryEmit(cmd)
             return localReply(trimmed, appReply(cmd), cfg.voiceEnabled)
         }
         // Offline, "разкажи ми приказка" opens the built-in library; online Claude tells the tale (or opens the library).
         if (!online) StoryCommands.parse(command)?.let { req ->
+            if (req.riddle) tooYoung(com.talkto.core.age.Feature.RIDDLES)?.let { return localReply(trimmed, it, cfg.voiceEnabled) }
             _storyRequests.tryEmit(req)
             val line = if (req.riddle) lang().pick("Ето една гатанка!", "Here's a riddle!") else lang().pick("Слушай!", "Listen!")
             runCatching { history.record(Speaker.USER, trimmed, "offline") }
@@ -297,7 +306,12 @@ class AgentSession(
                 _lessonRequests.tryEmit(cmd.target)
                 l.pick("Отварям уроците. Да учим заедно!", "Opening the lessons. Let's learn together!")
             }
-            is LearnCommand.Practice -> if (online) {
+            is LearnCommand.Practice -> if (!settings.settings.value.ageRules().allows(com.talkto.core.age.Feature.LANGUAGE_CHAT)) {
+                // Too young to chat in another language: words with pictures instead.
+                learning.setTarget(cmd.target)
+                _lessonRequests.tryEmit(cmd.target)
+                l.pick("Хайде първо да научим думи с картинки!", "Let's learn some words with pictures first!")
+            } else if (online) {
                 startPractice(cmd.target)
                 cmd.target.pick(
                     "Чудесно, да упражняваме български! Ще говоря просто и бавно. Как си днес?",

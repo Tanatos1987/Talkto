@@ -29,8 +29,8 @@ data class MathTask(
 }
 
 /**
- * Tasks for school years 1 to 7:
- * 1: + and − to 20; 2: to 100 and the 2-5 and 10 times tables; 3: the whole times table, exact division, to 1000;
+ * Tasks for school years 1 to 7, and year 0 for children of 5-6 who cannot read yet:
+ * 0: counting pictures, + and − to 10 with pictures, everything also said aloud; 1: + and − to 20; 2: to 100 and the 2-5 and 10 times tables; 3: the whole times table, exact division, to 1000;
  * 4: bigger products, order of operations, fractions of a number; 5: negative numbers, percentages, squares;
  * 6: first equations (x + a = b, a·x + b = c); 7: x on both sides, brackets, squares and cubes.
  * Years 1 to 4 also get story problems.
@@ -41,7 +41,7 @@ class MathTasks(private val random: Random = Random.Default) {
 
     /** A task for [grade]; [algebraOnly] asks for algebra whatever the year. */
     fun next(grade: Int, lang: Lang, algebraOnly: Boolean = false): MathTask {
-        if (!algebraOnly) return next(grade, lang, MathTopic.MIXED)
+        if (!algebraOnly || grade < 1) return next(grade, lang, MathTopic.MIXED)
         val g = grade.coerceIn(1, MAX_GRADE)
         val w = Words(lang)
         return if (g >= 7 && random.nextBoolean()) equation2(g, w) else equation1(maxOf(g, 6), w)
@@ -49,8 +49,9 @@ class MathTasks(private val random: Random = Random.Default) {
 
     /** A task for [grade] on [topic]. Algebra starts at year 4 level (letters for numbers), geometry fits every year. */
     fun next(grade: Int, lang: Lang, topic: MathTopic): MathTask {
-        val g = grade.coerceIn(1, MAX_GRADE)
+        val g = grade.coerceIn(0, MAX_GRADE)
         val w = Words(lang)
+        if (g == 0) return pictures(w)
         when (topic) {
             MathTopic.ALGEBRA -> return algebra(g, w)
             MathTopic.GEOMETRY -> return geometry.next(g, lang)
@@ -82,6 +83,43 @@ class MathTasks(private val random: Random = Random.Default) {
             }
             6 -> equation1(g, w)
             else -> if (random.nextInt(3) == 0) equation1(g, w) else equation2(g, w)
+        }
+    }
+
+    // ------------------------------------------------------------------ year 0: pictures
+
+    /** "How many?", "and two more" or "eats two": pictures instead of digits, numbers up to ten, the question said aloud. */
+    private fun pictures(w: Words): MathTask {
+        val (emoji, objBg, objEn) = PICTURES.random(random)
+        val o = w.lang.pick(objBg, objEn)
+        fun row(n: Int) = emoji.repeat(n)
+        return when (random.nextInt(3)) {
+            0 -> {
+                val n = rng(2, 8)
+                val counted = (1..n).joinToString(", ")
+                MathTask(
+                    "${row(n)}\n= ?", w.howMany, w.t("Колко $o виждаш?", "How many $o can you see?"), n,
+                    w.t("Да ги преброим: $counted. Те са $n.", "Let's count them: $counted. That's $n."), 0,
+                )
+            }
+            1 -> {
+                val a = rng(1, 5)
+                val b = rng(1, 10 - a).coerceAtMost(5)
+                MathTask(
+                    "${row(a)} + ${row(b)}\n= ?", w.howMany,
+                    w.t("Тук има $a, идват още $b. Колко $o стават?", "Here are $a, and $b more come. How many $o is that?"),
+                    a + b, "$a + $b = ${a + b}", 0,
+                )
+            }
+            else -> {
+                val a = rng(3, 8)
+                val b = rng(1, a - 1).coerceAtMost(4)
+                MathTask(
+                    "${row(a)} − ${row(b)}\n= ?", w.howMany,
+                    w.t("Имаш $a $o и $b си отиват. Колко остават?", "You have $a $o and $b go away. How many are left?"),
+                    a - b, "$a − $b = ${a - b}", 0,
+                )
+            }
         }
     }
 
@@ -345,6 +383,7 @@ class MathTasks(private val random: Random = Random.Default) {
         val of = t("от", "of")
         val percentOf = t("процента от", "percent of")
         val howMuch = t("Колко е?", "What is it?")
+        val howMany = t("Колко са?", "How many?")
         val answerPrompt = t("Отговор:", "Answer:")
         val multiplyFirst = t("Първо умножението, после събирането и изваждането.", "Multiply first, then add or subtract.")
         val bracketsFirst = t("Първо сметката в скобите.", "Work out the brackets first.")
@@ -398,14 +437,21 @@ class MathTasks(private val random: Random = Random.Default) {
             "стикера" to "stickers", "круши" to "pears", "топки" to "balls", "звездички" to "stars", "мъфина" to "muffins",
         )
 
-        fun gradeLabel(grade: Int, lang: Lang) = lang.pick("$grade клас", "Year $grade")
+        /** Pictures to count in year 0: (emoji, Bulgarian form after a number, English plural). */
+        private val PICTURES = listOf(
+            Triple("🍎", "ябълки", "apples"), Triple("⭐", "звездички", "stars"), Triple("🎈", "балона", "balloons"),
+            Triple("🐟", "рибки", "fish"), Triple("🌸", "цветя", "flowers"), Triple("🍪", "бисквитки", "cookies"),
+            Triple("🐥", "пиленца", "chicks"), Triple("🚗", "колички", "cars"),
+        )
 
-        /** School year to start with: the one the child told ZnaiKo, else guessed from the age, else year 2. */
-        fun gradeFor(grade: Int?, age: Int?): Int = when {
-            grade != null -> grade.coerceIn(1, MAX_GRADE)
-            age != null -> (age - 6).coerceIn(1, MAX_GRADE)
+        fun gradeLabel(grade: Int, lang: Lang) = if (grade <= 0) lang.pick("🌱 Броим", "🌱 Counting") else lang.pick("$grade клас", "Year $grade")
+
+        /** School year to start with: the one the child told ZnaiKo, else guessed from the age, else year 2; within [range]. */
+        fun gradeFor(grade: Int?, age: Int?, range: IntRange = 1..MAX_GRADE): Int = when {
+            grade != null -> grade
+            age != null -> age - 6
             else -> 2
-        }
+        }.coerceIn(range)
 
         private fun coef(a: Int) = when (a) { 1 -> "x"; -1 -> "−x"; else -> "${a}x" }
         private fun linear(a: Int, b: Int) = withConst(coef(a), b)

@@ -10,10 +10,10 @@ object AdaptiveGrade {
     const val UP_AFTER = 5
     const val DOWN_AFTER = 2
 
-    /** The new year, or null when it stays. */
-    fun next(grade: Int, rightRun: Int, wrongRun: Int): Int? = when {
-        rightRun >= UP_AFTER && grade < MathTasks.MAX_GRADE -> grade + 1
-        wrongRun >= DOWN_AFTER && grade > 1 -> grade - 1
+    /** The new year, or null when it stays; it moves only within [range] (the years that fit the child's age). */
+    fun next(grade: Int, rightRun: Int, wrongRun: Int, range: IntRange = 1..MathTasks.MAX_GRADE): Int? = when {
+        rightRun >= UP_AFTER && grade < range.last -> grade + 1
+        wrongRun >= DOWN_AFTER && grade > range.first -> grade - 1
         else -> null
     }
 }

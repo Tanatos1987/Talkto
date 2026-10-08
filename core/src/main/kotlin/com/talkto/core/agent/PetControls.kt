@@ -1,5 +1,6 @@
 package com.talkto.core.agent
 
+import com.talkto.core.age.Feature
 import com.talkto.core.commands.AppCommand
 import com.talkto.core.games.GameKind
 import com.talkto.core.pet.Food
@@ -23,6 +24,9 @@ interface PetControls {
     fun lessons()
     /** Opens the story reader with a built-in tale or a riddle; ZnaiKo reads it aloud. */
     fun story(request: StoryRequest)
+
+    /** Whether the child's age (or a parent) allows [feature]; Claude is told when it does not. */
+    fun allows(feature: Feature): Boolean = true
 }
 
 /** Turns the `pet` tool's words into things the app knows. Pure, so it is tested on the JVM. */

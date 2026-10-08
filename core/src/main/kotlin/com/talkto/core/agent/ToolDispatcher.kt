@@ -1,5 +1,6 @@
 package com.talkto.core.agent
 
+import com.talkto.core.age.Feature
 import com.talkto.core.apps.AppController
 import com.talkto.core.commands.AppCommand
 import com.talkto.core.games.GameKind
@@ -408,6 +409,18 @@ class ToolDispatcher(
         val p = pet ?: throw TalktoError.CapabilityUnavailable("ZnaiKo's own controls are not available")
         val item = a.str("item")?.lowercase()
         fun done(what: String) = buildJsonObject { put("ok", true); put("done", what) }
+        // Not for this child's age: nothing opens, and Claude hears why so it can offer something that fits.
+        fun tooYoung(feature: Feature?): JsonElement? = feature?.takeIf { !p.allows(it) }?.let {
+            buildJsonObject {
+                put("ok", false)
+                put("not_for_this_age", it.name.lowercase())
+                put(
+                    "say",
+                    "Nothing was opened: this is for older children and the child's parent has not turned it on. Say so kindly in " +
+                        "one short line and offer something that fits the child's age (a story, feeding, drawing, memory).",
+                )
+            }
+        }
         return when (val action = a.req("action")) {
             "status" -> buildJsonObject { put("status", p.describe()) }
             "feed" -> {
@@ -427,6 +440,10 @@ class ToolDispatcher(
             "come_out" -> { p.app(AppCommand.ComeOut); done("ZnaiKo came out") }
             "open_game" -> {
                 when (val g = PetToolWords.game(item)) {
+                    is GameKind -> tooYoung(Feature.of(g))?.let { return it }
+                    is AppCommand -> tooYoung(Feature.of(g))?.let { return it }
+                }
+                when (val g = PetToolWords.game(item)) {
                     is GameKind -> p.game(g)
                     is AppCommand -> p.app(g)
                     else -> throw TalktoError.InvalidInput("item must be one of tic_tac_toe, connect_four, ludo, chess, memory, tetris, sweets")
@@ -445,12 +462,14 @@ class ToolDispatcher(
                 done("$item is open on screen")
             }
             "start_math" -> {
+                tooYoung(Feature.MATHS)?.let { return it }
                 val grade = a.long("grade")?.toInt()
                 if (grade != null && grade !in 1..MathTasks.MAX_GRADE) throw TalktoError.InvalidInput("grade must be 1-${MathTasks.MAX_GRADE}")
                 p.app(AppCommand.Math(grade, algebra = item == "algebra", geometry = item == "geometry"))
                 done("maths tasks are open on screen")
             }
             "start_trivia" -> {
+                tooYoung(Feature.TRIVIA)?.let { return it }
                 val category = PetToolWords.category(item)
                 if (item != null && category == null) throw TalktoError.InvalidInput("Unknown quiz topic '$item'")
                 p.app(AppCommand.Trivia(category))
@@ -458,6 +477,7 @@ class ToolDispatcher(
             }
             "read_story" -> {
                 val request = PetToolWords.story(item) ?: throw TalktoError.InvalidInput("item must be fable, fairy_tale, bedtime, riddle or any")
+                if (request.riddle) tooYoung(Feature.RIDDLES)?.let { return it }
                 p.story(request)
                 done(
                     if (request.riddle) "a riddle is on screen and ZnaiKo is asking it aloud; do not give the answer"

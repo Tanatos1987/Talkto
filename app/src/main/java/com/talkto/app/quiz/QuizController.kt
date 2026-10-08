@@ -106,6 +106,8 @@ class QuizController(
     private val onActivity: (com.talkto.core.parent.Activity) -> Unit = {},
     /** One question to Claude (system, prompt); null without Claude. Used for explanations and smart quizzes. */
     private val ask: (suspend (String, String) -> String?)? = null,
+    /** The child's age: which school years maths moves between, and where it starts. */
+    private val rules: () -> com.talkto.core.age.AgeRules = { com.talkto.core.age.AgeRules.ALL },
 ) {
     private val math = MathTasks(random)
     private val trivia = Trivia(random)
@@ -121,14 +123,22 @@ class QuizController(
 
     // ------------------------------------------------------------------ maths
 
-    /** Starts maths for [grade]; null takes the saved year, or the one the child told ZnaiKo. */
+    /**
+     * Starts maths for [grade]; null takes the saved year, else the one that fits the age a parent entered, else the one
+     * the child told ZnaiKo. Always within the years that fit the child's age.
+     */
     fun startMath(grade: Int? = null, algebra: Boolean = false, topic: MathTopic = if (algebra) MathTopic.ALGEBRA else MathTopic.MIXED) {
         scope.launch {
             val saved = store.quiz.first()
-            val g = grade ?: saved.grade ?: MathTasks.gradeFor(
-                profile.get("grade")?.filter(Char::isDigit)?.toIntOrNull(),
-                profile.get("age")?.filter(Char::isDigit)?.toIntOrNull(),
-            )
+            val r = rules()
+            val range = r.mathGrades
+            val g = (
+                grade ?: saved.grade?.takeIf { it in range } ?: r.age?.let { r.startGrade } ?: MathTasks.gradeFor(
+                    profile.get("grade")?.filter(Char::isDigit)?.toIntOrNull(),
+                    profile.get("age")?.filter(Char::isDigit)?.toIntOrNull(),
+                    range,
+                )
+                ).coerceIn(range)
             if (grade != null && grade != saved.grade) save { it.copy(grade = grade) }
             rightRun = 0; wrongRun = 0
             _state.value = QuizUi.Math(math.next(g, lang(), topic), g, topic)
@@ -137,8 +147,9 @@ class QuizController(
         }
     }
 
-    fun setGrade(grade: Int) {
+    fun setGrade(year: Int) {
         val ui = _state.value as? QuizUi.Math ?: return
+        val grade = year.coerceIn(rules().mathGrades)
         save { it.copy(grade = grade) }
         rightRun = 0; wrongRun = 0
         _state.value = ui.copy(task = math.next(grade, lang(), ui.topic), grade = grade, input = "", result = null, tries = 0, heard = null, help = null)
@@ -210,7 +221,7 @@ class QuizController(
     fun nextMath() {
         val ui = _state.value as? QuizUi.Math ?: return
         // The tasks follow the child: a little harder after a good run, a little easier after two misses.
-        val moved = AdaptiveGrade.next(ui.grade, rightRun, wrongRun)
+        val moved = AdaptiveGrade.next(ui.grade, rightRun, wrongRun, rules().mathGrades)
         val grade = moved ?: ui.grade
         if (moved != null) {
             rightRun = 0; wrongRun = 0
@@ -239,8 +250,10 @@ class QuizController(
         scope.launch {
             val l = lang()
             val prompt = l.pick(
-                "Задача за ${ui.grade} клас: ${ui.task.display} ${ui.task.prompt} Верният отговор е ${ui.task.answer}. Обясни ми стъпка по стъпка как се решава.",
-                "A task for year ${ui.grade}: ${ui.task.display} ${ui.task.prompt} The right answer is ${ui.task.answer}. Explain to me step by step how to solve it.",
+                (if (ui.grade == 0) "Задача за дете на 5-6 години: ${ui.task.spoken}" else "Задача за ${ui.grade} клас: ${ui.task.display} ${ui.task.prompt}") +
+                    " Верният отговор е ${ui.task.answer}. Обясни ми стъпка по стъпка как се решава.",
+                (if (ui.grade == 0) "A task for a child of 5-6: ${ui.task.spoken}" else "A task for year ${ui.grade}: ${ui.task.display} ${ui.task.prompt}") +
+                    " The right answer is ${ui.task.answer}. Explain to me step by step how to solve it.",
             )
             val text = runCatching { ask(teacherSystem(l, ui.grade), prompt) }.getOrNull()
             val now = _state.value as? QuizUi.Math ?: return@launch
@@ -259,7 +272,7 @@ class QuizController(
     }
 
     private fun teacherSystem(l: Lang, grade: Int) = """
-        You are ZnaiKo, a patient, cheerful maths teacher for a child in school year $grade. Reply in ${l.nameIn(Lang.EN)}.
+        You are ZnaiKo, a patient, cheerful maths teacher for ${if (grade == 0) "a child of 5-6 who cannot read yet (every word is read aloud)" else "a child in school year $grade"}. Reply in ${l.nameIn(Lang.EN)}.
         Explain how to solve the task in 3 to 6 short numbered steps, with simple words a child of that age knows, and end
         with one sentence of encouragement. Plain text only: no markdown, no asterisks, no LaTeX. Use the usual school notation.
     """.trimIndent()

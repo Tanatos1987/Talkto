@@ -52,6 +52,7 @@ import com.talkto.app.i18n.screenLang
 import com.talkto.app.i18n.tr
 import com.talkto.app.quiz.QuizController
 import com.talkto.app.quiz.QuizUi
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.talkto.app.ui.MainViewModel
 import com.talkto.app.ui.theme.TalktoColors
 import com.talkto.core.quiz.MathTasks
@@ -86,7 +87,10 @@ fun QuizDialog(ui: QuizUi, vm: MainViewModel) {
                 // 🚩 on what Claude wrote here: the step-by-step help and the questions about the child's interests.
                 var flagging by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
                 when (ui) {
-                    is QuizUi.Math -> MathScreen(ui, quiz, listen, canExplain = vm.claudeOn(), onFlag = { flagging = it to quiz::hideHelp })
+                    is QuizUi.Math -> MathScreen(
+                        ui, quiz, listen, canExplain = vm.claudeOn(), onFlag = { flagging = it to quiz::hideHelp },
+                        grades = vm.ageRules.collectAsStateWithLifecycle().value.mathGrades,
+                    )
                     is QuizUi.Quiz -> TriviaScreen(ui, quiz, listen, onFlag = { flagging = it to quiz::dropCard })
                 }
                 flagging?.let { (text, after) ->
@@ -101,14 +105,25 @@ fun QuizDialog(ui: QuizUi, vm: MainViewModel) {
 }
 
 @Composable
-private fun MathScreen(ui: QuizUi.Math, quiz: QuizController, listen: () -> Unit, canExplain: Boolean, onFlag: (String) -> Unit) = Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        MathTopic.entries.forEach { t ->
-            FilterChip(selected = ui.topic == t, onClick = { quiz.setTopic(t) }, label = { Text(t.label(screenLang()), fontWeight = FontWeight.Bold) })
+private fun MathScreen(
+    ui: QuizUi.Math,
+    quiz: QuizController,
+    listen: () -> Unit,
+    canExplain: Boolean,
+    onFlag: (String) -> Unit,
+    /** The years that fit the child's age. */
+    grades: IntRange = 1..MathTasks.MAX_GRADE,
+) = Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+    // Counting with pictures has no algebra or geometry.
+    if (ui.grade > 0) {
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            MathTopic.entries.forEach { t ->
+                FilterChip(selected = ui.topic == t, onClick = { quiz.setTopic(t) }, label = { Text(t.label(screenLang()), fontWeight = FontWeight.Bold) })
+            }
         }
     }
     Row(Modifier.horizontalScroll(rememberScrollState()).padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        (1..MathTasks.MAX_GRADE).forEach { g ->
+        grades.forEach { g ->
             FilterChip(selected = ui.grade == g, onClick = { quiz.setGrade(g) }, label = { Text(MathTasks.gradeLabel(g, screenLang())) })
         }
     }
@@ -122,7 +137,11 @@ private fun MathScreen(ui: QuizUi.Math, quiz: QuizController, listen: () -> Unit
             ui.task.figure?.let { FigureView(it, Modifier.padding(bottom = 10.dp)) }
             Text(
                 ui.task.display,
-                fontSize = if (ui.task.wordy) 20.sp else 34.sp,
+                fontSize = when {
+                    ui.grade == 0 -> 30.sp
+                    ui.task.wordy -> 20.sp
+                    else -> 34.sp
+                },
                 fontWeight = if (ui.task.wordy) FontWeight.Bold else FontWeight.Black,
                 textAlign = TextAlign.Center,
             )

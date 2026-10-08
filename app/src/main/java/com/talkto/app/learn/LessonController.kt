@@ -60,6 +60,8 @@ class LessonController(
     private val random: Random = Random.Default,
     /** Counts answers and lessons for the parents' report. */
     private val onActivity: (com.talkto.core.parent.Activity) -> Unit = {},
+    /** The child's age: a child who cannot read gets picture-and-listening lessons without writing. */
+    private val rules: () -> com.talkto.core.age.AgeRules = { com.talkto.core.age.AgeRules.ALL },
 ) {
     private val _state = MutableStateFlow<LessonUi?>(null)
     val state: StateFlow<LessonUi?> = _state.asStateFlow()
@@ -70,8 +72,10 @@ class LessonController(
     fun start(topic: Topic?, speaking: Boolean = true) {
         lastTopic = topic
         lastSpeaking = speaking
+        val r = rules()
         val lesson = LessonPlanner(random).plan(
-            learning.target, topic, learning.data.value.state, learning.today(), speaking, writing = learning.data.value.writing,
+            learning.target, topic, learning.data.value.state, learning.today(), speaking,
+            writing = learning.data.value.writing && r.allows(com.talkto.core.age.Feature.WRITING), reads = r.reads,
         )
         _state.value = LessonUi(lesson)
         avatar.play(AnimationCommand(Expression.HAPPY, Gesture.BOUNCE, holdMs = 1_500))

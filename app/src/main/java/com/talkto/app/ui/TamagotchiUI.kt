@@ -127,6 +127,7 @@ import com.talkto.app.ui.look.CoinsPill
 import com.talkto.app.ui.look.CreatorSheet
 import com.talkto.app.ui.quiz.QuizDialog
 import com.talkto.app.ui.shop.ShopSheet
+import com.talkto.core.age.Feature
 import com.talkto.core.commands.AppCommand
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.animation.core.Animatable
@@ -162,6 +163,7 @@ fun TamagotchiScreen(vm: MainViewModel) {
     val permissions by vm.permissions.collectAsStateWithLifecycle()
     val confirmation by vm.confirmation.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val ageRules by vm.ageRules.collectAsStateWithLifecycle()
     val lookAt by vm.lookAt.collectAsStateWithLifecycle()
     val look by vm.look.collectAsStateWithLifecycle()
     val house by vm.house.collectAsStateWithLifecycle()
@@ -341,6 +343,7 @@ fun TamagotchiScreen(vm: MainViewModel) {
                 }
             },
             onLanguage = vm::setVoiceLanguage,
+            typing = ageRules.allows(Feature.TYPING),
         )
         Spacer(Modifier.height(12.dp))
     }
@@ -375,10 +378,11 @@ fun TamagotchiScreen(vm: MainViewModel) {
             onFeed = { sheet = Sheet.NONE; vm.openArcade(MainViewModel.Arcade.FEED) },
             onLetters = { sheet = Sheet.NONE; vm.openArcade(MainViewModel.Arcade.LETTERS) },
             onDraw = { sheet = Sheet.NONE; vm.openDrawing() },
-            onDaily = { sheet = Sheet.NONE; vm.startDaily() },
+            onDaily = if (ageRules.allows(Feature.TRIVIA)) ({ sheet = Sheet.NONE; vm.startDaily() }) else null,
             dailyDone = vm.dailyDone(),
-            onSmartTrivia = if (settings.claudeOn) ({ sheet = Sheet.NONE; vm.startSmartTrivia() }) else null,
+            onSmartTrivia = if (settings.claudeOn && ageRules.allows(Feature.TRIVIA)) ({ sheet = Sheet.NONE; vm.startSmartTrivia() }) else null,
             missions = vm.missions.collectAsStateWithLifecycle().value,
+            rules = ageRules,
         )
         Sheet.FOOD -> com.talkto.app.ui.food.FoodSheet(pet, onEat = { f -> sheet = Sheet.NONE; vm.feed(f) }, onDismiss = { sheet = Sheet.NONE })
         Sheet.STORIES -> com.talkto.app.ui.story.StoriesSheet(vm, onDismiss = { sheet = Sheet.NONE })
@@ -421,7 +425,9 @@ fun TamagotchiScreen(vm: MainViewModel) {
     if (drawing) com.talkto.app.ui.draw.DrawingDialog(vm)
     // The story of ZnaiKo and the friends: once at the first start, and again from Settings.
     val storyReplay by vm.storyReplay.collectAsStateWithLifecycle()
-    if ((settings.loaded && !settings.storySeen) || storyReplay) com.talkto.app.ui.story.StoryDialog(vm)
+    // First a parent tells ZnaiKo when the child was born (also once after the update that added ages), then the story.
+    if (settings.needsAge) com.talkto.app.ui.parent.AgeSetupDialog(vm)
+    else if ((settings.loaded && !settings.storySeen) || storyReplay) com.talkto.app.ui.story.StoryDialog(vm)
 
     // The friend's chapter: the knock and the help, or the thank-you.
     val v = visit
@@ -782,7 +788,26 @@ private fun ChatInput(
     onSend: (String) -> Unit,
     onMic: () -> Unit,
     onLanguage: (VoiceLanguage) -> Unit,
+    /** False for a child too young to type: only the microphone, big and in the middle. */
+    typing: Boolean = true,
 ) {
+    if (!typing) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                if (voice.listening) voice.partial.ifBlank { stringResource(R.string.voice_listening) }
+                else com.talkto.app.i18n.tr("Натисни и говори със Знайко", "Tap and talk to ZnaiKo"),
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.weight(1f, fill = false).padding(end = 12.dp),
+                maxLines = 2,
+            )
+            MicButton(listening = voice.listening, level = voice.level, onClick = onMic)
+            if (busy) {
+                Spacer(Modifier.width(10.dp))
+                CircularProgressIndicator(Modifier.size(24.dp), color = TalktoColors.Sunflower, strokeWidth = 2.dp)
+            }
+        }
+        return
+    }
     var text by rememberSaveable { mutableStateOf("") }
     val submit = {
         if (text.isNotBlank() && !busy) {

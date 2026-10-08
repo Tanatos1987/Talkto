@@ -1,5 +1,7 @@
 package com.talkto.core.missions
 
+import com.talkto.core.age.AgeRules
+import com.talkto.core.age.Feature
 import com.talkto.core.i18n.Lang
 import com.talkto.core.parent.DayActivity
 import java.time.LocalDate
@@ -14,6 +16,7 @@ enum class MissionKind(val emoji: String, val bg: String, val en: String, val go
     STORY("📖", "Чуй една приказка", "Listen to a story", 1, { it.stories }),
     GAME("🎮", "Изиграй една игра", "Play a game", 1, { it.games }),
     CHAT("💬", "Разкажи на Знайко как мина денят ти", "Tell ZnaiKo about your day", 3, { it.chats }),
+    DRAW("🎨", "Нарисувай нещо за Знайко", "Draw something for ZnaiKo", 1, { it.drawings }),
     ;
 
     fun label(lang: Lang) = lang.pick(bg, en)
@@ -32,26 +35,33 @@ data class MissionsToday(val day: Long, val event: SeasonEvent?, val missions: L
 
 /**
  * Three missions a day: one for learning, one for thinking and one for fun, the same all day and new tomorrow.
- * On a holiday its own mission takes its group's place and the reward is doubled.
+ * On a holiday its own mission takes its group's place and the reward is doubled. Only missions the child's age can do
+ * are picked: a child who has no maths or quizzes yet draws instead.
  */
 object Missions {
-    private val GROUPS = listOf(
-        listOf(MissionKind.LESSON, MissionKind.WORDS),
-        listOf(MissionKind.MATHS, MissionKind.TRIVIA),
-        listOf(MissionKind.STORY, MissionKind.GAME, MissionKind.CHAT),
-    )
+    fun groups(rules: AgeRules = AgeRules.ALL): List<List<MissionKind>> {
+        val thinking = listOfNotNull(
+            MissionKind.MATHS.takeIf { rules.allows(Feature.MATHS) },
+            MissionKind.TRIVIA.takeIf { rules.allows(Feature.TRIVIA) },
+        )
+        return listOf(
+            listOf(MissionKind.LESSON, MissionKind.WORDS),
+            if (thinking.size >= 2) thinking else thinking + MissionKind.DRAW,
+            listOf(MissionKind.STORY, MissionKind.GAME, MissionKind.CHAT),
+        )
+    }
 
-    fun forDay(day: Long, event: SeasonEvent? = null): List<MissionKind> {
+    fun forDay(day: Long, event: SeasonEvent? = null, rules: AgeRules = AgeRules.ALL): List<MissionKind> {
         val random = Random(day * 31 + 7)
-        return GROUPS.map { group ->
+        return groups(rules).map { group ->
             val pick = group[random.nextInt(group.size)]
             event?.mission?.takeIf { it in group } ?: pick
         }
     }
 
-    fun today(day: Long, date: LocalDate, activity: DayActivity): MissionsToday {
+    fun today(day: Long, date: LocalDate, activity: DayActivity, rules: AgeRules = AgeRules.ALL): MissionsToday {
         val event = SeasonEvent.on(date)
-        return MissionsToday(day, event, forDay(day, event), activity, activity.missionsDone)
+        return MissionsToday(day, event, forDay(day, event, rules), activity, activity.missionsDone)
     }
 
     /** How many times the missions reward is paid: twice on a holiday. */

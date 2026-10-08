@@ -68,6 +68,7 @@ import com.talkto.core.story.Tales
 @Composable
 fun StoriesSheet(vm: MainViewModel, onDismiss: () -> Unit) {
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val rules by vm.ageRules.collectAsStateWithLifecycle()
     val lang = screenLang()
     var theme by rememberSaveable { mutableStateOf("") }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
@@ -76,7 +77,9 @@ fun StoriesSheet(vm: MainViewModel, onDismiss: () -> Unit) {
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { onDismiss(); vm.tales.read() }, modifier = Modifier.weight(1f)) { Text(tr("🎲 Изненадай ме", "🎲 Surprise me")) }
-                OutlinedButton(onClick = { onDismiss(); vm.tales.riddle() }, modifier = Modifier.weight(1f)) { Text(tr("❓ Гатанка", "❓ A riddle")) }
+                if (rules.allows(com.talkto.core.age.Feature.RIDDLES)) {
+                    OutlinedButton(onClick = { onDismiss(); vm.riddle() }, modifier = Modifier.weight(1f)) { Text(tr("❓ Гатанка", "❓ A riddle")) }
+                }
             }
 
             if (settings.claudeOn) {
@@ -84,13 +87,16 @@ fun StoriesSheet(vm: MainViewModel, onDismiss: () -> Unit) {
                 Surface(shape = RoundedCornerShape(16.dp), color = TalktoColors.Sunflower.copy(alpha = 0.25f), modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(12.dp)) {
                         Text(tr("✨ Нова приказка, измислена сега", "✨ A brand-new tale, made up now"), style = MaterialTheme.typography.titleSmall)
-                        OutlinedTextField(
-                            value = theme,
-                            onValueChange = { theme = it.take(80) },
-                            placeholder = { Text(tr("за какво? напр. дракон, който обича ябълки", "about what? e.g. a dragon who loves apples")) },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                        )
+                        // A child who cannot type yet lets ZnaiKo pick the theme.
+                        if (rules.allows(com.talkto.core.age.Feature.TYPING)) {
+                            OutlinedTextField(
+                                value = theme,
+                                onValueChange = { theme = it.take(80) },
+                                placeholder = { Text(tr("за какво? напр. дракон, който обича ябълки", "about what? e.g. a dragon who loves apples")) },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                            )
+                        }
                         val ask = if (theme.isBlank()) tr("Разкажи ми нова приказка.", "Tell me a new fairy tale.")
                         else tr("Разкажи ми нова приказка за $theme.", "Tell me a new fairy tale about $theme.")
                         Button(onClick = { onDismiss(); vm.send(ask); theme = "" }) { Text(tr("Разкажи!", "Tell it!")) }
@@ -153,7 +159,22 @@ fun TaleDialog(ui: TaleUi, vm: MainViewModel) {
                     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                         when (ui) {
                             is TaleUi.Reading -> Reading(ui)
-                            is TaleUi.Guessing -> Guessing(ui, onGuess = tales::guess, onReveal = tales::reveal)
+                            is TaleUi.Guessing -> {
+                                val ctx = androidx.compose.ui.platform.LocalContext.current
+                                val mic = androidx.activity.compose.rememberLauncherForActivityResult(
+                                    androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+                                ) { granted -> vm.riddleListen(dialogOnly = !granted) }
+                                val rules by vm.ageRules.collectAsStateWithLifecycle()
+                                Guessing(
+                                    ui, onGuess = tales::guess, onReveal = tales::reveal,
+                                    onListen = {
+                                        val granted = androidx.core.content.ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.RECORD_AUDIO) ==
+                                            android.content.pm.PackageManager.PERMISSION_GRANTED
+                                        if (granted) vm.riddleListen() else mic.launch(android.Manifest.permission.RECORD_AUDIO)
+                                    },
+                                    typing = rules.allows(com.talkto.core.age.Feature.TYPING),
+                                )
+                            }
                         }
                     }
                 }
@@ -195,7 +216,15 @@ private fun androidx.compose.foundation.layout.ColumnScope.Reading(ui: TaleUi.Re
 }
 
 @Composable
-private fun androidx.compose.foundation.layout.ColumnScope.Guessing(ui: TaleUi.Guessing, onGuess: (String) -> Unit, onReveal: () -> Unit) {
+private fun androidx.compose.foundation.layout.ColumnScope.Guessing(
+    ui: TaleUi.Guessing,
+    onGuess: (String) -> Unit,
+    onReveal: () -> Unit,
+    /** Says the answer instead of typing it. */
+    onListen: () -> Unit,
+    /** False for a child who cannot type yet: only the microphone. */
+    typing: Boolean,
+) {
     val lang = screenLang()
     var text by rememberSaveable(ui.riddle.id) { mutableStateOf("") }
     Spacer(Modifier.height(16.dp))
@@ -209,21 +238,24 @@ private fun androidx.compose.foundation.layout.ColumnScope.Guessing(ui: TaleUi.G
             color = if (ui.correct == true) TalktoColors.Mint else MaterialTheme.colorScheme.onBackground,
         )
     } else {
-        OutlinedTextField(
-            value = text,
-            onValueChange = { text = it.take(40) },
-            singleLine = true,
-            placeholder = { Text(tr("Какво е?", "What is it?")) },
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = { onGuess(text); text = "" }),
-            modifier = Modifier.fillMaxWidth(),
-        )
+        if (typing) {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it.take(40) },
+                singleLine = true,
+                placeholder = { Text(tr("Какво е?", "What is it?")) },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { onGuess(text); text = "" }),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
         if (ui.tries > 0) Text(tr("Не е това. Опитай пак!", "Not that. Try again!"), color = TalktoColors.Sunflower, style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.align(Alignment.CenterHorizontally)) {
-            Button(onClick = { onGuess(text); text = "" }, enabled = text.isNotBlank()) { Text(tr("Познах ли?", "Am I right?")) }
-            TextButton(onClick = onReveal) { Text(tr("Кажи ми отговора", "Tell me the answer")) }
+            Button(onClick = onListen) { Text(tr("🎤 Кажи го", "🎤 Say it")) }
+            if (typing) Button(onClick = { onGuess(text); text = "" }, enabled = text.isNotBlank()) { Text(tr("Познах ли?", "Am I right?")) }
         }
+        TextButton(onClick = onReveal, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text(tr("Кажи ми отговора", "Tell me the answer")) }
     }
 }
 

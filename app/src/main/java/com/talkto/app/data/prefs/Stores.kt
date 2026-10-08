@@ -7,12 +7,16 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.talkto.app.background.BackgroundConfig
 import com.talkto.app.learn.LearnData
 import com.talkto.app.pet.PetState
 import com.talkto.app.quiz.QuizData
 import com.talkto.app.security.KeyCipher
+import com.talkto.core.age.AgeRules
+import com.talkto.core.age.Birth
+import com.talkto.core.age.Feature
 import com.talkto.core.avatar.AvatarStyle
 import com.talkto.core.avatar.FaceAnchors
 import com.talkto.core.look.CreatureLook
@@ -63,8 +67,15 @@ data class Settings(
     val aiEnabled: Boolean = true,
     /** Minutes a day the child may play; 0 = no limit. */
     val dailyLimitMinutes: Int = 0,
-    /** The child's age as a parent set it; 0 = not given. */
+    /** The child's age as a parent set it before birth months were asked; 0 = not given. Only a fallback now. */
     val childAge: Int = 0,
+    /** The child's month and year of birth, entered by a parent at the first start; null until then. */
+    val birthYear: Int? = null,
+    val birthMonth: Int? = null,
+    /** Features a parent opened to a child younger than they are meant for ([Feature] names). */
+    val unlocked: Set<String> = emptySet(),
+    /** The year ZnaiKo last congratulated the child in the birth month. */
+    val birthdayGreetedYear: Int = 0,
     /** Optional server that holds the Claude key for the family (https), used instead of api.anthropic.com. */
     val proxyUrl: String? = null,
     /** Salted hash of the parents' PIN; null until a parent sets one. */
@@ -81,6 +92,17 @@ data class Settings(
     /** Claude answers: reachable and not switched off by a parent. */
     val claudeOn get() = hasClaudeKey && aiEnabled
     val hasParentPin get() = !parentPinHash.isNullOrBlank()
+
+    val birth: Birth? get() = Birth.of(birthYear, birthMonth)
+
+    /** The parent has not entered the birth month yet: at the first start, or once after the update that added ages. */
+    val needsAge: Boolean get() = loaded && birth == null
+
+    /** The child's age today: from the birth month, else the age a parent gave earlier. */
+    fun age(today: java.time.LocalDate = java.time.LocalDate.now()): Int? = birth?.age(today) ?: childAge.takeIf { it > 0 }
+
+    /** What the child may open today; everything until the birth month is known. */
+    fun ageRules(today: java.time.LocalDate = java.time.LocalDate.now()): AgeRules = AgeRules.of(birth, today, Feature.parse(unlocked))
 }
 
 @Serializable
@@ -109,6 +131,10 @@ class SettingsRepository(private val store: DataStore<Preferences>, private val 
             aiEnabled = p[AI_ENABLED] ?: true,
             dailyLimitMinutes = p[DAILY_LIMIT] ?: 0,
             childAge = p[CHILD_AGE] ?: 0,
+            birthYear = p[BIRTH_YEAR],
+            birthMonth = p[BIRTH_MONTH],
+            unlocked = p[UNLOCKED] ?: emptySet(),
+            birthdayGreetedYear = p[BIRTHDAY_GREETED] ?: 0,
             proxyUrl = p[PROXY_URL],
             parentPinHash = p[PIN_HASH],
             parentPinSalt = p[PIN_SALT],
@@ -150,6 +176,20 @@ class SettingsRepository(private val store: DataStore<Preferences>, private val 
 
     suspend fun setChildAge(age: Int) = store.edit { it[CHILD_AGE] = age.coerceIn(0, 18) }
 
+    suspend fun setBirth(birth: Birth) = store.edit {
+        it[BIRTH_YEAR] = birth.year
+        it[BIRTH_MONTH] = birth.month
+        it[CHILD_AGE] = birth.age(java.time.LocalDate.now()).coerceIn(0, 18)
+    }
+
+    /** A parent opens [feature] to a younger child, or closes it again. */
+    suspend fun setUnlocked(feature: Feature, on: Boolean) = store.edit { p ->
+        val now = p[UNLOCKED] ?: emptySet()
+        p[UNLOCKED] = if (on) now + feature.name else now - feature.name
+    }
+
+    suspend fun setBirthdayGreeted(year: Int) = store.edit { it[BIRTHDAY_GREETED] = year }
+
     /** Blank clears it. */
     suspend fun setProxyUrl(url: String?) = store.edit { p ->
         val u = url?.trim().orEmpty()
@@ -160,9 +200,13 @@ class SettingsRepository(private val store: DataStore<Preferences>, private val 
 
     suspend fun setParentPin(hash: String, salt: String) = store.edit { it[PIN_HASH] = hash; it[PIN_SALT] = salt }
 
-    /** A forgotten PIN: the PIN goes, and with it the keys and the family server, so a child cannot take over. */
+    /**
+     * A forgotten PIN: the PIN goes, and with it the keys, the family server and what a parent opened beyond the age,
+     * so a child cannot take over.
+     */
     suspend fun resetParent() = store.edit { p ->
         listOf(PIN_HASH, PIN_SALT, ANTHROPIC, STABILITY, PROXY_URL).forEach { p.remove(it) }
+        p.remove(UNLOCKED)
         p[DAILY_LIMIT] = 0
     }
 
@@ -184,6 +228,10 @@ class SettingsRepository(private val store: DataStore<Preferences>, private val 
         val AI_ENABLED = booleanPreferencesKey("ai_enabled")
         val DAILY_LIMIT = intPreferencesKey("daily_limit_minutes")
         val CHILD_AGE = intPreferencesKey("child_age")
+        val BIRTH_YEAR = intPreferencesKey("birth_year")
+        val BIRTH_MONTH = intPreferencesKey("birth_month")
+        val UNLOCKED = stringSetPreferencesKey("unlocked_features")
+        val BIRTHDAY_GREETED = intPreferencesKey("birthday_greeted_year")
         val PROXY_URL = stringPreferencesKey("proxy_url")
         val PIN_HASH = stringPreferencesKey("parent_pin_hash")
         val PIN_SALT = stringPreferencesKey("parent_pin_salt")

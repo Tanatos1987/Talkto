@@ -50,7 +50,7 @@ import com.talkto.core.story.Visits
 @Composable
 fun VisitChip(visit: VisitUi, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val friend = visit.chapter.friend
-    val goal = visit.chapter.challenge.goal
+    val goal = visit.challenge.goal
     val label = when {
         visit.won -> "🎉 ${friend.emoji}"
         visit.left == null -> "🚪 ${friend.emoji} " + tr("Тук-тук!", "Knock, knock!")
@@ -74,10 +74,12 @@ fun VisitChip(visit: VisitUi, onClick: () -> Unit, modifier: Modifier = Modifier
 fun VisitDialog(visit: VisitUi, vm: MainViewModel, onHelp: () -> Unit, onDismiss: () -> Unit) {
     val lang = screenLang()
     val ch = visit.chapter
+    // A younger child hears the friend ask for a drawing or a tale instead of sums or a riddle.
+    val rules = vm.rules()
     val text = when {
         visit.won -> ch.thanks(lang)
         visit.reread -> ch.text(lang) + "\n\n" + ch.thanks(lang)
-        else -> ch.text(lang)
+        else -> ch.textFor(rules, lang)
     }
     LaunchedEffect(ch.number, visit.won, visit.reread) { vm.readAloud(text) }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -128,7 +130,7 @@ fun VisitDialog(visit: VisitUi, vm: MainViewModel, onHelp: () -> Unit, onDismiss
                     when {
                         visit.won -> Button(onClick = onDismiss, modifier = Modifier.weight(2f)) { Text(tr("Ура! 🎉", "Hooray! 🎉")) }
                         visit.reread -> Button(onClick = onDismiss, modifier = Modifier.weight(2f)) { Text(tr("Готово", "Done")) }
-                        else -> Button(onClick = onHelp, modifier = Modifier.weight(2f)) { Text(ch.challenge.button(lang)) }
+                        else -> Button(onClick = onHelp, modifier = Modifier.weight(2f)) { Text(visit.challenge.button(lang)) }
                     }
                 }
             }

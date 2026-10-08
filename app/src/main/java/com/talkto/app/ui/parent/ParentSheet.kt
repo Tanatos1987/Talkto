@@ -220,11 +220,14 @@ fun ParentSheet(vm: MainViewModel, onDismiss: () -> Unit) {
             }
 
             Section(tr("🎂 Възраст на детето", "🎂 The child's age"))
-            Text(tr("Знайко говори според възрастта.", "ZnaiKo talks to suit the age."), style = MaterialTheme.typography.bodySmall)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(selected = settings.childAge == 0, onClick = { vm.setChildAge(0) }, label = { Text("—") })
-                (3..12).forEach { a -> FilterChip(selected = settings.childAge == a, onClick = { vm.setChildAge(a) }, label = { Text("$a") }) }
-            }
+            Text(
+                tr(
+                    "Знайко показва игри и задачи за възрастта и говори според нея.",
+                    "ZnaiKo shows games and tasks for the age and talks to suit it.",
+                ),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            AgeSection(vm, settings)
 
             Section(tr("🤖 Изкуствен интелект (Claude)", "🤖 Artificial intelligence (Claude)"))
             Row(verticalAlignment = Alignment.CenterVertically) {

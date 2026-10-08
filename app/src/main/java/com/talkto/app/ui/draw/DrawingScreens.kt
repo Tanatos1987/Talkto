@@ -116,6 +116,15 @@ private fun DrawPage(vm: MainViewModel, strokes: MutableList<Stroke>, modifier: 
     var cleared by remember { mutableStateOf<List<Stroke>?>(null) }
     var naming by remember { mutableStateOf(false) }
     var pageSize by remember { mutableStateOf(IntSize.Zero) }
+    // A child who cannot type yet is not asked for a title: the drawing is named after ZnaiKo's idea, if there was one.
+    val typing = vm.ageRules.collectAsStateWithLifecycle().value.allows(com.talkto.core.age.Feature.TYPING)
+    val ideaTitle = prompt?.let { tr(it.bg, it.en) }.orEmpty()
+    fun save(name: String) {
+        naming = false
+        val w = RENDER_WIDTH
+        val h = if (pageSize.width > 0) (w * pageSize.height / pageSize.width).coerceIn(w / 3, w * 3) else w
+        vm.saveDrawing(strokes.toList(), w, h, name) { strokes.clear(); cleared = null }
+    }
     val current = remember { mutableStateListOf<Pt>() }
     val crayonNow by rememberUpdatedState(crayon)
     val brushNow by rememberUpdatedState(brush)
@@ -205,19 +214,13 @@ private fun DrawPage(vm: MainViewModel, strokes: MutableList<Stroke>, modifier: 
             IconTextButton("💡") { vm.newDrawPrompt() }
         }
         Spacer(Modifier.height(6.dp))
-        Button(onClick = { naming = true }, enabled = strokes.isNotEmpty(), modifier = Modifier.fillMaxWidth()) {
+        Button(onClick = { if (typing) naming = true else save(ideaTitle) }, enabled = strokes.isNotEmpty(), modifier = Modifier.fillMaxWidth()) {
             Text(tr("✅ Готово! Покажи на Знайко", "✅ Done! Show ZnaiKo"))
         }
     }
 
     if (naming) {
         var title by remember { mutableStateOf("") }
-        fun save(name: String) {
-            naming = false
-            val w = RENDER_WIDTH
-            val h = if (pageSize.width > 0) (w * pageSize.height / pageSize.width).coerceIn(w / 3, w * 3) else w
-            vm.saveDrawing(strokes.toList(), w, h, name) { strokes.clear(); cleared = null }
-        }
         AlertDialog(
             onDismissRequest = { naming = false },
             title = { Text(tr("Как се казва рисунката?", "What is your drawing called?")) },
