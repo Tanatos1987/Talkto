@@ -15,6 +15,7 @@ import androidx.lifecycle.lifecycleScope
 import com.talkto.app.MainActivity
 import com.talkto.app.R
 import com.talkto.app.TalktoApp
+import com.talkto.app.i18n.LanguageRepository
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -22,13 +23,17 @@ import java.util.concurrent.atomic.AtomicInteger
  * Foreground service that executes agent turns.
  *
  * Why a service: a turn can outlive the Activity. Closing an app through the Accessibility route
- * opens Recents (Talkto leaves the foreground), and long searches or organise runs take seconds.
+ * opens Recents (ZnaiKo leaves the foreground), and long searches or organise runs take seconds.
  * The service keeps the process at foreground priority until the last queued turn is done, then stops.
  */
 class AgentService : LifecycleService() {
 
     private val running = AtomicInteger(0)
     private val container get() = (application as TalktoApp).container
+
+    override fun attachBaseContext(base: Context) {
+        super.attachBaseContext(LanguageRepository.localized(base, LanguageRepository.read(base)))
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -64,7 +69,7 @@ class AgentService : LifecycleService() {
     }
 
     private fun buildNotification(): Notification = NotificationCompat.Builder(this, CHANNEL_ID)
-        .setSmallIcon(R.drawable.ic_launcher_foreground)
+        .setSmallIcon(R.drawable.ic_stat_znaiko)
         .setContentTitle(getString(R.string.notif_agent_title))
         .setOngoing(true)
         .setSilent(true)
@@ -84,20 +89,21 @@ class AgentService : LifecycleService() {
             ContextCompat.startForegroundService(context, intent)
         }
 
-        fun ensureChannel(context: Context) {
+        fun ensureChannel(base: Context) {
+            val context = LanguageRepository.localized(base, LanguageRepository.read(base))
             val nm = context.getSystemService(NotificationManager::class.java)
-            if (nm.getNotificationChannel(CHANNEL_ID) == null) {
-                nm.createNotificationChannel(
-                    NotificationChannel(CHANNEL_ID, context.getString(R.string.notif_channel_agent), NotificationManager.IMPORTANCE_DEFAULT),
-                )
-            }
+            // Created every time: the same id only renames the channel, so it follows ZnaiKo's language.
+            nm.createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, context.getString(R.string.notif_channel_agent), NotificationManager.IMPORTANCE_DEFAULT),
+            )
         }
 
-        /** Shown when a tool waits for a yes/no while Talkto is not on screen. */
-        fun notifyConfirmationPending(context: Context) {
-            ensureChannel(context)
+        /** Shown when a tool waits for a yes/no while ZnaiKo is not on screen. */
+        fun notifyConfirmationPending(base: Context) {
+            ensureChannel(base)
+            val context = LanguageRepository.localized(base, LanguageRepository.read(base))
             val n = NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_launcher_foreground)
+                .setSmallIcon(R.drawable.ic_stat_znaiko)
                 .setContentTitle(context.getString(R.string.notif_confirm_title))
                 .setContentText(context.getString(R.string.notif_confirm_body))
                 .setAutoCancel(true)

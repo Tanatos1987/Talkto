@@ -157,7 +157,7 @@ class AvatarGeneratorTest {
     }
 
     @Test fun `utterance plan is monotonic and ends at rest`() {
-        val frames = VisemePlanner().planUtterance("Здравей, Talkto!")
+        val frames = VisemePlanner().planUtterance("Здравей, ZnaiKo!")
         assertThat(frames.last().viseme).isEqualTo(Viseme.REST)
         frames.zipWithNext().forEach { (a, b) -> assertThat(b.startMs).isAtLeast(a.startMs + a.durationMs) }
     }

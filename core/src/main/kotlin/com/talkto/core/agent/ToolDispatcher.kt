@@ -1,12 +1,19 @@
 package com.talkto.core.agent
 
+import com.talkto.core.age.Feature
 import com.talkto.core.apps.AppController
+import com.talkto.core.commands.AppCommand
+import com.talkto.core.games.GameKind
+import com.talkto.core.pet.Food
+import com.talkto.core.quiz.MathTasks
 import com.talkto.core.apps.TerminateMethod
 import com.talkto.core.avatar.AnimationCommand
 import com.talkto.core.avatar.AvatarStyle
 import com.talkto.core.avatar.Expression
 import com.talkto.core.avatar.GeneratedAvatar
 import com.talkto.core.avatar.Gesture
+import com.talkto.core.device.DeviceActions
+import com.talkto.core.device.SettingsPanel
 import com.talkto.core.error.ErrorMapper
 import com.talkto.core.error.TalktoError
 import com.talkto.core.files.DeletionPlan
@@ -16,6 +23,10 @@ import com.talkto.core.files.SearchQuery
 import com.talkto.core.memory.ActionRecord
 import com.talkto.core.memory.ActionType
 import com.talkto.core.memory.MemoryRepository
+import com.talkto.core.history.HistoryRepository
+import com.talkto.core.notes.NotesRepository
+import com.talkto.core.profile.ProfileRepository
+import com.talkto.core.reminders.RemindersRepository
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -27,6 +38,8 @@ import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import java.io.File
+import java.time.LocalDateTime
+import java.time.ZoneId
 
 /** Avatar side-effects the agent may trigger. Implemented by the Android `AvatarEngine`. */
 interface AvatarActions {
@@ -79,16 +92,33 @@ class ToolDispatcher(
     private val gate: ConfirmationGate,
     private val clock: () -> Long = System::currentTimeMillis,
     private val onError: (TalktoError) -> Unit = {},
+    private val device: DeviceActions? = null,
+    private val notes: NotesRepository? = null,
+    private val reminders: RemindersRepository? = null,
+    private val zone: () -> ZoneId = ZoneId::systemDefault,
+    private val profile: ProfileRepository? = null,
+    private val history: HistoryRepository? = null,
+    /** Tools left out of this build; asking for one says so instead of failing on a missing permission. */
+    private val disabled: Set<String> = emptySet(),
+    /** ZnaiKo itself (feeding, games, quizzes); null in tests that do not need it. */
+    private val pet: PetControls? = null,
 ) {
     private val json = Json { encodeDefaults = true; explicitNulls = false }
 
     suspend fun dispatch(name: String, input: JsonObject): ToolOutcome = try {
+        if (name in disabled) throw TalktoError.CapabilityUnavailable("'$name' is not part of this version of ZnaiKo")
         val result: JsonElement = when (name) {
             ToolProtocol.MANAGE_FILE -> manageFile(input)
             ToolProtocol.LAUNCH_APP -> launchApp(input)
             ToolProtocol.TERMINATE_APP -> terminateApp(input)
             ToolProtocol.GENERATE_AVATAR -> generateAvatar(input)
             ToolProtocol.ANIMATE_AVATAR -> animateAvatar(input)
+            ToolProtocol.DEVICE -> device(input)
+            ToolProtocol.NOTES -> notes(input)
+            ToolProtocol.REMINDERS -> reminders(input)
+            ToolProtocol.USER_PROFILE -> userProfile(input)
+            ToolProtocol.CONVERSATION_HISTORY -> conversationHistory(input)
+            ToolProtocol.PET -> pet(input)
             else -> throw TalktoError.InvalidInput("Unknown tool '$name'")
         }
         ToolOutcome(result.toString(), isError = false)
@@ -162,6 +192,19 @@ class ToolDispatcher(
                 confirmOrThrow(ConfirmationRequest.EmptyTrash)
                 buildJsonObject { put("removed_batches", files.emptyTrash()) }
             }
+            "storage_report" -> json.encodeToJsonElement(files.storageReport(a.str("path") ?: "~"))
+            "find_duplicates" -> {
+                val r = files.findDuplicates(a.str("path") ?: "~")
+                // Cap the payload: a phone can have hundreds of groups; totals stay exact.
+                buildJsonObject {
+                    put("groups_found", r.groups.size)
+                    put("wasted_bytes", r.wastedBytes)
+                    put("scanned_files", r.scannedFiles)
+                    put("truncated", r.truncated)
+                    put("groups", json.encodeToJsonElement(r.groups.take(40)))
+                }
+            }
+            "find_empty_dirs" -> json.encodeToJsonElement(files.findEmptyDirectories(a.str("path") ?: "~"))
             null -> throw TalktoError.InvalidInput("operation is required")
             else -> throw TalktoError.InvalidInput("Unknown operation '$op'")
         }
@@ -260,6 +303,191 @@ class ToolDispatcher(
         return buildJsonObject { put("ok", true) }
     }
 
+    // ------------------------------------------------------ device, notes, reminders
+
+    private fun device(a: JsonObject): JsonElement {
+        val d = device ?: throw TalktoError.CapabilityUnavailable("Device controls are not available")
+        return when (val action = a.req("action")) {
+            "battery" -> json.encodeToJsonElement(d.battery())
+            "storage" -> json.encodeToJsonElement(d.storage())
+            "memory" -> json.encodeToJsonElement(d.memory())
+            "torch_on", "torch_off" -> {
+                if (!d.setTorch(action == "torch_on")) throw TalktoError.CapabilityUnavailable("This phone has no flashlight")
+                buildJsonObject { put("torch", action == "torch_on") }
+            }
+            "volume_up" -> buildJsonObject { put("volume_percent", d.setVolume(step = 1)) }
+            "volume_down" -> buildJsonObject { put("volume_percent", d.setVolume(step = -1)) }
+            "volume_mute" -> buildJsonObject { put("volume_percent", d.mute()) }
+            "volume_set" -> {
+                val p = (a.long("percent") ?: throw TalktoError.InvalidInput("percent is required")).toInt().coerceIn(0, 100)
+                buildJsonObject { put("volume_percent", d.setVolume(percent = p)) }
+            }
+            "open_settings" -> {
+                val panel = runCatching { SettingsPanel.valueOf(a.req("panel").uppercase()) }
+                    .getOrElse { throw TalktoError.InvalidInput("Unknown panel '${a.str("panel")}'") }
+                if (!d.openSettings(panel)) throw TalktoError.CapabilityUnavailable("This settings screen is not available on the phone")
+                buildJsonObject { put("opened", panel.name.lowercase()) }
+            }
+            "set_timer" -> {
+                val sec = (a.long("seconds") ?: throw TalktoError.InvalidInput("seconds is required")).toInt()
+                if (sec !in 1..86_399) throw TalktoError.InvalidInput("Timer must be between 1 second and 24 hours")
+                if (!d.setTimer(sec, a.str("label"))) throw TalktoError.CapabilityUnavailable("No clock app accepts timers")
+                buildJsonObject { put("timer_seconds", sec) }
+            }
+            "set_alarm" -> {
+                val h = (a.long("hour") ?: throw TalktoError.InvalidInput("hour is required")).toInt()
+                val m = (a.long("minute") ?: 0L).toInt()
+                if (h !in 0..23 || m !in 0..59) throw TalktoError.InvalidInput("Invalid time $h:$m")
+                if (!d.setAlarm(h, m, a.str("label"))) throw TalktoError.CapabilityUnavailable("No clock app accepts alarms")
+                buildJsonObject { put("alarm", String.format(java.util.Locale.ROOT, "%02d:%02d", h, m)) }
+            }
+            else -> throw TalktoError.InvalidInput("Unknown device action '$action'")
+        }
+    }
+
+    private suspend fun notes(a: JsonObject): JsonElement {
+        val n = notes ?: throw TalktoError.CapabilityUnavailable("Notes are not available")
+        return when (val action = a.req("action")) {
+            "add" -> json.encodeToJsonElement(n.add(a.req("text")))
+            "list" -> json.encodeToJsonElement(n.list().take(100))
+            "search" -> json.encodeToJsonElement(n.search(a.req("query")).take(100))
+            "delete" -> {
+                n.delete(a.long("id") ?: throw TalktoError.InvalidInput("id is required"))
+                buildJsonObject { put("deleted", true) }
+            }
+            else -> throw TalktoError.InvalidInput("Unknown notes action '$action'")
+        }
+    }
+
+    private suspend fun reminders(a: JsonObject): JsonElement {
+        val r = reminders ?: throw TalktoError.CapabilityUnavailable("Reminders are not available")
+        return when (val action = a.req("action")) {
+            "add" -> {
+                val at = a.long("in_minutes")?.let { clock() + it * 60_000L }
+                    ?: a.str("at")?.let { iso ->
+                        runCatching { LocalDateTime.parse(iso).atZone(zone()).toInstant().toEpochMilli() }
+                            .getOrElse { throw TalktoError.InvalidInput("'at' must look like 2026-09-28T18:30") }
+                    }
+                    ?: throw TalktoError.InvalidInput("Give in_minutes or at")
+                json.encodeToJsonElement(r.add(a.req("text"), at))
+            }
+            "list" -> json.encodeToJsonElement(r.pending())
+            "cancel" -> json.encodeToJsonElement(r.cancel(a.long("id") ?: throw TalktoError.InvalidInput("id is required")))
+            else -> throw TalktoError.InvalidInput("Unknown reminders action '$action'")
+        }
+    }
+
+    private suspend fun userProfile(a: JsonObject): JsonElement {
+        val p = profile ?: throw TalktoError.CapabilityUnavailable("Profile memory is not available")
+        return when (val action = a.req("action")) {
+            "list" -> json.encodeToJsonElement(p.all())
+            "remember" -> {
+                val key = a.req("key")
+                if (SECRET_KEY.containsMatchIn(key) || SECRET_VALUE.containsMatchIn(a.req("value"))) {
+                    throw TalktoError.InvalidInput("Secrets such as passwords, PINs or card numbers are not stored in the profile")
+                }
+                json.encodeToJsonElement(p.remember(key, a.req("value"), source = "claude"))
+            }
+            "forget" -> buildJsonObject { put("forgotten", p.forget(a.req("what"))) }
+            else -> throw TalktoError.InvalidInput("Unknown user_profile action '$action'")
+        }
+    }
+
+    private suspend fun conversationHistory(a: JsonObject): JsonElement {
+        val h = history ?: throw TalktoError.CapabilityUnavailable("Conversation history is not available")
+        val limit = (a.long("limit") ?: 20).toInt().coerceIn(1, 100)
+        return when (val action = a.req("action")) {
+            "search" -> json.encodeToJsonElement(h.search(a.req("query"), limit))
+            "recent" -> json.encodeToJsonElement(h.recent(limit))
+            else -> throw TalktoError.InvalidInput("Unknown conversation_history action '$action'")
+        }
+    }
+
+    // -------------------------------------------------------------------- pet
+
+    private fun pet(a: JsonObject): JsonElement {
+        val p = pet ?: throw TalktoError.CapabilityUnavailable("ZnaiKo's own controls are not available")
+        val item = a.str("item")?.lowercase()
+        fun done(what: String) = buildJsonObject { put("ok", true); put("done", what) }
+        // Not for this child's age: nothing opens, and Claude hears why so it can offer something that fits.
+        fun tooYoung(feature: Feature?): JsonElement? = feature?.takeIf { !p.allows(it) }?.let {
+            buildJsonObject {
+                put("ok", false)
+                put("not_for_this_age", it.name.lowercase())
+                put(
+                    "say",
+                    "Nothing was opened: this is for older children and the child's parent has not turned it on. Say so kindly in " +
+                        "one short line and offer something that fits the child's age (a story, feeding, drawing, memory).",
+                )
+            }
+        }
+        return when (val action = a.req("action")) {
+            "status" -> buildJsonObject { put("status", p.describe()) }
+            "feed" -> {
+                val food = if (item == null) Food.APPLE
+                else PetToolWords.food(item) ?: throw TalktoError.InvalidInput("Unknown food '$item'. Pick one from the list in the tool description.")
+                p.feed(food)
+                buildJsonObject {
+                    put("ok", true)
+                    put("ate", food.name.lowercase())
+                    put("healthy", food.healthy)
+                }
+            }
+            "play" -> { p.play(); done("played") }
+            "sleep" -> { p.sleep(true); done("ZnaiKo went to bed in its house") }
+            "wake" -> { p.sleep(false); done("ZnaiKo woke up") }
+            "go_home" -> { p.app(AppCommand.GoHome); done("ZnaiKo is inside its house") }
+            "come_out" -> { p.app(AppCommand.ComeOut); done("ZnaiKo came out") }
+            "open_game" -> {
+                when (val g = PetToolWords.game(item)) {
+                    is GameKind -> tooYoung(Feature.of(g))?.let { return it }
+                    is AppCommand -> tooYoung(Feature.of(g))?.let { return it }
+                }
+                when (val g = PetToolWords.game(item)) {
+                    is GameKind -> p.game(g)
+                    is AppCommand -> p.app(g)
+                    else -> throw TalktoError.InvalidInput("item must be one of tic_tac_toe, connect_four, ludo, chess, memory, tetris, sweets")
+                }
+                done("the game is open on screen")
+            }
+            "open_place" -> {
+                when (item) {
+                    "shop" -> p.app(AppCommand.OpenShop)
+                    "house" -> p.app(AppCommand.OpenHouse)
+                    "creator" -> p.app(AppCommand.OpenCreator)
+                    "about_me" -> p.app(AppCommand.AboutMe)
+                    "lessons" -> p.lessons()
+                    else -> throw TalktoError.InvalidInput("item must be shop, house, creator, lessons or about_me")
+                }
+                done("$item is open on screen")
+            }
+            "start_math" -> {
+                tooYoung(Feature.MATHS)?.let { return it }
+                val grade = a.long("grade")?.toInt()
+                if (grade != null && grade !in 1..MathTasks.MAX_GRADE) throw TalktoError.InvalidInput("grade must be 1-${MathTasks.MAX_GRADE}")
+                p.app(AppCommand.Math(grade, algebra = item == "algebra", geometry = item == "geometry"))
+                done("maths tasks are open on screen")
+            }
+            "start_trivia" -> {
+                tooYoung(Feature.TRIVIA)?.let { return it }
+                val category = PetToolWords.category(item)
+                if (item != null && category == null) throw TalktoError.InvalidInput("Unknown quiz topic '$item'")
+                p.app(AppCommand.Trivia(category))
+                done("the quiz is open on screen")
+            }
+            "read_story" -> {
+                val request = PetToolWords.story(item) ?: throw TalktoError.InvalidInput("item must be fable, fairy_tale, bedtime, riddle or any")
+                if (request.riddle) tooYoung(Feature.RIDDLES)?.let { return it }
+                p.story(request)
+                done(
+                    if (request.riddle) "a riddle is on screen and ZnaiKo is asking it aloud; do not give the answer"
+                    else "a tale is on screen and ZnaiKo is reading it aloud now; reply with one short line at most, do not retell it",
+                )
+            }
+            else -> throw TalktoError.InvalidInput("Unknown pet action '$action'")
+        }
+    }
+
     // ---------------------------------------------------------------- helpers
 
     private suspend fun confirmOrThrow(request: ConfirmationRequest) {
@@ -273,14 +501,19 @@ class ToolDispatcher(
         runCatching { memory.record(ActionRecord(type = type, subject = subject, source = source, target = target, timestampMs = clock())) }
     }
 
+    private companion object {
+        val SECRET_KEY = Regex("парол|password|pin|пин|cvv|card|карта", RegexOption.IGNORE_CASE)
+        val SECRET_VALUE = Regex("\\b\\d{4}[ -]?\\d{4}[ -]?\\d{4}[ -]?\\d{4}\\b")
+    }
+
     private fun hintFor(kind: TalktoError.Kind): String = when (kind) {
-        TalktoError.Kind.PERMISSION_DENIED -> "Ask the user to grant 'All files access' to Talkto in system settings."
+        TalktoError.Kind.PERMISSION_DENIED -> "Ask the user to grant 'All files access' to ZnaiKo in system settings."
         TalktoError.Kind.PROTECTED_PATH -> "This location is protected on purpose. Explain why and suggest a safe alternative."
         TalktoError.Kind.NOT_FOUND -> "Search for the item first or ask the user for the exact name."
         TalktoError.Kind.ALREADY_EXISTS -> "Ask whether to overwrite, or pick another name."
         TalktoError.Kind.CONFIRMATION_REQUIRED -> "Do not retry automatically. Tell the user nothing was changed."
         TalktoError.Kind.CAPABILITY_UNAVAILABLE -> "Explain which permission or service the user can enable, and offer another method."
-        TalktoError.Kind.API_KEY_MISSING -> "Ask the user to add the API key in Talkto settings."
+        TalktoError.Kind.API_KEY_MISSING -> "Ask the user to add the API key in ZnaiKo settings."
         else -> "Explain the problem briefly and suggest a next step."
     }
 

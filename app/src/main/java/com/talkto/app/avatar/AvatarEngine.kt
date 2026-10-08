@@ -20,11 +20,16 @@ import com.talkto.core.avatar.Gesture
 import com.talkto.core.avatar.Viseme
 import com.talkto.core.error.TalktoError
 import com.talkto.core.files.PathGuard
+import com.talkto.core.touch.Touch
+import com.talkto.core.touch.TouchReaction
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -51,7 +56,7 @@ data class AvatarPose(
 )
 
 data class AvatarVisual(
-    /** Null = draw the built-in Talkto creature. */
+    /** Null = draw the built-in ZnaiKo creature. */
     val bitmap: Bitmap? = null,
     val anchors: FaceAnchors = DEFAULT_CREATURE_ANCHORS,
     val style: AvatarStyle? = null,
@@ -95,6 +100,16 @@ class AvatarEngine(
     private val command = MutableStateFlow(AvatarPose())
     private var moodExpression = Expression.NEUTRAL
     private var holdJob: Job? = null
+
+    private val _reactions = MutableSharedFlow<Pair<TouchReaction, Touch>>(extraBufferCapacity = 8)
+    /** Physical reactions for the 3D renderer (recoil, squash, lean). */
+    val reactions: SharedFlow<Pair<TouchReaction, Touch>> = _reactions.asSharedFlow()
+
+    /** Shows a touch reaction: face and gesture on both renderers, plus physics impulses for 3D. */
+    fun react(reaction: TouchReaction, touch: Touch) {
+        play(AnimationCommand(reaction.expression, reaction.gesture, holdMs = reaction.holdMs))
+        _reactions.tryEmit(reaction to touch)
+    }
 
     val pose: StateFlow<AvatarPose> = combine(command, speech.viseme, speech.speaking) { c, v, s ->
         c.copy(viseme = v, speaking = s)

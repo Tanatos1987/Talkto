@@ -1,17 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Talkto</string>
-    <string name="accessibility_service_label">Talkto: управление на приложения</string>
-    <string name="accessibility_service_description">Позволява на Talkto да затваря приложения от екрана с последните приложения, когато вие поискате. Talkto не чете съдържанието на екрана ви за нищо друго.</string>
+    <string name="app_name">ZnaiKo</string>
+    <string name="accessibility_service_label">ZnaiKo: управление на приложения</string>
+    <string name="accessibility_service_description">Позволява на ZnaiKo да затваря приложения от екрана с последните приложения, когато вие поискате. ZnaiKo не чете съдържанието на екрана ви за нищо друго.</string>
 
     <!-- Main screen -->
-    <string name="input_hint">Кажи нещо на Talkto…</string>
+    <string name="input_hint">Кажи нещо на ZnaiKo…</string>
     <string name="send">Изпрати</string>
     <string name="action_feed">Нахрани</string>
     <string name="action_play">Играй</string>
     <string name="action_sleep">Сън</string>
     <string name="action_wake">Събуди</string>
-    <string name="action_wardrobe">Гардероб</string>
+    <string name="action_wardrobe">Облик</string>
+    <string name="action_house">Къщичка</string>
     <string name="action_avatar">Аватар</string>
     <string name="action_settings">Настройки</string>
     <string name="stat_satiety">Ситост</string>
@@ -20,7 +21,10 @@
     <string name="stat_bond">Връзка</string>
     <string name="thinking">Мисля…</string>
     <string name="tool_running">Работя: %1$s</string>
-    <string name="greeting">Здрасти! Аз съм Talkto. Какво да направим днес?</string>
+    <string name="greeting">Здрасти! Аз съм ZnaiKo. Какво да направим днес?</string>
+    <string name="greeting_offline">Здрасти! Работя и без API ключ: кажи „помощ“ за командите. С Claude ключ мога много повече.</string>
+    <string name="mode_offline">Офлайн</string>
+    <string name="mode_online">Claude</string>
     <string name="crashed_last_time">Ох, миналия път се спънах и затворих. Вече съм добре!</string>
 
     <!-- Avatar creator -->
@@ -31,7 +35,7 @@
     <string name="avatar_extra_prompt">Допълнителни детайли (по избор)</string>
     <string name="avatar_generate">Генерирай</string>
     <string name="avatar_generating">Рисувам те…</string>
-    <string name="avatar_reset">Върни стандартния Talkto</string>
+    <string name="avatar_reset">Върни стандартния ZnaiKo</string>
     <string name="avatar_ready">Готово! Как ти се струвам?</string>
     <string name="style_anime_2d">Аниме 2D</string>
     <string name="style_cartoon_3d">Анимация 3D</string>
@@ -40,18 +44,14 @@
     <string name="style_watercolor">Акварел</string>
 
     <!-- Wardrobe -->
-    <string name="wardrobe_title">Гардероб</string>
-    <string name="slot_hat">Шапка</string>
-    <string name="slot_glasses">Очила</string>
-    <string name="slot_outfit">Дрехи</string>
     <string name="slot_color">Цвят</string>
-    <string name="none">Нищо</string>
 
     <!-- Settings -->
     <string name="settings_title">Настройки</string>
     <string name="settings_anthropic_key">Claude API ключ</string>
     <string name="settings_stability_key">Stability AI ключ (за аватара)</string>
     <string name="settings_voice">Гласови отговори</string>
+    <string name="settings_offline_note">Без Claude ключ ZnaiKo работи в офлайн режим: прости команди за приложения, файлове и любимеца (кажи „помощ“). Ключът отключва свободния разговор, задачите от няколко стъпки и предложенията по навиците. Stability ключът е нужен само за аватар от снимка.</string>
     <string name="settings_keys_note">Ключовете се пазят криптирани с Android Keystore и никога не напускат устройството, освен към съответния API.</string>
     <string name="settings_habits">Научени навици</string>
     <string name="settings_habits_empty">Все още не съм забелязал навици.</string>
@@ -63,29 +63,87 @@
 
     <!-- Permissions -->
     <string name="perm_storage_title">Нужен ми е достъп до файловете</string>
-    <string name="perm_storage_body">За да търся, местя и подреждам файлове, разреши „Достъп до всички файлове“ за Talkto.</string>
+    <string name="perm_storage_body">За да търся, местя и подреждам файлове, разреши „Достъп до всички файлове“ за ZnaiKo.</string>
     <string name="perm_grant">Разреши</string>
     <string name="perm_accessibility">Включи услугата за достъпност, за да затварям приложения.</string>
 
     <!-- Confirmation -->
     <string name="confirm_delete_title">Да изтрия ли %1$d файла?</string>
-    <string name="confirm_delete_body_trash">%1$d файла, %2$d папки, %3$s ще отидат в кошчето на Talkto (може да се възстановят).</string>
+    <string name="confirm_delete_body_trash">%1$d файла, %2$d папки, %3$s ще отидат в кошчето на ZnaiKo (може да се възстановят).</string>
     <string name="confirm_delete_body_permanent">%1$d файла, %2$d папки, %3$s ще бъдат изтрити завинаги.</string>
     <string name="confirm_overwrite_title">Да заменя ли?</string>
     <string name="confirm_overwrite_body">„%2$s“ вече съществува. Да го заменя ли с „%1$s“?</string>
     <string name="confirm_organize_title">Да подредя ли папката?</string>
     <string name="confirm_organize_body">Ще преместя %1$d файла в „%2$s“ в подпапки.</string>
     <string name="confirm_empty_trash_title">Да изпразня ли кошчето?</string>
-    <string name="confirm_empty_trash_body">Всичко в кошчето на Talkto ще бъде изтрито завинаги.</string>
+    <string name="confirm_empty_trash_body">Всичко в кошчето на ZnaiKo ще бъде изтрито завинаги.</string>
     <string name="confirm_yes">Да</string>
     <string name="confirm_delete_yes">Изтрий</string>
     <string name="confirm_no">Не</string>
-    <string name="notif_confirm_title">Talkto чака потвърждение</string>
+    <string name="notif_confirm_title">ZnaiKo чака потвърждение</string>
     <string name="notif_confirm_body">Докосни, за да прегледаш действието.</string>
 
+    <!-- Reminders & progression -->
+    <string name="notif_channel_reminders">Напомняния</string>
+    <string name="notif_reminder_title">ZnaiKo ти напомня</string>
+    <string name="level_short">Ниво %1$d · %2$s</string>
+    <string name="streak_short">%1$d дни подред</string>
+    <string name="level_up">Ура! Вече съм на ниво %1$d!</string>
+    <string name="tool_device">телефона</string>
+    <string name="tool_notes">бележки</string>
+    <string name="tool_reminders">напомняния</string>
+    <string name="stage_egg">Яйце</string>
+    <string name="stage_baby">Бебе</string>
+    <string name="stage_child">Дете</string>
+    <string name="stage_teen">Тийнейджър</string>
+    <string name="stage_adult">Възрастен</string>
+
+    <!-- 3D, history, profile -->
+    <string name="settings_avatar_3d">3D любимец</string>
+    <string name="settings_record">Записвай разговорите</string>
+    <string name="settings_record_note">Разговорите остават само на телефона. От тях ZnaiKo помни за какво сте говорили и се учи.</string>
+    <string name="settings_profile">Какво знам за теб</string>
+    <string name="settings_profile_empty">Още нищо. Кажи ми „казвам се …“, „обичам …“ или „запомни, че …“.</string>
+    <string name="settings_history">История на разговорите</string>
+    <string name="history_title">История</string>
+    <string name="history_search">Търси в разговорите</string>
+    <string name="history_empty">Няма записани разговори.</string>
+    <string name="history_share">Сподели</string>
+    <string name="history_clear">Изтрий историята</string>
+    <string name="history_clear_confirm_title">Да изтрия ли цялата история?</string>
+    <string name="history_clear_confirm_body">Всички записани разговори ще бъдат изтрити от телефона. Това не може да се върне.</string>
+    <string name="history_you">Ти</string>
+    <string name="history_count">%1$d реплики</string>
+
+    <!-- Voice -->
+    <string name="voice_listening">Слушам…</string>
+    <string name="voice_start">Говори</string>
+    <string name="voice_stop">Спри слушането</string>
+    <string name="settings_hands_free">Разговор без ръце</string>
+    <string name="settings_hands_free_note">След като ти отговоря на глас, пак слушам. Кажи нещо или замълчи, за да спра. Бутонът BG/EN сменя езика на разпознаване.</string>
+
+    <!-- Mood backgrounds -->
+    <string name="backgrounds_title">Фонове по настроение</string>
+    <string name="backgrounds_enabled">Фонът следва настроението</string>
+    <string name="backgrounds_note">Плаж, когато съм щастлив, дъжд, когато съм тъжен, буря, когато съм ядосан… Добави свои снимки за всяко настроение или ме остави да подбера от галерията ти. Снимките се анализират само на телефона.</string>
+    <string name="backgrounds_auto">Подбери снимки от галерията</string>
+    <string name="backgrounds_scanning">Разглеждам снимките… %1$d/%2$d</string>
+    <string name="backgrounds_mood_hint">когато съм %1$s</string>
+    <string name="backgrounds_add">Добави</string>
+    <string name="backgrounds_remove">Махни снимката</string>
+    <string name="mood_happy">щастлив</string>
+    <string name="mood_calm">спокоен</string>
+    <string name="mood_love">влюбен</string>
+    <string name="mood_sad">тъжен</string>
+    <string name="mood_angry">ядосан</string>
+    <string name="mood_sleepy">сънлив</string>
+    <string name="mood_thinking">замислен</string>
+    <string name="mood_confused">объркан</string>
+    <string name="mood_surprised">изненадан</string>
+
     <!-- Foreground service -->
-    <string name="notif_channel_agent">Задачи на Talkto</string>
-    <string name="notif_agent_title">Talkto работи по задача</string>
+    <string name="notif_channel_agent">Задачи на ZnaiKo</string>
+    <string name="notif_agent_title">ZnaiKo работи по задача</string>
 
     <!-- Friendly errors spoken by the avatar -->
     <string name="err_permission">Нямам права за тази папка. Ще ми разрешиш ли достъп до файловете от настройките?</string>
@@ -97,29 +155,98 @@
     <string name="err_network">Нямам връзка с интернет в момента. Опитай пак след малко.</string>
     <string name="err_rate_limited">Малко съм претоварен. Дай ми минутка.</string>
     <string name="err_api_key">Липсва ми API ключ. Добави го от Настройки.</string>
-    <string name="err_api_rejected">Услугата отказа заявката. Пробвай с друга формулировка или снимка.</string>
+    <string name="err_api_rejected">Claude отказа заявката. Пробвай пак след малко.</string>
+    <string name="err_api_rejected_reason">Claude отказа заявката. Причина: %1$s</string>
+    <string name="err_api_key_invalid">Ключът за Claude не става. Провери го в Настройки или го премахни, за да работя офлайн.</string>
+    <string name="err_api_no_credit">В профила ти в Anthropic няма кредит, затова Claude не отговаря. Зареди от console.anthropic.com или премахни ключа, за да работя офлайн.</string>
+    <string name="settings_remove_key">Премахни ключа</string>
+    <string name="settings_key_removed">Ключът е премахнат. Вече работя офлайн.</string>
     <string name="err_capability">Това изисква допълнително разрешение, което още не е включено.</string>
     <string name="err_storage_full">Паметта на телефона е пълна.</string>
     <string name="err_unknown">Опа, нещо се обърка. Но съм тук!</string>
 
     <!-- Wardrobe items and tool names -->
-    <string name="hat_party">Парти</string>
-    <string name="hat_beanie">Зимна</string>
-    <string name="hat_crown">Корона</string>
-    <string name="hat_top_hat">Цилиндър</string>
-    <string name="hat_cap">С козирка</string>
-    <string name="glasses_round">Кръгли</string>
-    <string name="glasses_sunglasses">Слънчеви</string>
-    <string name="glasses_heart">Сърца</string>
-    <string name="glasses_monocle">Монокъл</string>
-    <string name="clothes_scarf">Шал</string>
-    <string name="clothes_bowtie">Папийонка</string>
-    <string name="clothes_hoodie">Суитшърт</string>
-    <string name="clothes_tie">Вратовръзка</string>
     <string name="tool_manage_file">файлове</string>
     <string name="tool_launch_app">отварям приложение</string>
     <string name="tool_terminate_app">затварям приложение</string>
     <string name="tool_generate_avatar">рисувам аватар</string>
     <string name="tool_animate_avatar">мимики</string>
     <string name="perm_shizuku">Shizuku (am force-stop)</string>
+    <string name="settings_voice_character">Гласът на ZnaiKo</string>
+    <string name="settings_voice_preview">Чуй</string>
+    <string name="settings_voice_engine">Гласове на телефона</string>
+    <string name="settings_voice_engine_none">Няма намерени гласове. Инсталирай „Услуги за говор от Google“ и изтегли български глас.</string>
+    <string name="settings_voice_engine_auto">Автоматично</string>
+    <string name="games_title">Игри със ZnaiKo</string>
+    <string name="games_skill">ZnaiKo %1$s играе със сила %2$d от %3$d. С всяко обновление става по-хитър.</string>
+    <string name="game_ttt_note">Три в редица на 3 × 3. Бързо и лесно.</string>
+    <string name="game_four_note">Пускай пулове в колоните и нареди четири.</string>
+    <string name="game_ludo_note">Зарове, пулове и гонитба до вкъщи. Ти срещу ZnaiKo.</string>
+    <string name="game_ludo_four">Четирима играчи (ZnaiKo и двама приятели)</string>
+    <string name="game_chess_note">Истински шах. Ти си с белите.</string>
+    <string name="game_memory_note">Открий еднаквите картинки. ZnaiKo също помни!</string>
+    <string name="game_quick">Бърза игра</string>
+    <string name="game_quick_note">Просто го поразвесели: скача и се върти.</string>
+    <string name="games_close">Затвори</string>
+    <string name="games_again">Нова игра</string>
+    <string name="games_your_turn">Твой ред.</string>
+    <string name="games_pet_turn">ZnaiKo мисли...</string>
+    <string name="ludo_roll">Хвърли зара</string>
+    <string name="ludo_turn">На ход: %1$s</string>
+    <string name="ludo_you">ти</string>
+    <string name="ludo_friend">приятел %1$d</string>
+    <string name="memory_score">Ти: %1$d  ·  ZnaiKo: %2$d</string>
+    <string name="update_title">Обновление до ZnaiKo %1$s!</string>
+    <string name="update_next">До следващото обновление</string>
+    <string name="update_ok">Супер!</string>
+    <string name="update_said">Изтеглих обновление! Вече съм версия %1$s: %2$s.</string>
+    <string name="knowledge_short">v%1$s · знания</string>
+    <string name="age_days">на %1$d дни</string>
+    <string name="lang_code">bg</string>
+    <string name="voice_dialog_prompt">ZnaiKo слуша…</string>
+    <string name="voice_err_network">Нямам интернет за разпознаване на говор. Изтегли офлайн езиковия пакет в настройките на Google.</string>
+    <string name="voice_err_permission">Трябва ми разрешение за микрофона.</string>
+    <string name="voice_err_client">Няма услуга за разпознаване на говор на този телефон.</string>
+    <string name="voice_err_other">Не те чух добре. Опитай пак.</string>
+    <string name="backgrounds_filled">Подбрах %1$d снимки от галерията за различните настроения.</string>
+    <string name="backgrounds_none">Не намерих подходящи снимки в галерията.</string>
+    <string name="settings_language">Език на ZnaiKo</string>
+    <string name="settings_language_note">Екраните, гласът и всичко, което ZnaiKo казва. Командите разбира и на двата езика.</string>
+    <string name="action_learn">Учи</string>
+    <string name="learn_title">Учим заедно</string>
+    <string name="learn_target">Уча:</string>
+    <string name="learn_stats">Научени думи: %1$d · За преговор днес: %2$d · Звезди: %3$d</string>
+    <string name="learn_streak">Учим %1$d дни подред</string>
+    <string name="learn_word_of_day">Дума на деня</string>
+    <string name="learn_listen">Чуй</string>
+    <string name="learn_topics">Теми</string>
+    <string name="learn_topic_progress">%1$d/%2$d</string>
+    <string name="learn_review">Преговор на всичко</string>
+    <string name="learn_practice">Разговор на %1$s с Claude</string>
+    <string name="learn_practice_note">ZnaiKo говори просто, поправя грешките мило и дава подсказки. Иска Claude ключ.</string>
+    <string name="learn_practice_needs_key">За разговор ми трябва Claude ключ. Добави го в Настройки. Дотогава: уроци!</string>
+    <string name="learn_practice_on">Упражнение: %1$s</string>
+    <string name="learn_practice_stop">Край</string>
+    <string name="learn_dictionary_hint">Питай ме и в чата: „как е котка на английски?“ или „какво значи rainbow?“.</string>
+    <string name="lesson_new_word">Нова дума</string>
+    <string name="lesson_next">Напред</string>
+    <string name="lesson_q_picture">Какво е това на %1$s?</string>
+    <string name="lesson_q_to_target">Как е „%1$s“ на %2$s?</string>
+    <string name="lesson_q_meaning">Какво значи „%1$s“?</string>
+    <string name="lesson_q_listen">Слушай и избери</string>
+    <string name="lesson_q_say">Кажи на %1$s:</string>
+    <string name="lesson_q_dialogue">Какво ще отговориш?</string>
+    <string name="lesson_tap_mic">Натисни микрофона и кажи думата</string>
+    <string name="lesson_heard">Чух: %1$s</string>
+    <string name="lesson_skip">Пропусни</string>
+    <string name="lesson_right">Браво!</string>
+    <string name="lesson_wrong">Правилно е: %1$s</string>
+    <string name="lesson_try_again">Не съвсем. Опитай пак!</string>
+    <string name="lesson_done_title">Урокът е готов!</string>
+    <string name="lesson_done_score">%1$d от %2$d верни</string>
+    <string name="lesson_done_learned">Научени думи на %1$s: %2$d</string>
+    <string name="lesson_again">Още един урок</string>
+    <string name="lesson_progress">%1$d / %2$d</string>
+    <string name="lesson_mic">Кажи го</string>
+    <string name="language_switched">Ура! Вече говоря на български. 🇧🇬</string>
 </resources>

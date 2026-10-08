@@ -13,10 +13,17 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    outputs:
+      signed: ${{ steps.signed.outputs.signed }}
     env:
       HAS_KEYSTORE: ${{ secrets.TALKTO_KEYSTORE_B64 != '' }}
+      TALKTO_FEEDBACK_EMAIL: ${{ secrets.TALKTO_FEEDBACK_EMAIL }}
+      TALKTO_REPORT_URL: ${{ secrets.TALKTO_REPORT_URL }}
     steps:
       - uses: actions/checkout@v4
+
+      - id: signed
+        run: echo "signed=$HAS_KEYSTORE" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-java@v4
         with:
@@ -29,15 +36,27 @@ jobs:
         run: ./gradlew :core:test --stacktrace
 
       - name: App unit tests (Robolectric)
-        run: ./gradlew :app:testDebugUnitTest --stacktrace
+        run: ./gradlew :app:testFullDebugUnitTest --stacktrace
 
       - name: Lint
-        run: ./gradlew :app:lintDebug
+        run: ./gradlew :app:lintFullDebug :app:lintPlayDebug
 
       - name: Build debug APK
-        run: ./gradlew :app:assembleDebug
+        run: ./gradlew :app:assembleFullDebug
 
-      - name: Build signed release APK
+      - uses: actions/upload-artifact@v4
+        with:
+          name: talkto-apk
+          path: app/build/outputs/apk/full/debug/*.apk
+          if-no-files-found: error
+
+      # The Play Store takes an Android App Bundle. Without the signing secrets it is built unsigned
+      # (sign it before uploading); with them CI signs both the release APK and the bundle.
+      - name: Build release bundle (AAB)
+        if: env.HAS_KEYSTORE != 'true'
+        run: ./gradlew :app:bundlePlayRelease
+
+      - name: Build signed release APK and bundle
         if: env.HAS_KEYSTORE == 'true'
         env:
           TALKTO_KEYSTORE_B64: ${{ secrets.TALKTO_KEYSTORE_B64 }}
@@ -46,13 +65,49 @@ jobs:
           TALKTO_KEY_PASSWORD: ${{ secrets.TALKTO_KEY_PASSWORD }}
         run: |
           echo "$TALKTO_KEYSTORE_B64" | base64 -d > release.jks
-          TALKTO_KEYSTORE=release.jks ./gradlew :app:assembleRelease
+          TALKTO_KEYSTORE=release.jks ./gradlew :app:assembleFullRelease :app:bundlePlayRelease
 
       - uses: actions/upload-artifact@v4
         with:
-          name: talkto-apk
-          path: app/build/outputs/apk/**/*.apk
+          name: talkto-aab
+          path: app/build/outputs/bundle/playRelease/*.aab
           if-no-files-found: error
+
+      # What Play Console checks, seen before uploading: the DEX size, and 16 KB pages for every 64-bit native library
+      # in the bundle (each LOAD segment aligned to 0x4000 or more). A misaligned library is a warning, not a failure,
+      # so the bundle is still there.
+      - name: Bundle report (DEX size, 16 KB pages)
+        run: |
+          aab=$(ls app/build/outputs/bundle/playRelease/*.aab | head -n1)
+          unzip -l "$aab" 'base/dex/*' | awk '/\.dex$/ {s+=$1} END {printf "Uncompressed DEX: %.1f MB\n", s/1048576}'
+          rm -rf aab-lib && mkdir aab-lib && unzip -o -q "$aab" 'base/lib/arm64-v8a/*' 'base/lib/x86_64/*' -d aab-lib || true
+          for f in $(find aab-lib -name '*.so' | sort); do
+            min=$(readelf -lW "$f" | awk '$1=="LOAD" {print $NF}' | while read a; do printf '%d\n' "$a"; done | sort -n | head -n1)
+            if [ -n "$min" ] && [ "$min" -ge 16384 ]; then echo "OK    16 KB  ${f#aab-lib/}"; else echo "::warning::Not 16 KB aligned (LOAD align $min): ${f#aab-lib/}"; fi
+          done
+
+      # R8's map from the short names back to the real ones: upload it to Play Console with the bundle so crash
+      # reports and warnings (like "b.q.b") show real class names.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: talkto-mapping
+          path: app/build/outputs/mapping/playRelease/mapping.txt
+          if-no-files-found: warn
+
+      - uses: actions/upload-artifact@v4
+        if: env.HAS_KEYSTORE == 'true'
+        with:
+          name: talkto-release-apk
+          path: app/build/outputs/apk/full/release/*.apk
+          if-no-files-found: error
+
+      # For the launch check below: its crash report needs the release APK's own map back to the real names.
+      - uses: actions/upload-artifact@v4
+        if: env.HAS_KEYSTORE == 'true'
+        with:
+          name: talkto-full-mapping
+          path: app/build/outputs/mapping/fullRelease/mapping.txt
+          if-no-files-found: warn
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -61,4 +116,132 @@ jobs:
           path: |
             core/build/reports/tests
             app/build/reports/tests
-            app/build/reports/lint-results-debug.html
+            app/build/reports/lint-results-fullDebug.html
+            app/build/reports/lint-results-playDebug.html
+            app/build/intermediates/mapping/playRelease/minifyPlayReleaseWithR8/missing_rules.txt
+
+  # Opens the debug APK, the release APK and the Play bundle (both shrunk by R8) on an emulator and fails if any of them
+  # crashes, with the stack trace in the log: a build that does not start stops here instead of on a child's phone.
+  launch:
+    needs: build
+    if: needs.build.outputs.signed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: talkto-apk
+          path: apk-debug
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: talkto-release-apk
+          path: apk-release
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: talkto-full-mapping
+          path: mapping
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: talkto-aab
+          path: aab
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: talkto-mapping
+          path: mapping-play
+
+      # The bundle that goes to Play, made into one APK the emulator can install (signed with a throwaway key).
+      - name: Play bundle as one APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          url=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/repos/google/bundletool/releases/latest \
+            | python3 -c "import json,sys; print(next(a['browser_download_url'] for a in json.load(sys.stdin)['assets'] if a['name'].endswith('.jar')))")
+          curl -fsSL -o bundletool.jar "$url"
+          keytool -genkeypair -noprompt -keystore check.keystore -storepass android -keypass android -alias check \
+            -keyalg RSA -keysize 2048 -validity 30 -dname "CN=Launch check"
+          java -jar bundletool.jar build-apks --bundle "$(ls aab/*.aab | head -n1)" --output play.apks --mode=universal \
+            --ks check.keystore --ks-pass pass:android --ks-key-alias check --key-pass pass:android
+          unzip -o -q play.apks universal.apk -d apk-play
+
+      - name: R8 retrace tool
+        run: |
+          v=$(curl -fsSL https://dl.google.com/dl/android/maven2/com/android/tools/r8/maven-metadata.xml | sed -n 's:.*<release>\(.*\)</release>.*:\1:p')
+          curl -fsSL -o r8.jar "https://dl.google.com/dl/android/maven2/com/android/tools/r8/$v/r8-$v.jar" \
+            || echo "::warning::R8 $v not found: a crash is shown with R8's short names"
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Start ZnaiKo on an emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          script: bash .github/scripts/launch-check.sh apk-debug/*.apk com.talkto.app.debug; d=$?; bash .github/scripts/launch-check.sh apk-release/*.apk com.talkto.app mapping/mapping.txt r8.jar; r=$?; bash .github/scripts/launch-check.sh apk-play/universal.apk znaiKo.app mapping-play/mapping.txt r8.jar; p=$?; exit $((d | r | p))
+
+  # The phone gets ZnaiKo from the Releases page, so every build of the working branch that opened on the emulator is
+  # published there and becomes "Latest"; a build that failed the launch check never gets this far. Pull requests and
+  # other branches are not published.
+  release:
+    needs: [build, launch]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/claude/talkto-android-app-k5s2jz'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: talkto-release-apk
+          path: apk
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: talkto-aab
+          path: aab
+
+      - name: Publish on the Releases page
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          ver="1.1.${GITHUB_RUN_NUMBER}"
+          cp apk/*.apk "ZnaiKo-$ver.apk"
+          cp aab/*.aab "ZnaiKo-$ver-play.aab"
+          {
+            echo "Знайко $ver"
+            echo
+            echo "${MESSAGE%%$'\n'*}"
+            echo
+            echo "Файлове:"
+            echo "- ZnaiKo-$ver.apk - за инсталиране направо на телефона"
+            echo "- ZnaiKo-$ver-play.aab - за качване в Google Play Console"
+            echo
+            echo "Преди публикуване CI отвори тази версия на емулатор с Android 15."
+          } > notes.md
+          gh release create "v$ver" "ZnaiKo-$ver.apk" "ZnaiKo-$ver-play.aab" \
+            --target "$GITHUB_SHA" --title "Знайко $ver" --notes-file notes.md --latest
+
+      # Releases that turned out not to open on a phone are taken down (only once a working one is up), so nobody installs
+      # them again. The tag stays. v1.1.94: ML Kit lost its constructors to AGP 9's strict R8 and the app closed at once.
+      - name: Remove releases that do not open
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          for tag in v1.1.94; do
+            if gh release view "$tag" > /dev/null 2>&1; then gh release delete "$tag" --yes && echo "Removed release $tag"; fi
+          done

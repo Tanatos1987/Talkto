@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Google Play version: without the three permissions Play allows only to file managers, launchers and
+     accessibility tools. Launching apps still works through the queries in the main manifest. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:node="remove" />
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:node="remove" />
+    <!-- Photos come through the system photo picker, which needs no permission; the whole-gallery search for mood
+         backgrounds is left out of this version (Play allows broad photo access only as a core feature). -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:node="remove" />
+
+    <application>
+        <service android:name=".apps.TalktoAccessibilityService" tools:node="remove" />
+        <!-- Same service as in the main manifest; the type is repeated here so lint sees it for this version, and the
+             reason Play reads says what this version does (no file management or app control here). -->
+        <service
+            android:name=".agent.AgentService"
+            android:foregroundServiceType="specialUse"
+            tools:node="merge">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="On-device AI companion finishing a reply the user asked for while the app is in the background."
+                tools:replace="android:value" />
+        </service>
+    </application>
+</manifest>

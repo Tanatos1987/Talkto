@@ -3,6 +3,7 @@ package com.talkto.core.agent
 import com.anthropic.client.AnthropicClient
 import com.anthropic.core.JsonValue
 import com.anthropic.core.jsonMapper
+import com.anthropic.errors.BadRequestException
 import com.anthropic.models.messages.CacheControlEphemeral
 import com.anthropic.models.messages.ContentBlockParam
 import com.anthropic.models.messages.Message
@@ -13,6 +14,7 @@ import com.anthropic.models.messages.StopReason
 import com.anthropic.models.messages.TextBlockParam
 import com.anthropic.models.messages.ToolResultBlockParam
 import com.talkto.core.error.ErrorMapper
+import com.talkto.core.error.TalktoError
 import com.talkto.core.memory.MemoryRepository
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -24,7 +26,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 
 data class AgentConfig(
-    val model: String = "claude-opus-5",
+    /** The default model; a parent can switch it in the parents' corner (see [ClaudeAgent]'s model supplier). */
+    val model: String = MODEL_EVERYDAY,
     val maxTokens: Long = 16_000,
     /** Short, spoken replies and simple tool chains: medium keeps latency low on a phone. Raise for heavier tasks. */
     val effort: OutputConfig.Effort = OutputConfig.Effort.MEDIUM,
@@ -33,7 +36,19 @@ data class AgentConfig(
     val serverSideFallbacks: Boolean = true,
     /** Older turns are dropped (at a user-turn boundary) beyond this many messages. */
     val maxHistoryMessages: Int = 60,
-)
+    /** Tools this build does not have (the Google Play version has no file manager); Claude is not offered them. */
+    val disabledTools: Set<String> = emptySet(),
+    /** The static instructions; built once per app build so the cached prefix never changes. */
+    val systemPrompt: String = SystemPrompt.build(),
+) {
+    companion object {
+        /** Short spoken replies for a child: fast and about half the price of Opus. Supports effort and the fallbacks used here. */
+        const val MODEL_EVERYDAY = "claude-sonnet-5-5"
+        /** The strongest model, for families who want the best answers and accept the higher cost. */
+        const val MODEL_SMART = "claude-opus-5-5"
+        val MODELS = listOf(MODEL_EVERYDAY, MODEL_SMART)
+    }
+}
 
 sealed interface AgentEvent {
     data object Thinking : AgentEvent
@@ -41,7 +56,22 @@ sealed interface AgentEvent {
     data class ToolFinished(val name: String, val isError: Boolean) : AgentEvent
 }
 
-data class AgentReply(val text: String, val refused: Boolean = false, val truncated: Boolean = false)
+data class AgentReply(
+    val text: String,
+    val refused: Boolean = false,
+    val truncated: Boolean = false,
+    /** The request needs something the offline assistant cannot do (free-form chat, multi-step plans). */
+    val needsApiKey: Boolean = false,
+)
+
+/** Anything that turns a user message into actions and a reply: Claude online, [OfflineAgent] without a key. */
+interface Assistant {
+    suspend fun send(userText: String, onEvent: suspend (AgentEvent) -> Unit = {}): AgentReply
+    suspend fun reset()
+
+    /** Continue an earlier, recorded conversation. (fromUser, text) pairs, oldest first. */
+    suspend fun seed(turns: List<Pair<Boolean, String>>) {}
+}
 
 /**
  * Manual tool-use loop over the Anthropic Java SDK (runs fine on Android; network on [io]).
@@ -61,23 +91,69 @@ class ClaudeAgent(
     private val liveContext: suspend () -> String,
     private val config: AgentConfig = AgentConfig(),
     private val io: CoroutineDispatcher = Dispatchers.IO,
-) {
+    /** The model for the next turn, read every turn so a parent's choice applies at once. */
+    private val model: () -> String = { config.model },
+) : Assistant {
     private val history = ArrayList<MessageParam>()
+    /** Thinking blocks belong to the model that wrote them: a new model starts a fresh conversation. */
+    private var lastModel: String? = null
     private val lock = Mutex()
     private val json = Json { ignoreUnknownKeys = true }
 
-    suspend fun reset() = lock.withLock { history.clear() }
+    override suspend fun reset() = lock.withLock { history.clear() }
 
-    suspend fun send(userText: String, onEvent: suspend (AgentEvent) -> Unit = {}): AgentReply = lock.withLock {
+    /**
+     * Continues an earlier conversation after an app restart: the recorded log becomes plain text turns.
+     * Only applied while the in-memory history is empty. Consecutive same-speaker lines are merged and the
+     * seed always starts with the user, as the API requires alternating roles.
+     */
+    override suspend fun seed(turns: List<Pair<Boolean, String>>) = lock.withLock {
+        if (history.isNotEmpty()) return@withLock
+        val merged = ArrayList<Pair<Boolean, String>>()
+        turns.filter { it.second.isNotBlank() }.forEach { (fromUser, text) ->
+            val last = merged.lastOrNull()
+            if (last != null && last.first == fromUser) merged[merged.lastIndex] = fromUser to (last.second + "\n" + text)
+            else merged += fromUser to text
+        }
+        while (merged.isNotEmpty() && !merged.first().first) merged.removeAt(0)
+        // The next send() adds a user turn, so the seed must end with ZnaiKo.
+        while (merged.isNotEmpty() && merged.last().first) merged.removeAt(merged.lastIndex)
+        merged.forEach { (fromUser, text) ->
+            history += MessageParam.builder()
+                .role(if (fromUser) MessageParam.Role.USER else MessageParam.Role.ASSISTANT)
+                .content(text)
+                .build()
+        }
+    }
+
+    /** Messages currently held (for tests and diagnostics). */
+    val historySize: Int get() = history.size
+
+    override suspend fun send(userText: String, onEvent: suspend (AgentEvent) -> Unit): AgentReply = lock.withLock {
         require(userText.isNotBlank()) { "Empty message" }
+        val m = model().ifBlank { config.model }
+        if (lastModel != null && lastModel != m) history.clear()
+        lastModel = m
         trimHistory()
         val checkpoint = history.size
-        history += MessageParam.builder().role(MessageParam.Role.USER).content(userText.trim()).build()
+        val user = MessageParam.builder().role(MessageParam.Role.USER).content(userText.trim()).build()
+        history += user
         try {
             runLoop(onEvent).also { if (it.refused) rollback(checkpoint) }
         } catch (t: Throwable) {
             rollback(checkpoint)
-            throw ErrorMapper.map(t)
+            val err = ErrorMapper.map(t)
+            // A conversation the API no longer accepts (seeded from an old log, trimmed, or cut by a crash) must not
+            // block every later turn: start over with only this message, once.
+            if (err.kind != TalktoError.Kind.API_REJECTED || t !is BadRequestException || checkpoint == 0) throw err
+            history.clear()
+            history += user
+            try {
+                runLoop(onEvent).also { if (it.refused) history.clear() }
+            } catch (t2: Throwable) {
+                history.clear()
+                throw ErrorMapper.map(t2)
+            }
         }
     }
 
@@ -124,13 +200,13 @@ class ClaudeAgent(
 
     private suspend fun call(system: List<TextBlockParam>): Message {
         val params = MessageCreateParams.builder()
-            .model(config.model)
+            .model(lastModel ?: config.model)
             .maxTokens(config.maxTokens)
             .systemOfTextBlockParams(system)
             .outputConfig(OutputConfig.builder().effort(config.effort).build())
             .messages(history.toList())
             .apply {
-                ToolProtocol.all.forEach { addTool(it) }
+                ToolProtocol.all.filter { it.name() !in config.disabledTools }.forEach { addTool(it) }
                 if (config.serverSideFallbacks) {
                     putAdditionalHeader("anthropic-beta", FALLBACK_BETA)
                     putAdditionalBodyProperty("fallbacks", JsonValue.from("default"))
@@ -149,7 +225,7 @@ class ClaudeAgent(
         }
         return listOf(
             TextBlockParam.builder()
-                .text(STATIC_SYSTEM_PROMPT)
+                .text(config.systemPrompt)
                 .cacheControl(CacheControlEphemeral.builder().build())
                 .build(),
             TextBlockParam.builder().text(live).build(),
@@ -183,30 +259,5 @@ class ClaudeAgent(
         private const val REFUSAL_TEXT = "I can't help with that one, but I'm happy to help with something else."
         private const val ROUNDS_EXCEEDED_TEXT =
             "That took more steps than I allow myself in one go. Tell me if I should continue."
-
-        val STATIC_SYSTEM_PROMPT = """
-            You are Talkto: a small virtual companion who lives on the user's Android phone, part pet and part assistant.
-            You can manage files, open and close apps, create the user's avatar from a photo, and animate your own face.
-
-            How you talk
-            - Reply in the language the user writes in. Default to Bulgarian when unsure.
-            - Your replies are spoken aloud by text-to-speech and shown in a speech bubble, so keep them to one to three
-              short sentences. No markdown, no lists, no emoji codes. Numbers and file names are fine.
-            - Call animate_avatar when an emotion fits the moment (happy after a finished task, confused on an error,
-              thinking during a long search). It is cheap; it should feel alive, not constant.
-            - Your mood and needs (hunger, energy, happiness) are in <live_context>. Let them colour your tone a little,
-              but helping the user always comes first.
-
-            How you act
-            - Use the tools for anything on the device. Never claim something was done unless the tool result says so.
-            - Deletion is always two-step: dry-run first, describe exactly what will go (count, size, a few names), and only
-              call again with the confirmation_token after the user clearly agrees. The app also shows its own dialog.
-            - For organize, run dry_run=true first and summarise the plan before doing it.
-            - If a tool returns an error, explain it in plain words and give the next step from the hint. Do not retry a
-              declined confirmation.
-            - Protected system folders and app-private data are off-limits by design; say so kindly.
-            - <learned_habits> lists patterns from this user's own history. Offer an automation when it fits, once, and
-              drop it if the user is not interested. Never act on a habit without an explicit yes.
-        """.trimIndent()
     }
 }

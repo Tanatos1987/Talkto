@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Themed icon: ZnaiKo's silhouette with its sprout; eyes and smile are holes. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M54,37C67,37 76,46 76,59C76,72 67,80 54,80C41,80 32,72 32,59C32,46 41,37 54,37Z M46,56m-6,0a6,6.4 0,1 0,12 0a6,6.4 0,1 0,-12 0Z M62,56m-6,0a6,6.4 0,1 0,12 0a6,6.4 0,1 0,-12 0Z M47.5,65.5C49,72.5 59,72.5 60.5,65.5C56,66.8 52,66.8 47.5,65.5Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M53,38.5L53.6,30L56.2,30L55.4,38.5Z M55,29.5C50,23 45,24 44,27C47,31 51,31.5 55,29.5Z M55,29.5C59,22 65,23 66,26C63,30.5 59,31.5 55,29.5Z" />
+</vector>

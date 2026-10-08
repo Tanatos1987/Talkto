@@ -2,7 +2,6 @@ import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
@@ -23,10 +22,38 @@ android {
         applicationId = "com.talkto.app"
         minSdk = 30 // Android 11: MANAGE_EXTERNAL_STORAGE, StorageVolume.directory
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0"
+        // Every CI build gets a higher code, so each bundle can go to the Play Store as an update.
+        val build = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()
+        versionCode = build ?: 1
+        versionName = "1.1." + (build ?: 0)
+        // Where "Обратна връзка" sends its e-mail: the TALKTO_FEEDBACK_EMAIL secret in CI, empty means "pick an app".
+        val feedback = (System.getenv("TALKTO_FEEDBACK_EMAIL") ?: providers.gradleProperty("talkto.feedbackEmail").orNull ?: "").replace("\"", "")
+        buildConfigField("String", "FEEDBACK_EMAIL", "\"$feedback\"")
+        // Where a flagged Claude answer goes without leaving the app (Google Play's rule for AI content): the
+        // TALKTO_REPORT_URL secret in CI, an https address that takes a JSON POST. Empty: parents pass flags on by e-mail.
+        val report = (System.getenv("TALKTO_REPORT_URL") ?: providers.gradleProperty("talkto.reportUrl").orNull ?: "").trim().replace("\"", "")
+        buildConfigField("String", "REPORT_URL", "\"$report\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
+    }
+
+    // Two versions of the same app:
+    // - full: everything, including the file manager and app control (All files access, all apps, accessibility);
+    //   installed directly as an APK, and it keeps the old id so phones that have it keep their ZnaiKo;
+    // - play: for Google Play, whose policy allows those three permissions only to file managers, launchers and
+    //   accessibility tools. The pet, games, tasks, lessons, voice and Claude are the same.
+    flavorDimensions += "store"
+    productFlavors {
+        create("full") {
+            dimension = "store"
+            applicationId = "com.talkto.app"
+            buildConfigField("boolean", "PLAY_STORE", "false")
+        }
+        create("play") {
+            dimension = "store"
+            applicationId = "znaiKo.app"
+            buildConfigField("boolean", "PLAY_STORE", "true")
+        }
     }
 
     signingConfigs {
@@ -132,11 +159,13 @@ dependencies {
 
     // Face landmarks for live portrait
     implementation(libs.mlkit.face.detection)
+    implementation(libs.mlkit.image.labeling)
 
     // Privileged app control (optional at runtime)
     implementation(libs.shizuku.api)
     implementation(libs.shizuku.provider)
-    implementation(libs.hiddenapibypass)
+    // Full version only: Play warns about SDKs that bypass hidden API limits. Called by name in PrivilegedShell.
+    "fullImplementation"(libs.hiddenapibypass)
 
     // Unit tests (JVM, Robolectric)
     testImplementation(libs.junit)

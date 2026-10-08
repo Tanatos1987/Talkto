@@ -82,7 +82,7 @@ class AndroidAppController(private val context: Context) : AppController {
         if (order.size == 1 && !isAvailable(order.first())) {
             throw TalktoError.CapabilityUnavailable(
                 when (order.first()) {
-                    TerminateMethod.ACCESSIBILITY -> "Talkto accessibility service is not enabled"
+                    TerminateMethod.ACCESSIBILITY -> "ZnaiKo accessibility service is not enabled"
                     TerminateMethod.SHIZUKU -> "Shizuku is not running or permission not granted"
                     TerminateMethod.ROOT -> "Device is not rooted or su was denied"
                     else -> "Method not available"

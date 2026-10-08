@@ -1,6 +1,8 @@
 package com.talkto.app.ui
 
 import android.app.Application
+import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import androidx.annotation.StringRes
 import androidx.lifecycle.AndroidViewModel
@@ -11,26 +13,85 @@ import com.talkto.app.TalktoApp
 import com.talkto.app.agent.AgentService
 import com.talkto.app.apps.ShizukuBridge
 import com.talkto.app.apps.TalktoAccessibilityService
-import com.talkto.app.avatar.OutfitConfig
+import com.talkto.core.look.CreatureLook
+import com.talkto.core.look.HouseLook
+import com.talkto.core.look.OutfitConfig
+import com.talkto.app.quiz.QuizController
+import com.talkto.core.commands.AppCommand
+import com.talkto.core.pet.KnowledgeSource
+import com.talkto.core.profile.AboutYou
+import com.talkto.core.shop.ShopItem
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import com.talkto.core.age.AgeRules
+import com.talkto.core.age.Birth
+import com.talkto.core.age.Feature
+import com.talkto.core.missions.Missions
+import com.talkto.core.missions.MissionsToday
+import com.talkto.core.missions.SeasonEvent
+import com.talkto.core.story.Challenge
+import com.talkto.core.story.Chapter
+import com.talkto.core.story.Visits
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import com.talkto.app.files.StorageAccess
+import com.talkto.app.games.GameController
+import com.talkto.app.learn.LearnData
+import com.talkto.app.learn.LessonController
 import com.talkto.core.avatar.AnimationCommand
 import com.talkto.core.avatar.AvatarStyle
 import com.talkto.core.avatar.Expression
 import com.talkto.core.avatar.Gesture
+import com.talkto.app.background.BackgroundConfig
+import com.talkto.app.avatar.SpeechEngine
+import com.talkto.app.voice.VoiceLanguage
+import com.talkto.core.voice.VoicePreset
+import com.talkto.app.voice.VoiceState
+import com.talkto.core.history.Utterance
+import com.talkto.core.scene.MoodScene
 import com.talkto.core.memory.Habit
+import com.talkto.core.profile.Fact
+import com.talkto.core.games.GameKind
+import com.talkto.core.i18n.Lang
+import com.talkto.core.learn.Topic
+import com.talkto.core.pet.ZnaiKoUpdate
+import com.talkto.core.touch.BodyLocator
+import com.talkto.core.touch.Touch
+import com.talkto.core.touch.TouchKind
+import com.talkto.core.touch.TwirlInput
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-data class SystemLine(@StringRes val res: Int, val atMs: Long)
+/** A line for the speech bubble that does not come from the assistant: a string resource, or ready [text]. */
+data class SystemLine(@StringRes val res: Int, val atMs: Long, val args: List<Any> = emptyList(), val text: String? = null)
 
 data class PermissionState(
     val allFiles: Boolean = false,
     val accessibility: Boolean = false,
     val shizuku: Boolean = false,
+)
+
+/**
+ * A friend's visit from "The stolen colours": knocking ([left] null), waiting for the help ([left] tasks still to do),
+ * saying thank you ([won]), or a finished chapter read again ([reread]).
+ */
+data class VisitUi(
+    val chapter: Chapter,
+    val left: Int? = null,
+    val won: Boolean = false,
+    val reread: Boolean = false,
+    /** What the friend asks this child for: the chapter's own help, or a drawing or a tale for a younger child. */
+    val challenge: Challenge = chapter.challenge,
 )
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -45,6 +106,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val confirmation = c.confirmations.pending
     val settings = c.settings.settings
     val outfit: StateFlow<OutfitConfig> = c.petStore.outfit.stateIn(viewModelScope, SharingStarted.Eagerly, OutfitConfig())
+    /** How this ZnaiKo looks (the creator) and its house. */
+    val look: StateFlow<CreatureLook> = c.petStore.look.stateIn(viewModelScope, SharingStarted.Eagerly, CreatureLook())
+    val house: StateFlow<HouseLook> = c.petStore.house.stateIn(viewModelScope, SharingStarted.Eagerly, HouseLook())
+    /** Coins just earned, for the "+5" that floats up. */
+    val coinGains = c.pet.coinGains
 
     private val _permissions = MutableStateFlow(PermissionState())
     val permissions: StateFlow<PermissionState> = _permissions.asStateFlow()
@@ -56,24 +122,753 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _systemLine = MutableStateFlow<SystemLine?>(null)
     val systemLine: StateFlow<SystemLine?> = _systemLine.asStateFlow()
 
-    init {
-        val first = if (c.errors.consumeCrashMarker()) R.string.crashed_last_time else R.string.greeting
-        _systemLine.value = SystemLine(first, System.currentTimeMillis())
+    /** What the child may open, by the birth month a parent entered (everything until then) and what a parent opened. */
+    val ageRules: StateFlow<AgeRules> = c.settings.settings.map { it.ageRules() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, c.settings.settings.value.ageRules())
+
+    fun rules(): AgeRules = c.settings.settings.value.ageRules()
+
+    /**
+     * The one check every way into an activity passes: the buttons, what the child says or types, Claude's pet tool and
+     * the friends' visits. True when [feature] fits the child's age or a parent opened it; otherwise nothing opens and
+     * ZnaiKo says kindly that it is for bigger children.
+     */
+    private fun allowed(feature: Feature?): Boolean {
+        if (feature == null || rules().allows(feature)) return true
+        val l = c.language.current
+        val name = feature.label(l)
+        sayText(l.pick("„$name“ е за по-големи деца. Хайде да изберем нещо друго!", "\"$name\" is for bigger children. Let's pick something else!"), Expression.THINKING)
+        return false
+    }
+
+    /** Board and card games against ZnaiKo. */
+    val games = GameController(
+        c.pet, c.avatar, { c.settings.settings.value.voiceEnabled }, viewModelScope, lang = { c.language.current },
+        memoryPairs = { rules().memoryPairs },
+    )
+
+    /** Language lessons with ZnaiKo. */
+    val lessons = LessonController(
+        c.learning, c.pet, c.avatar, { c.settings.settings.value.voiceEnabled }, { c.language.current }, viewModelScope,
+        onActivity = { c.activity.record(it) },
+        rules = ::rules,
+    )
+
+    /** Maths tasks and trivia. */
+    val quiz = QuizController(
+        c.petStore, c.pet, c.avatar, c.profile, { c.settings.settings.value.voiceEnabled }, { c.language.current }, viewModelScope,
+        onActivity = { c.activity.record(it) },
+        ask = { system, prompt -> askClaude(system, prompt) },
+        rules = ::rules,
+    )
+
+    /** One question to Claude, or null when Claude is off, unreachable or declines. */
+    private suspend fun askClaude(system: String, prompt: String): String? {
+        if (!c.settings.settings.value.claudeOn) return null
+        return runCatching { c.oneShot.ask(system, prompt) }.getOrNull()
+    }
+
+    /** Claude is on: the screens show the buttons that need it. */
+    fun claudeOn(): Boolean = c.settings.settings.value.claudeOn
+
+    /** Today's question of the day was answered already. */
+    fun dailyDone(): Boolean = quiz.data.value.dailyDay == c.activity.today()
+
+    fun startDaily() {
+        if (!allowed(Feature.TRIVIA)) return
+        comeOut()
+        quiz.startDaily(c.activity.today())
+    }
+
+    /** Five questions Claude writes about what the child likes (from the profile); the built-in quiz without Claude. */
+    fun startSmartTrivia() {
+        if (!allowed(Feature.TRIVIA)) return
+        comeOut()
+        val l = c.language.current
+        sayText(l.pick("Измислям въпроси специално за теб…", "I'm making up questions just for you…"), Expression.THINKING)
         viewModelScope.launch {
-            c.errors.notices.collect { n -> say(n.message, n.expression) }
+            val likes = runCatching { c.profile.all() }.getOrDefault(emptyList())
+                .filter { it.key.startsWith("likes:") || it.key.startsWith("favourite:") }
+                .map { it.value }
+            val age = c.settings.settings.value.age()
+            val text = askClaude(com.talkto.core.quiz.SmartQuiz.system(l, age), com.talkto.core.quiz.SmartQuiz.prompt(l, likes))
+            val questions = text?.let { com.talkto.core.quiz.SmartQuiz.parse(it, l) }.orEmpty()
+            if (questions.isEmpty()) sayText(l.pick("Сега ще играем с моите въпроси.", "Let's play with my own questions this time."), Expression.HAPPY)
+            quiz.startTriviaWith(questions)
+        }
+    }
+
+    /** Fables, fairy tales and riddles read by ZnaiKo. */
+    val tales = com.talkto.app.story.TaleController(
+        c.pet, c.avatar, { c.settings.settings.value.voiceEnabled }, { c.language.current }, viewModelScope,
+        onActivity = { c.activity.record(it) },
+    )
+
+    private val _bedtime = MutableStateFlow(false)
+    /** ZnaiKo is going to bed: offer a bedtime story. */
+    val bedtime: StateFlow<Boolean> = _bedtime.asStateFlow()
+
+    fun dismissBedtime() { _bedtime.value = false }
+
+    private val _screens = MutableSharedFlow<AppCommand>(extraBufferCapacity = 4)
+    /** Places asked for by voice or text (house, shop, creator, "get to know me"); the screen opens them. */
+    val screens: SharedFlow<AppCommand> = _screens.asSharedFlow()
+
+    /** ZnaiKo's language; changing it rebuilds the screen in that language. */
+    val language: StateFlow<Lang> = c.language.lang
+    val learnData: StateFlow<LearnData> = c.learning.data
+    /** Chat practice in this language is on. */
+    val practice: StateFlow<Lang?> = c.agentSession.practice
+    /** "Научи ме на английски" said in the chat: open the lessons. */
+    val lessonRequests = c.agentSession.lessonRequests
+
+    /**
+     * Switches everything to [lang]: the screens (the activity is rebuilt with the new resources), ZnaiKo's voice and
+     * replies, and what the microphone listens for. ZnaiKo says so in the new language, so the change is heard at once.
+     */
+    fun setLanguage(lang: Lang) {
+        if (lang == c.language.current) return
+        c.avatar.stopSpeaking()
+        c.language.set(lang)
+        viewModelScope.launch {
+            val listening = c.settings.settings.value.voiceLanguage
+            if (listening != VoiceLanguage.AUTO.name) c.settings.setVoiceLanguage(if (lang == Lang.EN) VoiceLanguage.EN.name else VoiceLanguage.BG.name)
+            say(R.string.language_switched, Expression.HAPPY)
+        }
+    }
+
+    /** The flag on the main screen: Bulgarian <-> English. */
+    fun toggleLanguage() = setLanguage(if (c.language.current == Lang.BG) Lang.EN else Lang.BG)
+
+    fun setLearnTarget(lang: Lang) = c.learning.setTarget(lang)
+
+    fun learnTarget(): Lang = c.learning.target
+
+    fun startLesson(topic: Topic?, speaking: Boolean) = lessons.start(topic, speaking)
+
+    /** Listens for a "say it" answer in the language being learned. */
+    fun lessonListen(dialogOnly: Boolean = false) {
+        val target = lessons.state.value?.target ?: return
+        c.avatar.stopSpeaking()
+        if (dialogOnly) c.voice.preferDialog = true
+        c.voice.start(if (target == Lang.EN) VoiceLanguage.EN else VoiceLanguage.BG) { heard -> lessons.onHeard(heard) }
+    }
+
+    fun startPractice() {
+        if (allowed(Feature.LANGUAGE_CHAT)) viewModelScope.launch { c.agentSession.beginPractice(c.learning.target) }
+    }
+
+    fun stopPractice() = c.agentSession.stopPractice()
+
+    private val _pendingUpdates = MutableStateFlow<List<ZnaiKoUpdate>>(emptyList())
+    /** Updates waiting to be shown, oldest first. */
+    val pendingUpdates: StateFlow<List<ZnaiKoUpdate>> = _pendingUpdates.asStateFlow()
+
+    init {
+        val crashed = c.errors.consumeCrashMarker()
+        viewModelScope.launch {
+            val hasKey = c.settings.awaitLoaded().claudeOn
+            val first = when {
+                crashed -> R.string.crashed_last_time
+                hasKey -> R.string.greeting
+                else -> R.string.greeting_offline
+            }
+            _systemLine.value = SystemLine(first, System.currentTimeMillis())
+        }
+        viewModelScope.launch {
+            c.errors.notices.collect { n ->
+                if (n.reason != null) say(R.string.err_api_rejected_reason, n.expression, n.reason) else say(n.message, n.expression)
+            }
+        }
+        viewModelScope.launch {
+            c.pet.levelUps.collect { level -> say(R.string.level_up, Expression.LOVE, level) }
+        }
+        viewModelScope.launch {
+            c.agentSession.gameRequests.collect { kind -> if (allowed(Feature.of(kind))) { comeOut(); games.start(kind) } }
+        }
+        viewModelScope.launch {
+            c.agentSession.feedRequests.collect { food -> feed(food, speak = false) }
+        }
+        viewModelScope.launch {
+            c.agentSession.storyRequests.collect { req ->
+                if (req.riddle && !allowed(Feature.RIDDLES)) return@collect
+                comeOut()
+                if (req.riddle) tales.riddle() else tales.read(kind = req.kind, bedtime = req.bedtime)
+            }
+        }
+        // A long reply from Claude is a tale it made up: show it on a full page as well.
+        viewModelScope.launch {
+            c.agentSession.state.collect { s ->
+                val last = s.messages.lastOrNull() ?: return@collect
+                if (!last.fromUser && last.text.length > LONG_REPLY && last.atMs > shownTaleAt && System.currentTimeMillis() - last.atMs < 10_000) {
+                    shownTaleAt = last.atMs
+                    tales.show(last.text)
+                }
+            }
+        }
+        viewModelScope.launch {
+            c.agentSession.appRequests.collect { cmd ->
+                if (!allowed(Feature.of(cmd))) return@collect
+                when (cmd) {
+                    AppCommand.GoHome -> goHome()
+                    AppCommand.ComeOut -> comeOut()
+                    is AppCommand.Math -> {
+                        comeOut()
+                        quiz.startMath(
+                            cmd.grade,
+                            topic = when {
+                                cmd.geometry -> com.talkto.core.quiz.MathTopic.GEOMETRY
+                                cmd.algebra -> com.talkto.core.quiz.MathTopic.ALGEBRA
+                                else -> com.talkto.core.quiz.MathTopic.MIXED
+                            },
+                        )
+                    }
+                    is AppCommand.Trivia -> { comeOut(); quiz.startTrivia(cmd.category) }
+                    AppCommand.Tetris -> openArcade(Arcade.TETRIS)
+                    AppCommand.Sweets -> openArcade(Arcade.SWEETS)
+                    else -> _screens.tryEmit(cmd)
+                }
+            }
+        }
+        viewModelScope.launch {
+            c.pet.updates.collect { u ->
+                _pendingUpdates.update { it + u }
+                val line = c.language.text(R.string.update_said, u.version, u.title(c.language.current))
+                _systemLine.value = SystemLine(0, System.currentTimeMillis(), text = line)
+                c.avatar.play(AnimationCommand(Expression.LOVE, Gesture.SPIN, holdMs = 3_000))
+                c.avatar.speak(line, voice = c.settings.settings.value.voiceEnabled)
+            }
         }
         refreshPermissions()
     }
 
-    private suspend fun say(@StringRes res: Int, expression: Expression) {
-        _systemLine.value = SystemLine(res, System.currentTimeMillis())
-        c.avatar.play(AnimationCommand(expression, if (expression == Expression.HAPPY) Gesture.BOUNCE else Gesture.SHAKE))
-        c.avatar.speak(getApplication<Application>().getString(res), voice = c.settings.settings.value.voiceEnabled)
+    private suspend fun say(@StringRes res: Int, expression: Expression, vararg args: Any) {
+        _systemLine.value = SystemLine(res, System.currentTimeMillis(), args.toList())
+        val gesture = when (expression) {
+            Expression.HAPPY -> Gesture.BOUNCE
+            Expression.LOVE -> Gesture.SPIN
+            else -> Gesture.SHAKE
+        }
+        c.avatar.play(AnimationCommand(expression, gesture))
+        c.avatar.speak(c.language.text(res, *args), voice = c.settings.settings.value.voiceEnabled)
     }
 
     fun onVisible(visible: Boolean) {
         c.confirmations.uiVisible = visible
         if (visible) refreshPermissions()
+        countMinutes(visible)
+    }
+
+    // ------------------------------------------------- flagged answers
+
+    /** Answers from Claude the child flagged with 🚩. */
+    val flags: StateFlow<com.talkto.core.safety.FlagLog> = c.flags.log
+
+    /** This build sends flags to the authors by itself; otherwise a parent e-mails them from the parents' corner. */
+    val flagsAutomatic: Boolean get() = c.flags.automatic
+
+    /**
+     * The child flagged something Claude said. It is kept for the parents (and sent to the authors when this build
+     * can), ZnaiKo stops reading it and says thank you, and its line takes the answer's place in the speech bubble.
+     * [question] is what the child said before it; by default the chat line just before the answer.
+     */
+    fun flagReply(text: String, reason: com.talkto.core.safety.FlagReason, question: String? = null) {
+        if (text.isBlank()) return
+        val asked = question ?: questionBefore(text)
+        c.flags.flag(text, asked, reason, c.settings.settings.value.claudeModel, c.language.current)
+        c.avatar.stopSpeaking()
+        val line = c.language.current.pick(
+            "Благодаря, че ми каза! Скрих този отговор и ще внимавам повече.",
+            "Thank you for telling me! I've hidden that answer and I'll be more careful.",
+        )
+        _systemLine.value = SystemLine(0, System.currentTimeMillis(), text = line)
+        viewModelScope.launch {
+            c.avatar.play(AnimationCommand(Expression.SAD, Gesture.NOD, holdMs = 2_000))
+            c.avatar.speak(line, voice = c.settings.settings.value.voiceEnabled)
+        }
+    }
+
+    /** What the child said right before [answer] in the chat on screen. */
+    private fun questionBefore(answer: String): String? {
+        val messages = c.agentSession.state.value.messages
+        val i = messages.indexOfLast { !it.fromUser && it.text == answer }
+        if (i <= 0) return null
+        return messages.subList(0, i).lastOrNull { it.fromUser }?.text
+    }
+
+    /** A line of the conversation log flagged from the history: the question is the child's line before it. */
+    fun flagFromHistory(u: Utterance, reason: com.talkto.core.safety.FlagReason) {
+        val items = _historyItems.value
+        val i = items.indexOfFirst { it.id == u.id }
+        // The whole log is shown newest first, so what was said before the answer is the next line in the list.
+        // Search results skip lines, so there the neighbour may belong to another talk.
+        val asked = if (i < 0 || historyQuery.isNotBlank()) null
+        else items.getOrNull(i + 1)?.takeIf { it.speaker == com.talkto.core.history.Speaker.USER }?.text
+        flagReply(u.text, reason, asked ?: "")
+    }
+
+    fun removeFlag(id: Long) = c.flags.remove(id)
+
+    fun clearFlags() = c.flags.clear()
+
+    /** The flags not passed on yet, as an e-mail the parent reads before sending. */
+    fun emailFlags(context: Context) {
+        val waiting = c.flags.log.value.waiting
+        if (waiting.isEmpty()) return
+        val lang = c.language.current
+        com.talkto.app.ui.feedback.sendEmail(
+            context,
+            com.talkto.core.safety.FlagReport.subject(lang),
+            com.talkto.core.safety.FlagReport.email(waiting, com.talkto.app.BuildConfig.VERSION_NAME, lang),
+        )
+        c.flags.markEmailed(waiting.map { it.atMs })
+    }
+
+    // ------------------------------------------------- parents' corner and screen time
+
+    /** What the child did, day by day. */
+    val activityLog: StateFlow<com.talkto.core.parent.ActivityLog> = c.activity.log
+
+    fun today(): Long = c.activity.today()
+
+    /** Today's time is used up: ZnaiKo rests until tomorrow or until a parent adds time. */
+    val timeUp: StateFlow<Boolean> = combine(c.activity.log, c.settings.settings) { log, s ->
+        com.talkto.core.parent.ScreenTime.timeUp(s.dailyLimitMinutes, log.on(c.activity.today()))
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    private var minuteCounter: Job? = null
+    private var restSaid = false
+
+    /** Counts the minutes the app is on screen; stops when it is not. */
+    private fun countMinutes(visible: Boolean) {
+        if (!visible) {
+            minuteCounter?.cancel()
+            minuteCounter = null
+            return
+        }
+        if (minuteCounter?.isActive == true) return
+        minuteCounter = viewModelScope.launch {
+            while (isActive) {
+                delay(60_000)
+                c.activity.record(com.talkto.core.parent.Activity.MINUTE)
+                checkScreenTime()
+            }
+        }
+    }
+
+    private fun checkScreenTime() {
+        val limit = c.settings.settings.value.dailyLimitMinutes
+        val today = c.activity.todayActivity()
+        val l = c.language.current
+        when {
+            com.talkto.core.parent.ScreenTime.timeUp(limit, today) -> if (!restSaid) {
+                restSaid = true
+                lessons.close(); quiz.close(); games.close(); closeArcade(); tales.close(); _bedtime.value = false
+                closeDrawing(); _reread.value = null
+                c.pet.setSleeping(true)
+                sayText(l.pick("Време е за почивка! Чудесно си поиграхме. Ела пак утре!", "Time for a rest! We had a lovely time. Come back tomorrow!"), Expression.SLEEPY)
+            }
+            com.talkto.core.parent.ScreenTime.warnNow(limit, today) ->
+                sayText(l.pick("Още пет минутки и ще трябва да си почина.", "Five more minutes, then I need a rest."), Expression.SLEEPY)
+            else -> restSaid = false
+        }
+    }
+
+    private fun sayText(text: String, expression: Expression) {
+        _systemLine.value = SystemLine(0, System.currentTimeMillis(), text = text)
+        c.avatar.play(AnimationCommand(expression, Gesture.NOD, holdMs = 2_000))
+        viewModelScope.launch { c.avatar.speak(text, voice = c.settings.settings.value.voiceEnabled) }
+    }
+
+    /** True when [pin] is the parents' PIN. */
+    fun checkPin(pin: String): Boolean {
+        val s = c.settings.settings.value
+        return com.talkto.core.parent.ParentPin.matches(pin, s.parentPinSalt, s.parentPinHash)
+    }
+
+    fun setPin(pin: String) = viewModelScope.launch {
+        if (!com.talkto.core.parent.ParentPin.valid(pin)) return@launch
+        val salt = com.talkto.core.parent.ParentPin.newSalt()
+        c.settings.setParentPin(com.talkto.core.parent.ParentPin.hash(pin, salt), salt)
+    }
+
+    /** A forgotten PIN: the PIN, the keys and the family server are removed, and ZnaiKo goes offline. */
+    fun resetParent() = viewModelScope.launch {
+        c.settings.resetParent()
+        c.agentSession.newConversation()
+    }
+
+    /** Extra minutes for today, given by a parent from the rest screen. */
+    fun addMinutes(minutes: Int) {
+        c.activity.addBonus(minutes)
+        restSaid = false
+        c.pet.setSleeping(false)
+    }
+
+    fun setAiEnabled(enabled: Boolean) = viewModelScope.launch { c.settings.setAiEnabled(enabled) }
+
+    fun setDailyLimit(minutes: Int) = viewModelScope.launch {
+        c.settings.setDailyLimit(minutes)
+        restSaid = false
+    }
+
+    /** The child's month and year of birth, from the first-start screen or the parents' corner. */
+    fun setBirth(year: Int, month: Int) = viewModelScope.launch {
+        val today = java.time.LocalDate.now()
+        c.settings.setBirth(Birth(year, month))
+        // Entered in the birth month itself: no congratulations for a birthday that may be weeks away or long past.
+        if (today.monthValue == month) c.settings.setBirthdayGreeted(today.year)
+    }
+
+    /** A parent opens [feature] to a child younger than it is meant for, or closes it again. */
+    fun setUnlocked(feature: Feature, on: Boolean) = viewModelScope.launch { c.settings.setUnlocked(feature, on) }
+
+    /** Morning and evening notes (minutes after midnight, -1 off); armed at once. */
+    fun setRoutines(morning: Int, evening: Int) = viewModelScope.launch {
+        c.settings.setRoutines(morning, evening)
+        runCatching { c.routines.apply(morning, evening) }
+    }
+
+    fun setClaudeModel(model: String) = viewModelScope.launch { c.settings.setClaudeModel(model) }
+
+    /** Saves the family server; only https addresses are accepted. Returns false for anything else. */
+    fun setProxyUrl(url: String): Boolean {
+        val u = url.trim()
+        if (u.isNotEmpty() && (!u.startsWith("https://") || u.length < 12)) return false
+        viewModelScope.launch {
+            c.settings.setProxyUrl(u)
+            c.agentSession.newConversation()
+        }
+        return true
+    }
+
+    /** Words learned so far in the language being practised. */
+    fun wordsLearned(): Int = c.learning.data.value.state.learned(c.learning.target)
+
+    fun setLearnWriting(on: Boolean) = c.learning.setWriting(on)
+
+    // ------------------------------------------------------- badges and the weekly praise
+
+    init {
+        // Badges: whenever progress changes, any newly earned badge is kept, paid and celebrated.
+        viewModelScope.launch {
+            c.activity.ready.first { it }
+            c.pet.ready.first { it }
+            combine(c.learning.data, quiz.data, c.pet.state, c.activity.log) { learn, q, p, log ->
+                val days = log.days
+                com.talkto.core.pet.BadgeStats(
+                    wordsLearned = Lang.entries.sumOf { learn.state.learned(it) },
+                    lessons = learn.state.lessons,
+                    learnStreak = learn.state.streak,
+                    mathSolved = q.mathSolved,
+                    triviaRight = q.triviaRight,
+                    level = p.level,
+                    visitStreak = p.streakDays,
+                    games = days.sumOf { it.games },
+                    stories = days.sumOf { it.stories },
+                ) to p.badges
+            }.collect { (stats, have) ->
+                val fresh = com.talkto.core.pet.Badge.newOnes(stats, have)
+                if (fresh.isEmpty()) return@collect
+                c.pet.award(fresh)
+                val l = c.language.current
+                val first = fresh.first()
+                val more = fresh.size - 1
+                val line = l.pick("Нова значка: ${first.emoji} ${first.bg}!", "New badge: ${first.emoji} ${first.en}!") +
+                    if (more > 0) l.pick(" И още $more!", " And $more more!") else ""
+                sayText(line, Expression.LOVE)
+            }
+        }
+        // Once a week ZnaiKo says what the child did in the last seven days.
+        viewModelScope.launch {
+            c.activity.ready.first { it }
+            c.pet.ready.first { it }
+            val today = c.activity.today()
+            val last = c.pet.state.value.weeklyPraiseDay
+            if (last <= 0L) { c.pet.setWeeklyPraiseDay(today); return@launch }
+            if (today - last < 7) return@launch
+            c.pet.setWeeklyPraiseDay(today)
+            val week = c.activity.log.value.weekTotal(today - 1)
+            com.talkto.core.pet.WeeklyPraise.text(week, c.language.current)?.let { line ->
+                delay(9_000) // after the greeting and the morning words
+                sayText(line, Expression.LOVE)
+            }
+        }
+        // Morning and evening: ZnaiKo's routine words, once per morning or evening while the app runs.
+        viewModelScope.launch {
+            c.activity.ready.first { it }
+            val now = java.time.LocalDateTime.now()
+            val kind = when (now.hour) {
+                in 5..10 -> com.talkto.core.routine.RoutineKind.MORNING
+                in 19..22 -> com.talkto.core.routine.RoutineKind.EVENING
+                else -> return@launch
+            }
+            val key = "${now.toLocalDate()}:$kind"
+            if (routineSaid == key) return@launch
+            routineSaid = key
+            delay(2_500) // after the greeting
+            val name = runCatching { c.profile.get("name") }.getOrNull()
+            val line = com.talkto.core.routine.Routines.line(kind, now.toLocalDate(), c.language.current, name)
+            sayText(line, if (kind == com.talkto.core.routine.RoutineKind.MORNING) Expression.HAPPY else Expression.SLEEPY)
+        }
+    }
+
+    // ------------------------------------------------------- daily missions and holidays
+
+    /** Today's three missions with their progress, and the holiday when today is one. */
+    val missions: StateFlow<MissionsToday> = combine(c.activity.log, ageRules) { log, rules -> missionsFor(log, rules) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, missionsFor(c.activity.log.value))
+
+    /** Only missions the child's age can do: drawing instead of sums for the youngest. */
+    private fun missionsFor(log: com.talkto.core.parent.ActivityLog, rules: AgeRules = rules()): MissionsToday {
+        val day = c.activity.today()
+        return Missions.today(day, java.time.LocalDate.ofEpochDay(day), log.on(day), rules)
+    }
+
+    init {
+        // Each mission done is cheered; all three pay the reward once a day (double on a holiday).
+        viewModelScope.launch {
+            c.activity.ready.first { it }
+            c.pet.ready.first { it }
+            // What was done before the app opened is not announced again.
+            val start = missionsFor(c.activity.log.value)
+            var seenDay = start.day
+            var seen = start.done.toSet()
+            var paidDay = -1L
+            missions.collect { m ->
+                if (m.day != seenDay) { seenDay = m.day; seen = emptySet() }
+                val fresh = m.done.filter { it !in seen }
+                seen = seen + fresh
+                val l = c.language.current
+                if (m.allDone && !m.claimed && paidDay != m.day) {
+                    paidDay = m.day
+                    c.activity.missionsDone()
+                    val times = Missions.rewardTimes(m.event)
+                    c.pet.earn(com.talkto.core.shop.CoinReason.MISSIONS, times)
+                    val coins = com.talkto.core.shop.CoinReason.MISSIONS.coins * times
+                    sayText(Missions.doneLine(m.missions.last(), 0, l) + l.pick(" Печелиш $coins монети!", " You win $coins coins!"), Expression.LOVE)
+                } else {
+                    fresh.lastOrNull()?.let { sayText(Missions.doneLine(it, m.missions.size - m.done.size, l), Expression.HAPPY) }
+                }
+            }
+        }
+        // The birth month: ZnaiKo congratulates once a year, after the hello.
+        viewModelScope.launch {
+            val s = c.settings.awaitLoaded()
+            val today = java.time.LocalDate.now()
+            val birth = s.birth ?: return@launch
+            if (!birth.birthdayMonth(today) || s.birthdayGreetedYear >= today.year) return@launch
+            c.settings.setBirthdayGreeted(today.year)
+            delay(6_000)
+            val l = c.language.current
+            val age = birth.age(today)
+            sayText(l.pick("Честит рожден ден! Този месец ставаш на $age години!", "Happy birthday! You turn $age this month!"), Expression.LOVE)
+        }
+        // A holiday: ZnaiKo's greeting once a day, after the hello and the morning words.
+        viewModelScope.launch {
+            c.activity.ready.first { it }
+            val today = java.time.LocalDate.now()
+            val event = SeasonEvent.on(today) ?: return@launch
+            if (holidaySaid == today.toEpochDay()) return@launch
+            holidaySaid = today.toEpochDay()
+            delay(14_000)
+            val name = runCatching { c.profile.get("name") }.getOrNull()
+            sayText(event.greeting(c.language.current, name), Expression.LOVE)
+        }
+    }
+
+    // ------------------------------------------------------- drawing
+
+    private val _drawingOpen = MutableStateFlow(false)
+    /** The drawing page is open. */
+    val drawingOpen: StateFlow<Boolean> = _drawingOpen.asStateFlow()
+
+    /** The gallery, newest first. */
+    val drawings = c.drawings.drawings
+
+    private val _drawPrompt = MutableStateFlow<com.talkto.core.learn.Word?>(null)
+    /** What ZnaiKo asked the child to draw, if anything. */
+    val drawPrompt: StateFlow<com.talkto.core.learn.Word?> = _drawPrompt.asStateFlow()
+
+    private val _drawLine = MutableStateFlow<String?>(null)
+    /** What ZnaiKo just said on the drawing page. */
+    val drawLine: StateFlow<String?> = _drawLine.asStateFlow()
+
+    fun openDrawing() {
+        comeOut()
+        _drawingOpen.value = true
+        viewModelScope.launch { runCatching { c.drawings.load() } }
+        val l = c.language.current
+        drawSay(l.pick("Какво ще нарисуваш днес? Ако искаш идея, натисни 💡.", "What will you draw today? Tap 💡 if you'd like an idea."), Expression.HAPPY)
+    }
+
+    fun closeDrawing() {
+        c.avatar.stopSpeaking()
+        _drawingOpen.value = false
+        _drawPrompt.value = null
+        _drawLine.value = null
+    }
+
+    /** ZnaiKo asks for something to draw, with its word in the language being learned. */
+    fun newDrawPrompt() {
+        val w = com.talkto.core.draw.Drawing.prompt(not = _drawPrompt.value)
+        _drawPrompt.value = w
+        val l = c.language.current
+        val target = c.learning.target
+        val learn = if (target != l) l.pick(" На ${target.nameIn(l)} е „${w.text(target)}“.", " In ${target.nameIn(l)} it's \"${w.text(target)}\".") else ""
+        drawSay(com.talkto.core.draw.Drawing.promptLine(w, l) + learn, Expression.THINKING)
+    }
+
+    /**
+     * The child finished a drawing and named it ([title] may be empty): it is kept in the gallery, ZnaiKo says what it
+     * sees, and the first few of the day earn coins. [onSaved] runs when it was kept, so the page can be cleared.
+     */
+    fun saveDrawing(strokes: List<com.talkto.core.draw.Stroke>, width: Int, height: Int, title: String, onSaved: () -> Unit) = viewModelScope.launch {
+        val l = c.language.current
+        if (com.talkto.core.draw.Drawing.coverage(strokes) < com.talkto.core.draw.Drawing.MIN_COVERAGE) {
+            drawSay(l.pick("Листът е още почти празен. Нарисувай нещо!", "The page is still almost empty. Draw something!"), Expression.CONFUSED)
+            return@launch
+        }
+        val saved = runCatching { c.drawings.save(strokes, width, height, title) }.isSuccess
+        if (!saved) {
+            drawSay(l.pick("Ох, не успях да запазя рисунката. Опитай пак.", "Oh, I couldn't keep the drawing. Please try again."), Expression.SAD)
+            return@launch
+        }
+        onSaved()
+        val paid = c.activity.todayActivity().drawings < com.talkto.core.draw.Drawing.PAID_PER_DAY
+        c.activity.record(com.talkto.core.parent.Activity.DRAWING)
+        c.pet.touched(6f, 1f)
+        if (paid) c.pet.earn(com.talkto.core.shop.CoinReason.DRAWING)
+        val coins = com.talkto.core.shop.CoinReason.DRAWING.coins
+        val line = com.talkto.core.draw.Drawing.reaction(strokes, title, _drawPrompt.value, l, c.learning.target) +
+            if (paid) l.pick(" Печелиш $coins монети!", " You win $coins coins!") else ""
+        _drawPrompt.value = null
+        drawSay(line, Expression.LOVE)
+    }
+
+    fun deleteDrawing(d: com.talkto.app.draw.SavedDrawing) = viewModelScope.launch { runCatching { c.drawings.delete(d) } }
+
+    /** A copy of [d] about [size] pixels wide, for the gallery. */
+    suspend fun drawingImage(d: com.talkto.app.draw.SavedDrawing, size: Int): android.graphics.Bitmap? =
+        runCatching { c.drawings.thumbnail(d, size) }.getOrNull()
+
+    private fun drawSay(text: String, expression: Expression) {
+        _drawLine.value = text
+        c.avatar.play(AnimationCommand(expression, Gesture.BOUNCE, holdMs = 1_500))
+        viewModelScope.launch { c.avatar.speak(text, voice = c.settings.settings.value.voiceEnabled) }
+    }
+
+    // ------------------------------------------------------- friends' visits ("The stolen colours")
+
+    /**
+     * The help the child agreed to give today: [challenge] (the one that fit the child's age then) counts from [start].
+     * Kept for the process, not saved.
+     */
+    private data class FriendHelp(val day: Long, val chapter: Int, val start: Int, val challenge: Challenge)
+
+    private val _help = MutableStateFlow(friendHelp)
+    private val _thanks = MutableStateFlow<Chapter?>(null)
+    private val _reread = MutableStateFlow<Chapter?>(null)
+
+    /** Today's visit, or null when no friend is due (one chapter a day, until the book is finished). */
+    val visit: StateFlow<VisitUi?> = combine(c.pet.state, c.pet.ready, c.activity.log, _help, _thanks) { p, ready, log, help, thanks ->
+        val today = c.activity.today()
+        when {
+            thanks != null -> VisitUi(thanks, left = 0, won = true)
+            !ready || !Visits.due(p.storyChapter, p.friendDay, today) -> null
+            else -> {
+                val ch = Visits.next(p.storyChapter) ?: return@combine null
+                val h = help?.takeIf { it.day == today && it.chapter == ch.number }
+                val ask = h?.challenge ?: ch.challengeFor(rules())
+                VisitUi(ch, left = h?.let { (ask.goal - (ask.count(log.on(today)) - it.start)).coerceAtLeast(0) }, challenge = ask)
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** A finished chapter opened again from the stories. */
+    val reread: StateFlow<Chapter?> = _reread.asStateFlow()
+
+    /** Chapters already won, for reading again. */
+    fun chaptersDone(): List<Chapter> = Visits.done(c.pet.state.value.storyChapter)
+
+    fun rereadChapter(chapter: Chapter) { _reread.value = chapter }
+
+    fun closeChapter() {
+        c.avatar.stopSpeaking()
+        _reread.value = null
+    }
+
+    fun readAloud(text: String) = viewModelScope.launch { c.avatar.speak(text, voice = c.settings.settings.value.voiceEnabled) }
+
+    /**
+     * The child says yes to the friend: the count starts now (the first time) and the help opens. The lesson is picked
+     * in the lessons sheet, so for [Challenge.LESSON] the screen opens it.
+     */
+    fun helpFriend(): Challenge? {
+        val v = visit.value ?: return null
+        if (v.won) return null
+        val today = c.activity.today()
+        if (v.left == null) {
+            val start = v.challenge.count(c.activity.log.value.on(today))
+            FriendHelp(today, v.chapter.number, start, v.challenge).also { friendHelp = it; _help.value = it }
+        }
+        c.avatar.stopSpeaking()
+        comeOut()
+        when (v.challenge) {
+            Challenge.MATHS -> startMath()
+            Challenge.TALE -> tales.read()
+            Challenge.RIDDLE -> tales.riddle()
+            Challenge.DRAW -> openDrawing()
+            Challenge.LESSON -> Unit
+        }
+        return v.challenge
+    }
+
+    /** The thank-you page was closed. */
+    fun closeThanks() {
+        c.avatar.stopSpeaking()
+        _thanks.value = null
+    }
+
+    fun closeVisit() = c.avatar.stopSpeaking()
+
+    init {
+        // The help is done: the chapter is won and paid once; the thanks waits until the tale, the lesson or the sums
+        // are closed, so it is seen and heard and does not talk over them.
+        viewModelScope.launch {
+            c.activity.ready.first { it }
+            c.pet.ready.first { it }
+            combine(c.activity.log, _help) { log, help -> log to help }.collect { (log, help) ->
+                if (help == null) return@collect
+                val today = c.activity.today()
+                if (help.day != today) { friendHelp = null; _help.value = null; return@collect }
+                val ch = Visits.CHAPTERS.getOrNull(help.chapter - 1) ?: return@collect
+                if (!help.challenge.done(help.start, log.on(today))) return@collect
+                friendHelp = null
+                _help.value = null
+                if (!c.pet.chapterWon(ch.number, today)) return@collect
+                viewModelScope.launch {
+                    combine(tales.state, quiz.state, lessons.state, _drawingOpen) { t, q, l, d -> t == null && q == null && l == null && !d }.first { it }
+                    delay(700)
+                    _thanks.value = ch
+                }
+            }
+        }
+        // A friend at the door: ZnaiKo says so once a day, after the greetings (the holiday one comes at 14 s).
+        viewModelScope.launch {
+            c.activity.ready.first { it }
+            c.pet.ready.first { it }
+            val today = c.activity.today()
+            if (friendKnockSaid == today) return@launch
+            delay(18_000)
+            val v = visit.value ?: return@launch
+            if (v.left != null || v.won || c.pet.state.value.sleeping || c.pet.state.value.atHome) return@launch
+            // Not while a parent is still entering the child's age or the first-start story is open.
+            if (c.settings.settings.value.needsAge || !c.settings.settings.value.storySeen) return@launch
+            friendKnockSaid = today
+            val l = c.language.current
+            sayText(v.chapter.friend.knock(l) + l.pick(" Натисни вратичката долу.", " Tap the little door below."), Expression.SURPRISED)
+        }
     }
 
     fun refreshPermissions() {
@@ -89,6 +884,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun send(text: String) {
         if (text.isBlank()) return
+        lastInputWasVoice = false
         c.avatar.stopSpeaking()
         AgentService.submit(getApplication(), text)
     }
@@ -99,21 +895,207 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // -------------------------------------------------------------- tamagotchi
 
-    fun feed() {
-        c.pet.feed()
-        c.avatar.play(AnimationCommand(Expression.HAPPY, Gesture.BOUNCE, holdMs = 1_500))
+    fun feed() = feed(com.talkto.core.pet.Food.APPLE)
+
+    private val _meals = MutableSharedFlow<com.talkto.core.pet.Food>(extraBufferCapacity = 4)
+    /** Each food as it is given, for the bite flying to ZnaiKo on screen. */
+    val meals: SharedFlow<com.talkto.core.pet.Food> = _meals
+
+    /**
+     * Gives [food]: it flies to ZnaiKo, who chews, then says how it feels; the body changes with what it eats.
+     * When Claude fed it ([speak] false), Claude's own reply is the words, so ZnaiKo only chews.
+     */
+    fun feed(food: com.talkto.core.pet.Food, speak: Boolean = true) {
+        comeOut()
+        _meals.tryEmit(food)
+        viewModelScope.launch {
+            delay(900) // the bite reaches the mouth
+            c.pet.eat(food)
+            val s = c.pet.state.value
+            val sick = !food.healthy && s.fat > 70f
+            val (face, move) = when {
+                food.healthy -> Expression.HAPPY to Gesture.BOUNCE
+                sick -> Expression.SAD to Gesture.SHAKE
+                else -> Expression.TONGUE to Gesture.NOD
+            }
+            c.avatar.play(AnimationCommand(face, move, holdMs = 1_500))
+            if (speak) c.avatar.speak(com.talkto.core.pet.Nutrition.line(food, s.fat, s.vitality, c.language.current), voice = c.settings.settings.value.voiceEnabled)
+        }
+    }
+
+    fun dismissUpdate() = _pendingUpdates.update { it.drop(1) }
+
+    // -------------------------------------------------------------- arcade: 3D Tetris, sweets and the mini-games
+
+    enum class Arcade { TETRIS, SWEETS, FEED, LETTERS }
+
+    private val _arcade = MutableStateFlow<Arcade?>(null)
+    /** The arcade game on screen, or null. */
+    val arcade: StateFlow<Arcade?> = _arcade
+
+    fun openArcade(game: Arcade) {
+        val feature = when (game) {
+            Arcade.TETRIS -> Feature.TETRIS
+            Arcade.SWEETS -> Feature.SWEETS
+            Arcade.LETTERS -> Feature.LETTER_RAIN
+            Arcade.FEED -> null
+        }
+        if (!allowed(feature)) return
+        comeOut()
+        _arcade.value = game
+    }
+
+    fun closeArcade() { _arcade.value = null }
+
+    /** Says one word aloud: each word finished in the letter rain. */
+    fun sayWord(word: String) {
+        viewModelScope.launch { c.avatar.speak(word, voice = c.settings.settings.value.voiceEnabled) }
+    }
+
+    /**
+     * A round is over: coins for playing, more for lines (healthy bites, built words) and a won round, and ZnaiKo is
+     * happy about it. Words built in the letter rain also count as learning.
+     */
+    fun arcadeFinished(game: Arcade, points: Int, lines: Int = 0, won: Boolean = false) = viewModelScope.launch {
+        c.activity.record(com.talkto.core.parent.Activity.GAME)
+        c.pet.play()
+        c.pet.earn(com.talkto.core.shop.CoinReason.GAME_PLAYED)
+        if (lines > 0) c.pet.earn(com.talkto.core.shop.CoinReason.TASK, lines.coerceAtMost(20))
+        if (won) { c.pet.earn(com.talkto.core.shop.CoinReason.GAME_WON); c.pet.gameWon() }
+        if (game == Arcade.LETTERS && lines > 0) c.pet.learn(com.talkto.core.pet.KnowledgeSource.QUIZ)
+        val l = c.language.current
+        val line = when {
+            game == Arcade.FEED && won -> l.pick("Ммм, коремчето ми е пълно! $points точки и $lines здравословни хапки!", "Yum, my tummy is full! $points points and $lines healthy bites!")
+            game == Arcade.FEED -> l.pick("Ох, много вредна храна. $points точки! Хайде пак?", "Oh, too much junk food. $points points! Again?")
+            game == Arcade.LETTERS -> l.pick("Браво! Нареди $lines думи и спечели $points точки!", "Well done! You built $lines words and won $points points!")
+            won -> l.pick("Браво! Мина нивото с $points точки!", "Well done! You passed the level with $points points!")
+            game == Arcade.TETRIS -> l.pick("Край! $points точки и $lines реда. Хайде пак?", "Game over! $points points and $lines lines. Again?")
+            else -> l.pick("Ходовете свършиха. $points точки! Опитай пак.", "Out of moves. $points points! Try again.")
+        }
+        c.avatar.play(AnimationCommand(if (won) Expression.HAPPY else Expression.THINKING, Gesture.BOUNCE, holdMs = 1_200))
+        c.avatar.speak(line, voice = c.settings.settings.value.voiceEnabled)
+    }
+
+    fun startGame(kind: GameKind, players: Int = 2) {
+        if (!allowed(Feature.of(kind))) return
+        comeOut()
+        games.start(kind, players)
     }
 
     fun play() {
+        comeOut()
         c.pet.play()
         c.avatar.play(AnimationCommand(Expression.HAPPY, Gesture.SPIN, holdMs = 1_500))
     }
 
-    fun toggleSleep() = c.pet.toggleSleep()
+    /** Bedtime offers a story first; waking up just wakes. */
+    fun toggleSleep() {
+        val goingToBed = !c.pet.state.value.sleeping
+        c.pet.toggleSleep()
+        if (goingToBed && !timeUp.value) _bedtime.value = true
+    }
 
-    fun petTheAvatar() {
-        c.pet.pet()
-        c.avatar.play(AnimationCommand(Expression.LOVE, Gesture.NOD, holdMs = 1_200))
+    /** When the last long reply was put into the reader. */
+    private var shownTaleAt = 0L
+
+    // ------------------------------------------------------------- house, shop
+
+    /** ZnaiKo walks into its house. */
+    fun goHome() {
+        if (!c.pet.state.value.atHome) c.pet.setHome(true)
+    }
+
+    /** ZnaiKo comes out (and wakes up if it was sleeping inside). */
+    fun comeOut() {
+        if (c.pet.state.value.atHome) c.pet.setHome(false)
+    }
+
+    /** Buys [item] with coins. ZnaiKo says thank you, or how many coins are still missing. */
+    fun buy(item: ShopItem): Boolean {
+        val l = c.language.current
+        val ok = c.pet.buy(item)
+        val line = if (ok) l.pick("Благодаря! Купих ${item.label(l)}.", "Thank you! I bought the ${item.label(l).lowercase()}.")
+        else l.pick("Трябват ми още ${item.price - c.pet.state.value.coins} монети.", "I need ${item.price - c.pet.state.value.coins} more coins.")
+        _systemLine.value = SystemLine(0, System.currentTimeMillis(), text = line)
+        c.avatar.play(AnimationCommand(if (ok) Expression.LOVE else Expression.SAD, if (ok) Gesture.SPIN else Gesture.SHAKE, holdMs = 1_500))
+        viewModelScope.launch { c.avatar.speak(line, voice = c.settings.settings.value.voiceEnabled) }
+        return ok
+    }
+
+    fun saveLook(l: CreatureLook) = viewModelScope.launch { c.petStore.saveLook(l) }
+
+    fun saveHouse(h: HouseLook) = viewModelScope.launch { c.petStore.saveHouse(h) }
+
+    // -------------------------------------------------------------- quizzes
+
+    fun startMath(grade: Int? = null, algebra: Boolean = false, topic: com.talkto.core.quiz.MathTopic? = null) {
+        if (!allowed(Feature.MATHS)) return
+        comeOut()
+        quiz.startMath(grade, algebra, topic ?: if (algebra) com.talkto.core.quiz.MathTopic.ALGEBRA else com.talkto.core.quiz.MathTopic.MIXED)
+    }
+
+    fun startTrivia(category: com.talkto.core.quiz.TriviaCategory? = null) {
+        if (!allowed(Feature.TRIVIA)) return
+        comeOut()
+        quiz.startTrivia(category)
+    }
+
+    /** A riddle: the child says the answer instead of typing it. */
+    fun riddleListen(dialogOnly: Boolean = false) {
+        c.avatar.stopSpeaking()
+        if (dialogOnly) c.voice.preferDialog = true
+        c.voice.start(if (c.language.current == Lang.EN) VoiceLanguage.EN else VoiceLanguage.BG) { heard -> tales.guess(heard) }
+    }
+
+    /** A riddle from the library or the 🦊 button, when the child's age has riddles. */
+    fun riddle() {
+        if (!allowed(Feature.RIDDLES)) return
+        comeOut()
+        tales.riddle()
+    }
+
+    /** Listens for a quiz answer in ZnaiKo's language. */
+    fun quizListen(dialogOnly: Boolean = false) {
+        c.avatar.stopSpeaking()
+        if (dialogOnly) c.voice.preferDialog = true
+        c.voice.start(if (c.language.current == Lang.EN) VoiceLanguage.EN else VoiceLanguage.BG) { heard -> quiz.onHeard(heard) }
+    }
+
+    /** Listens once and hands over what was heard (answers in "get to know me"). */
+    fun listenOnce(dialogOnly: Boolean = false, onHeard: (String) -> Unit) {
+        c.avatar.stopSpeaking()
+        if (dialogOnly) c.voice.preferDialog = true
+        c.voice.start(if (c.language.current == Lang.EN) VoiceLanguage.EN else VoiceLanguage.BG) { heard -> onHeard(heard) }
+    }
+
+    private val _lookAt = MutableStateFlow<Pair<Float, Float>?>(null)
+    /** Where the finger last touched the pet, for the 3D eyes. */
+    val lookAt: StateFlow<Pair<Float, Float>?> = _lookAt.asStateFlow()
+
+    val reactions = c.avatar.reactions
+
+    /** Where the 3D body is on screen (written by the renderer), so a touch knows which part it hit. */
+    val body = BodyLocator()
+
+    /** Sideways drags that turn the 3D pet. */
+    val twirl = TwirlInput()
+
+    fun onTouchDown(nx: Float, ny: Float) {
+        _lookAt.value = nx to ny
+    }
+
+    /** Slap, hit, pat, caress or poke: the pet's temperament decides how it feels about it. */
+    fun onTouch(touch: Touch) {
+        val happy = c.pet.state.value.happiness > 60f && !c.pet.state.value.sleeping
+        val r = c.temperament.react(touch, petHappy = happy)
+        c.pet.touched(r.happinessDelta, r.bondDelta)
+        c.avatar.react(r, touch)
+        // The flat 2D pet cannot be turned by the finger, so a twirl plays its spin instead.
+        if (touch.kind == TouchKind.TWIRL && !c.settings.settings.value.avatar3d) c.avatar.play(AnimationCommand(r.expression, Gesture.SPIN))
+        r.line?.let { line ->
+            _systemLine.value = SystemLine(0, System.currentTimeMillis(), text = line)
+            viewModelScope.launch { c.avatar.speak(line, voice = c.settings.settings.value.voiceEnabled) }
+        }
     }
 
     // ------------------------------------------------------------------ avatar
@@ -139,6 +1121,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun saveKeys(anthropic: String?, stability: String?) = viewModelScope.launch { c.settings.saveKeys(anthropic, stability) }
 
+    /** Forgets the Claude key: ZnaiKo goes back to offline mode at once. */
+    fun removeClaudeKey() = viewModelScope.launch {
+        c.settings.saveKeys(anthropic = "", stability = null)
+        c.agentSession.newConversation()
+        say(R.string.settings_key_removed, Expression.HAPPY)
+    }
+
     fun setVoice(enabled: Boolean) = viewModelScope.launch { c.settings.setVoice(enabled) }
 
     fun loadHabits() = viewModelScope.launch { _habits.value = runCatching { c.memory.detectHabits() }.getOrDefault(emptyList()) }
@@ -149,4 +1138,235 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun requestShizuku() = ShizukuBridge.requestPermission()
+
+    // ---------------------------------------------------------------------- voice
+
+    val voice: StateFlow<VoiceState> = c.voice.state
+
+    /** True when the last message was spoken; hands-free mode then listens again after ZnaiKo answers. */
+    @Volatile private var lastInputWasVoice = false
+
+    init {
+        viewModelScope.launch {
+            var wasSpeaking = false
+            c.speech.speaking.collect { speaking ->
+                val finished = wasSpeaking && !speaking
+                wasSpeaking = speaking
+                val s = c.settings.settings.value
+                val busyElsewhere = lessons.state.value != null || games.state.value != null || quiz.state.value != null
+                if (finished && s.handsFree && lastInputWasVoice && !agent.value.busy && !busyElsewhere) startListening()
+            }
+        }
+    }
+
+    init {
+        viewModelScope.launch {
+            c.voice.state.collect { v ->
+                v.error?.let { code ->
+                    val line = when (code) {
+                        android.speech.SpeechRecognizer.ERROR_NETWORK, android.speech.SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> R.string.voice_err_network
+                        android.speech.SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> R.string.voice_err_permission
+                        android.speech.SpeechRecognizer.ERROR_CLIENT -> R.string.voice_err_client
+                        else -> R.string.voice_err_other
+                    }
+                    _systemLine.value = SystemLine(line, System.currentTimeMillis())
+                }
+            }
+        }
+    }
+
+    /** [dialogOnly]: skip the in-app recogniser (e.g. the microphone permission was denied). */
+    fun startListening(dialogOnly: Boolean = false) {
+        c.avatar.stopSpeaking() // barge-in: talking over ZnaiKo interrupts it
+        val lang = runCatching { VoiceLanguage.valueOf(c.settings.settings.value.voiceLanguage) }.getOrDefault(VoiceLanguage.AUTO)
+        if (dialogOnly) c.voice.preferDialog = true
+        c.voice.start(lang) { heard ->
+            lastInputWasVoice = true
+            AgentService.submit(getApplication(), heard)
+        }
+    }
+
+    /** The UI opens the system speech dialog for each emission. */
+    val voiceDialogRequests = c.voice.dialogRequests
+
+    fun voiceDialogIntent(lang: VoiceLanguage) = c.voice.dialogIntent(lang)
+
+    fun onVoiceDialogResult(results: List<String>?) = c.voice.deliverDialogResult(results)
+
+    fun onVoiceDialogUnavailable() = c.voice.dialogUnavailable()
+
+    fun stopListening() = c.voice.stop()
+
+    fun setVoiceLanguage(lang: VoiceLanguage) = viewModelScope.launch { c.settings.setVoiceLanguage(lang.name) }
+
+    fun setHandsFree(enabled: Boolean) = viewModelScope.launch { c.settings.setHandsFree(enabled) }
+
+    fun setVoicePreset(preset: VoicePreset) = viewModelScope.launch {
+        c.settings.setVoicePreset(preset)
+        c.speech.setVoice(preset, c.settings.settings.value.ttsVoice)
+        c.avatar.speak(preset.sample(c.language.current), voice = true)
+    }
+
+    fun setTtsVoice(name: String?) = viewModelScope.launch {
+        c.settings.setTtsVoice(name)
+        val preset = c.settings.settings.value.voicePreset
+        c.speech.setVoice(preset, name)
+        c.avatar.speak(preset.sample(c.language.current), voice = true)
+    }
+
+    /** Plays a preset's sample without saving it. The saved voice returns on the next settings change. */
+    fun previewVoice(preset: VoicePreset) = viewModelScope.launch {
+        val s = c.settings.settings.value
+        c.speech.setVoice(preset, s.ttsVoice)
+        c.avatar.speak(preset.sample(c.language.current), voice = true)
+        c.speech.setVoice(s.voicePreset, s.ttsVoice)
+    }
+
+    private val _engineVoices = MutableStateFlow<List<SpeechEngine.VoiceOption>>(emptyList())
+    /** Voices installed in the phone's TTS engine (bg and en). */
+    val engineVoices: StateFlow<List<SpeechEngine.VoiceOption>> = _engineVoices.asStateFlow()
+
+    fun loadEngineVoices() = viewModelScope.launch { _engineVoices.value = c.speech.availableVoices() }
+
+    /** How Bulgarian can be spoken on this phone. */
+    val bulgarianVoice: StateFlow<SpeechEngine.BulgarianVoice> = c.speech.bulgarian
+
+    fun recheckBulgarianVoice(force: Boolean = false) = c.speech.recheck(force)
+
+    fun setClearBulgarian(enabled: Boolean) = viewModelScope.launch {
+        c.settings.setClearBulgarian(enabled)
+        c.speech.clearBulgarian = enabled
+        c.avatar.speak(com.talkto.core.voice.BulgarianSpeech.SAMPLE, voice = true)
+    }
+
+    /** A Bulgarian sentence with the things phones get wrong: a date, a year, a class, a unit. */
+    fun sampleBulgarian() = viewModelScope.launch { c.avatar.speak(com.talkto.core.voice.BulgarianSpeech.SAMPLE, voice = true) }
+
+    fun bulgarianVoiceInstallIntent(): Intent = c.speech.installVoiceIntent()
+
+    // -------------------------------------------------------------- the story
+
+    private val _storyReplay = MutableStateFlow(false)
+    /** The story opened again from Settings. */
+    val storyReplay: StateFlow<Boolean> = _storyReplay
+
+    fun openStory() { _storyReplay.value = true }
+
+    /** Reads one page aloud, in the language of the app. */
+    fun readStoryPage(page: com.talkto.core.story.StoryPage) = viewModelScope.launch {
+        c.avatar.speak(page.text(c.language.current), voice = c.settings.settings.value.voiceEnabled)
+    }
+
+    fun closeStory() {
+        _storyReplay.value = false
+        c.speech.stop()
+        viewModelScope.launch { c.settings.setStorySeen() }
+    }
+
+    // -------------------------------------------------------------- backgrounds
+
+    val backgroundConfig: StateFlow<BackgroundConfig> = c.backgrounds.config.stateIn(viewModelScope, SharingStarted.Eagerly, BackgroundConfig())
+
+    private val _curating = MutableStateFlow<Pair<Int, Int>?>(null)
+    /** (done, total) while photos are being auto-selected from the gallery. */
+    val curating: StateFlow<Pair<Int, Int>?> = _curating.asStateFlow()
+
+    fun setBackgroundsEnabled(enabled: Boolean) = viewModelScope.launch { c.backgrounds.setEnabled(enabled) }
+
+    fun addBackgroundPhotos(scene: MoodScene, uris: List<Uri>) = viewModelScope.launch {
+        runCatching { c.backgrounds.addPhotos(scene, uris) }.onFailure { c.errors.report(it, "backgrounds") }
+    }
+
+    fun removeBackgroundPhoto(scene: MoodScene, path: String) = viewModelScope.launch { c.backgrounds.removePhoto(scene, path) }
+
+    fun autoFillBackgrounds() = viewModelScope.launch {
+        _curating.value = 0 to 0
+        runCatching { c.backgrounds.autoFill { done, total -> _curating.value = done to total } }
+            .onSuccess { n ->
+                _systemLine.value = if (n > 0) SystemLine(R.string.backgrounds_filled, System.currentTimeMillis(), listOf(n))
+                else SystemLine(R.string.backgrounds_none, System.currentTimeMillis())
+            }
+            .onFailure { c.errors.report(it, "backgrounds") }
+        _curating.value = null
+    }
+
+    // ------------------------------------------------------- 3D, history, profile
+
+    fun setAvatar3d(enabled: Boolean) = viewModelScope.launch { c.settings.setAvatar3d(enabled) }
+
+    fun setRecordConversations(enabled: Boolean) = viewModelScope.launch {
+        c.settings.setRecordConversations(enabled)
+        c.history.enabled = enabled
+    }
+
+    private val _facts = MutableStateFlow<List<Fact>>(emptyList())
+    val facts: StateFlow<List<Fact>> = _facts.asStateFlow()
+
+    fun loadProfile() = viewModelScope.launch { _facts.value = runCatching { c.profile.all() }.getOrDefault(emptyList()) }
+
+    fun forgetFact(key: String) = viewModelScope.launch {
+        c.profile.forget(key)
+        loadProfile()
+    }
+
+    /** Keeps an answer about the user; new facts teach ZnaiKo a little. */
+    fun rememberFact(key: String, answer: String) = viewModelScope.launch {
+        val value = AboutYou.normalize(key, answer) ?: return@launch
+        val known = runCatching { c.profile.get(key) }.getOrNull()
+        runCatching { c.profile.remember(key, value, source = "about") }
+        if (known == null) c.pet.learn(KnowledgeSource.FACT)
+        loadProfile()
+    }
+
+    /** ZnaiKo asks a question and waits for the answer (typed or said). */
+    fun ask(text: String) = viewModelScope.launch {
+        _systemLine.value = SystemLine(0, System.currentTimeMillis(), text = text)
+        c.avatar.play(AnimationCommand(Expression.HAPPY, Gesture.NOD, holdMs = 1_200))
+        c.avatar.speak(text, voice = c.settings.settings.value.voiceEnabled)
+    }
+
+    private val _historyItems = MutableStateFlow<List<Utterance>>(emptyList())
+    val historyItems: StateFlow<List<Utterance>> = _historyItems.asStateFlow()
+
+    private var historyQuery = ""
+
+    /** Newest first, filtered by [query] when given. */
+    fun loadHistory(query: String = "") = viewModelScope.launch {
+        historyQuery = query
+        _historyItems.value = runCatching {
+            if (query.isBlank()) c.history.recent(500).asReversed() else c.history.search(query, 200)
+        }.getOrDefault(emptyList())
+    }
+
+    fun clearHistory() = viewModelScope.launch {
+        c.agentSession.clearHistory()
+        loadHistory()
+    }
+
+    /** Shares the transcript as plain text through the Android share sheet. */
+    fun shareHistory(context: Context) = viewModelScope.launch {
+        val text = runCatching { c.history.export(lang = c.language.current) }.getOrDefault("")
+        if (text.isBlank()) return@launch
+        val send = Intent(Intent.ACTION_SEND).setType("text/plain")
+            .putExtra(Intent.EXTRA_SUBJECT, "ZnaiKo")
+            .putExtra(Intent.EXTRA_TEXT, text)
+        context.startActivity(Intent.createChooser(send, null))
+    }
+
+    private companion object {
+        /** A reply this long is a tale, not a chat line. */
+        const val LONG_REPLY = 400
+
+        /** The day and routine ZnaiKo last greeted for; process-wide, so a rebuilt screen does not repeat it. */
+        @Volatile var routineSaid: String? = null
+
+        /** The epoch day of the last holiday greeting, the same way. */
+        @Volatile var holidaySaid: Long = -1L
+
+        /** The epoch day ZnaiKo last said a friend is knocking, the same way. */
+        @Volatile var friendKnockSaid: Long = -1L
+
+        /** The friend's help agreed to; process-wide, so a rebuilt screen keeps counting from the same start. */
+        @Volatile private var friendHelp: FriendHelp? = null
+    }
 }
