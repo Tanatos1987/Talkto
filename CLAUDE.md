@@ -21,4 +21,4 @@ ZnaiKo (Знайко) is an Android virtual pet for children that is also an AI 
 - Never write the owner's email into the repo.
 - Any change to the `play` flavor must keep restricted permissions out of its merged manifest.
 - R8 problems show only in release builds: a red `launch` job means the build does not open on a phone.
-- Releases come only from CI's `release` job; never create one by hand (v1.1.94 was published without the launch check and does not open).
+- Releases come only from CI's `release` job; never create one by hand. A release found broken on a phone goes into that job's "Remove releases that do not open" list (v1.1.94 is there).

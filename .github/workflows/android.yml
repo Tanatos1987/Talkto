@@ -234,3 +234,14 @@ jobs:
           } > notes.md
           gh release create "v$ver" "ZnaiKo-$ver.apk" "ZnaiKo-$ver-play.aab" \
             --target "$GITHUB_SHA" --title "Знайко $ver" --notes-file notes.md --latest
+
+      # Releases that turned out not to open on a phone are taken down (only once a working one is up), so nobody installs
+      # them again. The tag stays. v1.1.94: ML Kit lost its constructors to AGP 9's strict R8 and the app closed at once.
+      - name: Remove releases that do not open
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          for tag in v1.1.94; do
+            if gh release view "$tag" > /dev/null 2>&1; then gh release delete "$tag" --yes && echo "Removed release $tag"; fi
+          done
