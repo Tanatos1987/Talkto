@@ -66,7 +66,9 @@ ZnaiKo (Знайко) е виртуален любимец в стил Тама�
 CI е в `.github/workflows/android.yml`. Всеки push на клона `claude/talkto-android-app-k5s2jz` пуска тестове и подписан `bundlePlayRelease`.
 
 - versionCode = номерът на CI run-а, versionName = `1.1.<run>`.
-- Задача `launch`: CI инсталира debug и release APK на емулатор с Android 15, отваря ги и чака 30 секунди. Ако приложението падне, run-ът е червен, а в лога е stack trace-ът с истинските имена (през `mapping.txt` на release APK-то). Не пускайте в Play версия с червен `launch`.
+- Задача `launch`: CI инсталира debug APK, release APK и Play bundle-а (като един APK през bundletool) на емулатор с Android 15, отваря ги и чака 30 секунди. Ако приложението падне, run-ът е червен, а в лога е stack trace-ът с истинските имена (през `mapping.txt`). Не пускайте в Play версия с червен `launch`.
+- Задача `release`: всеки push в `claude/talkto-android-app-k5s2jz`, минал `launch`, става release `v1.1.<run>` на страницата Releases и е „Latest“: `ZnaiKo-1.1.<run>.apk` за телефона и `ZnaiKo-1.1.<run>-play.aab` за Play. Телефонът взима приложението оттам. Не правете release на ръка.
+- Release v1.1.94 (7 октомври) е счупен: не се отваря. Първата поправена версия е 1.1.98 (само в Artifacts на run 98); първата в Releases е следващата след нея.
 - AAB файлът се сваля от страницата на run-а в GitHub Actions, секция Artifacts.
 - GitHub secrets: `TALKTO_KEYSTORE_B64`, `TALKTO_KEYSTORE_PASSWORD`, `TALKTO_KEY_ALIAS` (= `znaiko`), `TALKTO_KEY_PASSWORD`.
 - Keystore файлът и паролите **никога** не влизат в репото. Шаблонът за локален билд е `keystore.properties.example`.

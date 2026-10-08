@@ -120,7 +120,7 @@ jobs:
             app/build/reports/lint-results-playDebug.html
             app/build/intermediates/mapping/playRelease/minifyPlayReleaseWithR8/missing_rules.txt
 
-  # Opens the debug APK and the release APK (shrunk by R8 like the Play version) on an emulator and fails if either
+  # Opens the debug APK, the release APK and the Play bundle (both shrunk by R8) on an emulator and fails if any of them
   # crashes, with the stack trace in the log: a build that does not start stops here instead of on a child's phone.
   launch:
     needs: build
@@ -145,6 +145,30 @@ jobs:
           name: talkto-full-mapping
           path: mapping
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: talkto-aab
+          path: aab
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: talkto-mapping
+          path: mapping-play
+
+      # The bundle that goes to Play, made into one APK the emulator can install (signed with a throwaway key).
+      - name: Play bundle as one APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          url=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/repos/google/bundletool/releases/latest \
+            | python3 -c "import json,sys; print(next(a['browser_download_url'] for a in json.load(sys.stdin)['assets'] if a['name'].endswith('.jar')))")
+          curl -fsSL -o bundletool.jar "$url"
+          keytool -genkeypair -noprompt -keystore check.keystore -storepass android -keypass android -alias check \
+            -keyalg RSA -keysize 2048 -validity 30 -dname "CN=Launch check"
+          java -jar bundletool.jar build-apks --bundle "$(ls aab/*.aab | head -n1)" --output play.apks --mode=universal \
+            --ks check.keystore --ks-pass pass:android --ks-key-alias check --key-pass pass:android
+          unzip -o -q play.apks universal.apk -d apk-play
+
       - name: R8 retrace tool
         run: |
           v=$(curl -fsSL https://dl.google.com/dl/android/maven2/com/android/tools/r8/maven-metadata.xml | sed -n 's:.*<release>\(.*\)</release>.*:\1:p')
@@ -165,4 +189,48 @@ jobs:
           arch: x86_64
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
-          script: bash .github/scripts/launch-check.sh apk-debug/*.apk com.talkto.app.debug; d=$?; bash .github/scripts/launch-check.sh apk-release/*.apk com.talkto.app mapping/mapping.txt r8.jar; r=$?; exit $((d | r))
+          script: bash .github/scripts/launch-check.sh apk-debug/*.apk com.talkto.app.debug; d=$?; bash .github/scripts/launch-check.sh apk-release/*.apk com.talkto.app mapping/mapping.txt r8.jar; r=$?; bash .github/scripts/launch-check.sh apk-play/universal.apk znaiKo.app mapping-play/mapping.txt r8.jar; p=$?; exit $((d | r | p))
+
+  # The phone gets ZnaiKo from the Releases page, so every build of the working branch that opened on the emulator is
+  # published there and becomes "Latest"; a build that failed the launch check never gets this far. Pull requests and
+  # other branches are not published.
+  release:
+    needs: [build, launch]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/claude/talkto-android-app-k5s2jz'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: talkto-release-apk
+          path: apk
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: talkto-aab
+          path: aab
+
+      - name: Publish on the Releases page
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          ver="1.1.${GITHUB_RUN_NUMBER}"
+          cp apk/*.apk "ZnaiKo-$ver.apk"
+          cp aab/*.aab "ZnaiKo-$ver-play.aab"
+          {
+            echo "Знайко $ver"
+            echo
+            echo "${MESSAGE%%$'\n'*}"
+            echo
+            echo "Файлове:"
+            echo "- ZnaiKo-$ver.apk - за инсталиране направо на телефона"
+            echo "- ZnaiKo-$ver-play.aab - за качване в Google Play Console"
+            echo
+            echo "Преди публикуване CI отвори тази версия на емулатор с Android 15."
+          } > notes.md
+          gh release create "v$ver" "ZnaiKo-$ver.apk" "ZnaiKo-$ver-play.aab" \
+            --target "$GITHUB_SHA" --title "Знайко $ver" --notes-file notes.md --latest
