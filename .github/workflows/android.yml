@@ -50,6 +50,17 @@ jobs:
           path: app/build/outputs/apk/full/debug/*.apk
           if-no-files-found: error
 
+      # The screen tour for the screens job below. Not needed for a release, so a failure here stops nothing.
+      - name: Build screen tour (androidTest APK)
+        continue-on-error: true
+        run: ./gradlew :app:assembleFullDebugAndroidTest
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: talkto-tour-apk
+          path: app/build/outputs/apk/androidTest/full/debug/*.apk
+          if-no-files-found: warn
+
       # The Play Store takes an Android App Bundle. Without the signing secrets it is built unsigned
       # (sign it before uploading); with them CI signs both the release APK and the bundle.
       - name: Build release bundle (AAB)
@@ -190,6 +201,53 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
           script: bash .github/scripts/launch-check.sh apk-debug/*.apk com.talkto.app.debug; d=$?; bash .github/scripts/launch-check.sh apk-release/*.apk com.talkto.app mapping/mapping.txt r8.jar; r=$?; bash .github/scripts/launch-check.sh apk-play/universal.apk znaiKo.app mapping-play/mapping.txt r8.jar; p=$?; exit $((d | r | p))
+
+  # A walk through ZnaiKo's screens on an emulator (ScreenTour in androidTest): a screenshot of each one and short films
+  # of its motion, uploaded as talkto-screens, to judge the look without a phone. It never holds up a release: the
+  # release job does not wait for it, and a failure here does not turn the run red.
+  screens:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: talkto-apk
+          path: apk-debug
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: talkto-tour-apk
+          path: apk-tour
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      # A phone-sized screen, with animations on, so the films show the motion a child sees.
+      - name: Walk through the screens
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          script: bash .github/scripts/screen-tour.sh apk-debug/*.apk apk-tour/*.apk
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: talkto-screens
+          path: screens
+          if-no-files-found: warn
+          retention-days: 14
 
   # The phone gets ZnaiKo from the Releases page, so every build of the working branch that opened on the emulator is
   # published there and becomes "Latest"; a build that failed the launch check never gets this far. Pull requests and

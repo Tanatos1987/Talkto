@@ -179,6 +179,8 @@ dependencies {
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.rules)
+    // The screen tour (ScreenTour) taps and takes screenshots the way a child's finger and the phone would.
+    androidTestImplementation(libs.androidx.test.uiautomator)
     androidTestImplementation(libs.truth)
     androidTestImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(platform(libs.compose.bom))

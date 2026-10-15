@@ -14,6 +14,7 @@ ZnaiKo (Знайко) is an Android virtual pet for children that is also an AI 
   - `full`: package `com.talkto.app`, every feature;
   - `play`: package `znaiKo.app`, the Google Play build. Its manifest removes all-files access, QUERY_ALL_PACKAGES, the accessibility service and the gallery permissions (photos only through the system picker); hiddenapibypass is a `full`-only dependency loaded by reflection.
 - CI (`.github/workflows/android.yml`): core tests, Robolectric tests, lint, a debug APK, a signed `bundlePlayRelease` AAB built from repository secrets (TALKTO_KEYSTORE_B64, TALKTO_KEYSTORE_PASSWORD, TALKTO_KEY_ALIAS, TALKTO_KEY_PASSWORD), a `launch` job that opens the debug APK, the release APK and the Play bundle on an emulator and fails on a start-up crash, and a `release` job that publishes every push to the working branch that passed `launch` as GitHub Release `v1.1.<run>` (the owner installs from Releases). versionCode is the CI run number, versionName `1.1.<run>`.
+- A `screens` job runs `ScreenTour` (app/src/androidTest/.../screens) on a Pixel 6 emulator: a screenshot of every screen plus short films of the motion with a `-frames.png` grid of each, uploaded as the `talkto-screens` artifact (`gh run download <run> -n talkto-screens`). Use it to see UI and animation changes. It is non-blocking on purpose (release does not wait for it); keep it so, and add a step there for each new screen.
 
 ## Rules
 
