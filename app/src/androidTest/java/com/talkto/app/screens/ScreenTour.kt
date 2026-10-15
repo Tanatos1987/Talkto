@@ -1,15 +1,18 @@
 package com.talkto.app.screens
 
 import android.Manifest
+import android.content.Intent
 import android.os.ParcelFileDescriptor
 import android.os.SystemClock
 import androidx.lifecycle.ViewModelProvider
-import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
+import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
+import androidx.test.runner.lifecycle.Stage
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
+import androidx.test.uiautomator.Configurator
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import com.talkto.app.MainActivity
@@ -20,6 +23,7 @@ import com.talkto.core.games.GameKind
 import org.junit.FixMethodOrder
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.Timeout
 import org.junit.runner.RunWith
 import org.junit.runners.MethodSorters
 import java.io.File
@@ -37,8 +41,14 @@ class ScreenTour {
 
     @get:Rule val notifications: GrantPermissionRule = GrantPermissionRule.grant(Manifest.permission.POST_NOTIFICATIONS)
 
+    /** A step that hangs gives up, and the tour goes on with the next one. */
+    @get:Rule val limit: Timeout = Timeout.seconds(120)
+
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
-    private val device = UiDevice.getInstance(instrumentation)
+    private val device = UiDevice.getInstance(instrumentation).also {
+        // UiAutomator waits for the screen to be still before each search; ZnaiKo is rarely still, so not for long.
+        Configurator.getInstance().setWaitForIdleTimeout(2_000)
+    }
     private val context = instrumentation.targetContext
 
     /** Inside the app, so the script takes the pictures out with run-as. */
@@ -122,13 +132,22 @@ class ScreenTour {
 
     // ----------------------------------------------------------------------- helpers
 
-    /** Starts ZnaiKo, past the age question and the story unless [firstStart], runs [step] and closes it again. */
+    /**
+     * Starts ZnaiKo, past the age question and the story unless [firstStart], runs [step] and closes it again.
+     * Not with ActivityScenario: it waits for the main thread to go idle, and ZnaiKo's animations never let it.
+     */
     private fun open(firstStart: Boolean = false, step: (MainViewModel) -> Unit) {
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-            lateinit var vm: MainViewModel
-            scenario.onActivity { vm = ViewModelProvider(it)[MainViewModel::class.java] }
-            // The first frame, the 3D creature and what the app loads in the background.
-            pause(5_000)
+        context.startActivity(
+            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),
+        )
+        // The first frame, the 3D creature and what the app loads in the background.
+        pause(5_000)
+        var activity: MainActivity? = null
+        ui { activity = ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).filterIsInstance<MainActivity>().firstOrNull() }
+        val shown = activity ?: error("ZnaiKo did not open")
+        lateinit var vm: MainViewModel
+        ui { vm = ViewModelProvider(shown)[MainViewModel::class.java] }
+        try {
             if (!firstStart) {
                 ui { if (vm.settings.value.needsAge) vm.setBirth(LocalDate.now().year - 8, 3) }
                 pause(500)
@@ -136,6 +155,9 @@ class ScreenTour {
                 pause(1_500)
             }
             step(vm)
+        } finally {
+            ui { shown.finish() }
+            pause(1_500)
         }
     }
 

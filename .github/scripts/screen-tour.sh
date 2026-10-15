@@ -11,9 +11,11 @@ adb install -r -t -g "$tour" || { echo "::error::screen tour: install failed"; e
 adb shell appops set "$pkg" MANAGE_EXTERNAL_STORAGE allow || true
 runner=$(adb shell pm list instrumentation | tr -d '\r' | sed -n "s/^instrumentation:\([^ ]*\) (target=$pkg)$/\1/p" | head -n1)
 [ -n "$runner" ] || { echo "::error::No instrumentation for $pkg"; exit 1; }
-# -r prints each step and how it went. am instrument exits 0 even when a step fails, so the log is the record.
-adb shell am instrument -w -r -e class com.talkto.app.screens.ScreenTour "$runner" | tr -d '\r' > instrument.log
-grep -E '^INSTRUMENTATION_STATUS: (test|stack)=|^INSTRUMENTATION_STATUS_CODE: -2|^INSTRUMENTATION_(RESULT|CODE)|^Tests run|^OK \(' instrument.log
+# -r prints each step as it starts and ends. am instrument exits 0 even when a step fails, so the log is the record;
+# a tour that hangs is stopped, and the pictures taken so far are still collected.
+timeout 1500 adb shell am instrument -w -r -e class com.talkto.app.screens.ScreenTour "$runner" | tr -d '\r' | tee instrument.log \
+  | grep --line-buffered -E '^INSTRUMENTATION_STATUS: (test|stack)=|^INSTRUMENTATION_STATUS_CODE|^INSTRUMENTATION_(RESULT|CODE)|^Tests run|^OK \('
+adb logcat -d -t 4000 > screens/logcat.txt || true
 for f in $(adb shell run-as "$pkg" ls files/screens | tr -d '\r'); do
   adb exec-out run-as "$pkg" cat "files/screens/$f" > "screens/$f"
 done

@@ -207,8 +207,10 @@ jobs:
   # release job does not wait for it, and a failure here does not turn the run red.
   screens:
     needs: build
+    # Once per push: the pull request's run of the same commit would only repeat it.
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
