@@ -21,6 +21,8 @@ sealed class TalktoError(
         NETWORK,
         RATE_LIMITED,
         API_KEY_MISSING,
+        API_KEY_INVALID,
+        API_NO_CREDIT,
         API_REJECTED,
         CAPABILITY_UNAVAILABLE,
         STORAGE_FULL,
@@ -53,6 +55,12 @@ sealed class TalktoError(
 
     class ApiKeyMissing(service: String) :
         TalktoError(Kind.API_KEY_MISSING, "API key missing for $service")
+
+    class ApiKeyInvalid(service: String, cause: Throwable? = null) :
+        TalktoError(Kind.API_KEY_INVALID, "API key rejected by $service", cause)
+
+    class ApiNoCredit(detail: String, cause: Throwable? = null) :
+        TalktoError(Kind.API_NO_CREDIT, detail, cause)
 
     class ApiRejected(detail: String, cause: Throwable? = null) :
         TalktoError(Kind.API_REJECTED, detail, cause)

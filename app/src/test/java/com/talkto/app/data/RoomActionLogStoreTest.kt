@@ -64,4 +64,45 @@ class RoomActionLogStoreTest {
         db.actionLog().insert(com.talkto.app.data.db.ActionLogEntity(type = "TELEPORT", subject = "?", source = null, target = null, timestampMs = now, success = true))
         assertThat(store.since(0)).isEmpty()
     }
+
+    @Test fun `notes are stored newest first and deleted by id`() = runTest {
+        var t = now
+        val notes = com.talkto.core.notes.NotesRepository(com.talkto.app.data.db.RoomNoteStore(db.notes()), clock = { t++ })
+        notes.add("първа")
+        notes.add("втора")
+        assertThat(notes.list().map { it.text }).containsExactly("втора", "първа").inOrder()
+        notes.deleteAt(1)
+        assertThat(notes.list().map { it.text }).containsExactly("първа")
+    }
+
+    @Test fun `reminders persist pending state`() = runTest {
+        val store = com.talkto.app.data.db.RoomReminderStore(db.reminders())
+        val a = store.insert(com.talkto.core.reminders.Reminder(text = "a", atMs = now + 2_000))
+        val b = store.insert(com.talkto.core.reminders.Reminder(text = "b", atMs = now + 1_000))
+        assertThat(store.pending().map { it.id }).containsExactly(b, a).inOrder()
+        store.markDone(b)
+        assertThat(store.pending().map { it.id }).containsExactly(a)
+        assertThat(store.get(b)?.done).isTrue()
+        assertThat(store.delete(a)).isTrue()
+        assertThat(store.pending()).isEmpty()
+    }
+
+    @Test fun `profile facts upsert by key`() = runTest {
+        val repo = com.talkto.core.profile.ProfileRepository(com.talkto.app.data.db.RoomProfileStore(db.profile()), clock = { now })
+        repo.learnFrom("Казвам се Мария")
+        repo.learnFrom("Казвам се Мими")
+        assertThat(repo.all().single().value).isEqualTo("Мими")
+        assertThat(repo.forget("name")).isEqualTo(1)
+    }
+
+    @Test fun `history keeps order, searches and clears`() = runTest {
+        var t = now
+        val repo = com.talkto.core.history.HistoryRepository(com.talkto.app.data.db.RoomHistoryStore(db.history()), clock = { t++ })
+        repo.record(com.talkto.core.history.Speaker.USER, "първо", "offline")
+        repo.record(com.talkto.core.history.Speaker.TALKTO, "второ", "offline")
+        assertThat(repo.recent(10).map { it.text }).containsExactly("първо", "второ").inOrder()
+        assertThat(repo.search("втор").single().speaker).isEqualTo(com.talkto.core.history.Speaker.TALKTO)
+        repo.clear()
+        assertThat(repo.count()).isEqualTo(0)
+    }
 }

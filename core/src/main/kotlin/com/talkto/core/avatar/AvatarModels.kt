@@ -62,7 +62,7 @@ data class FaceAnchors(
 }
 
 @Serializable
-enum class Expression { NEUTRAL, HAPPY, SAD, SURPRISED, THINKING, SLEEPY, ANGRY, LOVE, CONFUSED }
+enum class Expression { NEUTRAL, HAPPY, SAD, SURPRISED, THINKING, SLEEPY, ANGRY, LOVE, CONFUSED, TONGUE }
 
 @Serializable
 enum class Gesture { NONE, NOD, SHAKE, WAVE, BOUNCE, SPIN }

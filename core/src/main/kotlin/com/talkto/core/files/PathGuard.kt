@@ -48,7 +48,7 @@ class PathGuard(
             throw TalktoError.ProtectedPath(canon.toString(), "system directory ($it)")
         }
         if (roots.none { canon.startsWith(it) }) {
-            throw TalktoError.ProtectedPath(canon.toString(), "outside the storage Talkto is allowed to manage")
+            throw TalktoError.ProtectedPath(canon.toString(), "outside the storage ZnaiKo is allowed to manage")
         }
         return canon
     }

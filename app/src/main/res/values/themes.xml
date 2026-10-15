@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- No status / navigation bar colours: deprecated on Android 15, where enableEdgeToEdge() draws behind both bars. -->
     <style name="Theme.Talkto" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowBackground">@color/talkto_background</item>
     </style>
 </resources>

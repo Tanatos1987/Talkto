@@ -6,7 +6,6 @@ import android.os.IBinder
 import android.os.Process
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.lsposed.hiddenapibypass.HiddenApiBypass
 import rikka.shizuku.Shizuku
 import rikka.shizuku.ShizukuBinderWrapper
 import rikka.shizuku.SystemServiceHelper
@@ -37,7 +36,7 @@ object ShizukuBridge {
         require(PACKAGE_NAME.matches(packageName)) { "Invalid package name" }
         if (!hasPermission()) return@withContext false
         runCatching {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) HiddenApiBypass.addHiddenApiExemptions("Landroid/app/IActivityManager")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) exemptHiddenApi("Landroid/app/IActivityManager")
             val binder = ShizukuBinderWrapper(SystemServiceHelper.getSystemService("activity"))
             val stub = Class.forName("android.app.IActivityManager\$Stub")
             val am = stub.getMethod("asInterface", IBinder::class.java).invoke(null, binder)
@@ -49,6 +48,18 @@ object ShizukuBridge {
     }
 
     private const val PER_USER_RANGE = 100_000
+
+    /**
+     * HiddenApiBypass ships only in the full version (Play flags API-bypass SDKs), so it is looked up by name;
+     * without it the call below may be refused and forceStop simply returns false.
+     */
+    private fun exemptHiddenApi(vararg prefixes: String) {
+        runCatching {
+            Class.forName("org.lsposed.hiddenapibypass.HiddenApiBypass")
+                .getMethod("addHiddenApiExemptions", Array<String>::class.java)
+                .invoke(null, prefixes)
+        }
+    }
 }
 
 /** Root route: `su -c am force-stop <pkg>`, with a timeout so a hung su prompt never blocks the agent. */

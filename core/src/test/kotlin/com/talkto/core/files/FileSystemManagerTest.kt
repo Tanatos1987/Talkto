@@ -221,4 +221,43 @@ class FileSystemManagerTest {
         val manager = FileSystemManager(PathGuard(listOf(root)), ioDispatcher = StandardTestDispatcher(testScheduler))
         assertThat(manager.list("Download").map { it.name }).contains("report.pdf")
     }
+
+    // ---------------------------------------------------------------- analysis
+
+    @Test fun `storage report sums per category and lists the largest files`() = runTest {
+        val r = fsm.storageReport("~")
+        assertThat(r.totalFiles).isEqualTo(5) // app-private secret.db is not counted
+        assertThat(r.totalBytes).isEqualTo(26_000)
+        assertThat(r.categories.first().category).isEqualTo("Images")
+        assertThat(r.categories.first().bytes).isEqualTo(21_000)
+        assertThat(r.largest.first().name).isEqualTo("IMG_0100.jpg")
+    }
+
+    @Test fun `duplicates need identical content, not just identical size`() = runTest {
+        val a = ByteArray(40_000) { 1 }
+        val b = ByteArray(40_000) { 1 }.also { it[39_999] = 2 } // same size, differs only in the last byte
+        Files.write(root.resolve("Download/x.bin"), a)
+        now += 1
+        Files.write(root.resolve("Pictures/x-copy.bin"), a)
+        Files.write(root.resolve("Documents/y.bin"), b)
+        val report = fsm.findDuplicates("~")
+        assertThat(report.groups).hasSize(1)
+        assertThat(report.groups.single().paths.map { it.substringAfterLast('/') }).containsExactly("x.bin", "x-copy.bin")
+        assertThat(report.wastedBytes).isEqualTo(40_000)
+    }
+
+    @Test fun `large duplicates are compared beyond the first 64 KB`() = runTest {
+        val a = ByteArray(200_000) { (it % 5).toByte() }
+        val b = a.copyOf().also { it[150_000] = 99 }
+        Files.write(root.resolve("Download/big1.bin"), a)
+        Files.write(root.resolve("Download/big2.bin"), b)
+        assertThat(fsm.findDuplicates("~").groups).isEmpty()
+    }
+
+    @Test fun `empty folders are found but standard folders are not reported`() = runTest {
+        Files.createDirectories(root.resolve("Download/nothing/inside"))
+        val empty = fsm.findEmptyDirectories("~").map { it.removePrefix(root.toString()) }
+        assertThat(empty).contains("/Download/nothing/inside")
+        assertThat(empty).containsNoneOf("/Pictures", "/Documents")
+    }
 }

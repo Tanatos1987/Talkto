@@ -244,6 +244,126 @@ class FileSystemManager(
         OperationReport("organize:${strategy.name.lowercase()}", dryRun, moves, totalBytes = bytes, skipped = skipped)
     }
 
+    // ------------------------------------------------------------ analysis
+
+    /** What takes space under [dir]: totals per category, the largest files and the ZnaiKo trash size. */
+    suspend fun storageReport(dir: String = "~", maxDepth: Int = 16, top: Int = 10): StorageReport = onIo {
+        val start = guard.resolve(dir)
+        if (!Files.isDirectory(start)) throw TalktoError.NotFound(start.toString())
+        val perCategory = HashMap<String, LongArray>() // [files, bytes]
+        val largest = java.util.PriorityQueue<Pair<Path, BasicFileAttributes>>(compareBy { it.second.size() })
+        var files = 0
+        var bytes = 0L
+        walkReadable(start, maxDepth) { file, attrs ->
+            files++; bytes += attrs.size()
+            val c = perCategory.getOrPut(FileTypes.categoryOf(file.fileName.toString())) { LongArray(2) }
+            c[0]++; c[1] += attrs.size()
+            largest += file to attrs
+            if (largest.size > top) largest.poll()
+        }
+        StorageReport(
+            root = start.toString(),
+            totalFiles = files,
+            totalBytes = bytes,
+            categories = perCategory.map { (k, v) -> CategoryUsage(k, v[0].toInt(), v[1]) }.sortedByDescending { it.bytes },
+            largest = largest.sortedByDescending { it.second.size() }.map { (p, a) -> p.toEntry(a) },
+            trashBytes = if (Files.isDirectory(trashRoot)) sizeOf(trashRoot) else 0,
+        )
+    }
+
+    /**
+     * Byte-identical files under [dir]. Candidates are grouped by size, then by a hash of the first 64 KB,
+     * and only then fully hashed, so a phone full of photos is not read end to end. Within a group the
+     * oldest file comes first: it is the one to keep.
+     */
+    suspend fun findDuplicates(
+        dir: String = "~",
+        minSizeBytes: Long = 16 * 1024,
+        maxFiles: Int = 50_000,
+        maxGroups: Int = 200,
+    ): DuplicateReport = onIo {
+        val start = guard.resolve(dir)
+        if (!Files.isDirectory(start)) throw TalktoError.NotFound(start.toString())
+        val bySize = HashMap<Long, MutableList<Pair<Path, Long>>>()
+        var scanned = 0
+        var truncated = false
+        walkReadable(start, 32) { file, attrs ->
+            if (attrs.size() < minSizeBytes) return@walkReadable
+            if (scanned >= maxFiles) {
+                truncated = true; return@walkReadable
+            }
+            scanned++
+            bySize.getOrPut(attrs.size()) { ArrayList() } += file to attrs.lastModifiedTime().toMillis()
+        }
+        val groups = ArrayList<DuplicateGroup>()
+        for ((size, candidates) in bySize.entries.sortedByDescending { it.key }) {
+            if (candidates.size < 2) continue
+            currentCoroutineContext().ensureActive()
+            val byHead = candidates.groupBy { runCatching { hash(it.first, HEAD_BYTES) }.getOrNull() }
+            for ((head, sameHead) in byHead) {
+                if (head == null || sameHead.size < 2) continue
+                val byFull = if (size <= HEAD_BYTES) mapOf(head to sameHead) else sameHead.groupBy { runCatching { hash(it.first, Long.MAX_VALUE) }.getOrNull() }
+                for ((full, same) in byFull) {
+                    if (full == null || same.size < 2) continue
+                    groups += DuplicateGroup(size, same.sortedBy { it.second }.map { it.first.toString() })
+                    if (groups.size >= maxGroups) break
+                }
+                if (groups.size >= maxGroups) break
+            }
+            if (groups.size >= maxGroups) {
+                truncated = true; break
+            }
+        }
+        DuplicateReport(groups, groups.sumOf { it.wastedBytes }, scanned, truncated)
+    }
+
+    /** Folders under [dir] with nothing inside (anchors and protected areas excluded). */
+    suspend fun findEmptyDirectories(dir: String = "~", limit: Int = 200): List<String> = onIo {
+        val start = guard.resolve(dir)
+        if (!Files.isDirectory(start)) throw TalktoError.NotFound(start.toString())
+        val out = ArrayList<String>()
+        Files.walkFileTree(start, EnumSet.noneOf(java.nio.file.FileVisitOption::class.java), 32, object : SimpleFileVisitor<Path>() {
+            override fun preVisitDirectory(d: Path, attrs: BasicFileAttributes): FileVisitResult {
+                if (d != start && (isTrash(d) || guard.isHiddenFromSearch(d) || d.fileName.toString().startsWith("."))) return FileVisitResult.SKIP_SUBTREE
+                val empty = runCatching { Files.newDirectoryStream(d).use { !it.iterator().hasNext() } }.getOrDefault(false)
+                if (d != start && empty && runCatching { guard.requireMutable(d) }.isSuccess) out += d.toString()
+                return if (out.size >= limit) FileVisitResult.TERMINATE else FileVisitResult.CONTINUE
+            }
+
+            override fun visitFileFailed(file: Path, exc: IOException): FileVisitResult = FileVisitResult.CONTINUE
+        })
+        out
+    }
+
+    private inline fun walkReadable(start: Path, maxDepth: Int, crossinline onFile: (Path, BasicFileAttributes) -> Unit) {
+        Files.walkFileTree(start, EnumSet.noneOf(java.nio.file.FileVisitOption::class.java), maxDepth, object : SimpleFileVisitor<Path>() {
+            override fun preVisitDirectory(dir: Path, attrs: BasicFileAttributes): FileVisitResult =
+                if (dir != start && (isTrash(dir) || guard.isHiddenFromSearch(dir))) FileVisitResult.SKIP_SUBTREE else FileVisitResult.CONTINUE
+
+            override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
+                if (attrs.isRegularFile) onFile(file, attrs)
+                return FileVisitResult.CONTINUE
+            }
+
+            override fun visitFileFailed(file: Path, exc: IOException): FileVisitResult = FileVisitResult.CONTINUE
+        })
+    }
+
+    private fun hash(file: Path, limit: Long): String {
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        Files.newInputStream(file).use { input ->
+            val buf = ByteArray(64 * 1024)
+            var left = limit
+            while (left > 0) {
+                val n = input.read(buf, 0, minOf(buf.size.toLong(), left).toInt())
+                if (n < 0) break
+                md.update(buf, 0, n)
+                left -= n
+            }
+        }
+        return md.digest().joinToString("") { "%02x".format(it) }
+    }
+
     // --------------------------------------------------------------- helpers
 
     private suspend fun transfer(
@@ -408,6 +528,7 @@ class FileSystemManager(
 
     companion object {
         const val TRASH_DIR = ".talkto_trash"
+        private const val HEAD_BYTES = 64L * 1024
         private const val SAMPLE_SIZE = 20
         private val TRASH_STAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").withZone(ZoneId.systemDefault())
         private val MONTH = DateTimeFormatter.ofPattern("yyyy-MM").withZone(ZoneId.systemDefault())

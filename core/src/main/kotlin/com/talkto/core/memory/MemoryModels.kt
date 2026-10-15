@@ -4,7 +4,7 @@ import kotlinx.serialization.Serializable
 
 enum class ActionType { FILE_MOVE, FILE_COPY, FILE_DELETE, FILE_ORGANIZE, FILE_SEARCH, APP_LAUNCH, APP_TERMINATE, AVATAR }
 
-/** One thing the user asked Talkto to do. Persisted by [ActionLogStore] (Room on Android). */
+/** One thing the user asked ZnaiKo to do. Persisted by [ActionLogStore] (Room on Android). */
 data class ActionRecord(
     val id: Long = 0,
     val type: ActionType,
